@@ -1,0 +1,44 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://vulnops.local/schemas/phase-manifest.schema.json",
+  "title": "VulnOps Phase Manifest",
+  "type": "object",
+  "required": ["phase", "status", "started_at", "completed_at", "inputs", "outputs", "warnings", "errors"],
+  "additionalProperties": true,
+  "properties": {
+    "phase": {
+      "type": "string",
+      "enum": ["recon", "sca", "sast", "secrets", "triage", "intrusion", "final-reconciliation", "report"]
+    },
+    "status": {
+      "type": "string",
+      "enum": ["ok", "degraded", "failed", "skipped"]
+    },
+    "started_at": {"type": "string"},
+    "completed_at": {"type": "string"},
+    "inputs": {
+      "type": "array",
+      "items": {"type": "string"}
+    },
+    "outputs": {
+      "type": "array",
+      "items": {"type": "string"}
+    },
+    "coverage": {
+      "type": "object",
+      "additionalProperties": true
+    },
+    "tool_versions": {
+      "type": "object",
+      "additionalProperties": {"type": "string"}
+    },
+    "warnings": {
+      "type": "array",
+      "items": {"type": "string"}
+    },
+    "errors": {
+      "type": "array",
+      "items": {"type": "string"}
+    }
+  }
+}

@@ -1,0 +1,45 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://vulnops.local/schemas/report.schema.json",
+  "title": "VulnOps Security Report",
+  "type": "object",
+  "required": ["repository", "commit", "date", "summary", "findings", "scans"],
+  "additionalProperties": true,
+  "properties": {
+    "repository": {"type": "string"},
+    "commit": {"type": "string"},
+    "date": {"type": "string"},
+    "summary": {
+      "type": "object",
+      "required": ["total", "critical", "high", "medium", "low", "info", "false_positives"],
+      "properties": {
+        "total": {"type": "integer"},
+        "critical": {"type": "integer"},
+        "high": {"type": "integer"},
+        "medium": {"type": "integer"},
+        "low": {"type": "integer"},
+        "info": {"type": "integer"},
+        "false_positives": {"type": "integer"}
+      }
+    },
+    "findings": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "triage_id", "title", "severity", "confidence", "status", "sources", "evidence_refs"],
+        "additionalProperties": true,
+        "properties": {
+          "id": {"type": "string"},
+          "triage_id": {"type": "string"},
+          "title": {"type": "string"},
+          "severity": {"type": "string"},
+          "confidence": {"type": "string"},
+          "status": {"type": "string"},
+          "sources": {"type": "array", "items": {"type": "string"}},
+          "evidence_refs": {"type": "array", "items": {"type": "string"}}
+        }
+      }
+    },
+    "scans": {"type": "object"}
+  }
+}

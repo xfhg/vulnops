@@ -1,0 +1,33 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://vulnops.local/schemas/threat-model.schema.json",
+  "title": "VulnOps SAST Threat Model",
+  "type": "object",
+  "required": ["assets", "trust_boundaries", "entrypoints", "threats", "evidence_refs"],
+  "additionalProperties": true,
+  "properties": {
+    "assets": {"type": "array", "items": {"type": "object"}},
+    "trust_boundaries": {"type": "array", "items": {"type": "object"}},
+    "entrypoints": {"type": "array", "items": {"type": "object"}},
+    "threats": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "title", "entrypoint_refs", "evidence_refs"],
+        "additionalProperties": true,
+        "properties": {
+          "id": {"type": "string"},
+          "title": {"type": "string"},
+          "stride": {"type": "array", "items": {"type": "string"}},
+          "entrypoint_refs": {"type": "array", "items": {"type": "string"}, "minItems": 1},
+          "asset_refs": {"type": "array", "items": {"type": "string"}},
+          "evidence_refs": {"type": "array", "items": {"type": "string"}, "minItems": 1}
+        }
+      }
+    },
+    "assumptions": {"type": "array", "items": {"type": "string"}},
+    "evidence_refs": {"type": "array", "items": {"type": "string"}, "minItems": 1},
+    "warnings": {"type": "array", "items": {"type": "string"}},
+    "errors": {"type": "array", "items": {"type": "string"}}
+  }
+}

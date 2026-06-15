@@ -1,0 +1,44 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://vulnops.local/schemas/finding.schema.json",
+  "title": "VulnOps Normalized Finding",
+  "type": "object",
+  "required": ["id", "title", "source", "status", "severity", "confidence", "evidence_refs", "raw_refs"],
+  "additionalProperties": true,
+  "properties": {
+    "id": {"type": "string"},
+    "title": {"type": "string"},
+    "source": {
+      "oneOf": [
+        {"type": "string"},
+        {"type": "array", "items": {"type": "string"}}
+      ]
+    },
+    "status": {
+      "type": "string",
+      "enum": ["verified", "unverified", "false-positive", "not_applicable", "deferred", "suppressed", "clean"]
+    },
+    "severity": {
+      "type": "string",
+      "enum": ["critical", "high", "medium", "low", "info"]
+    },
+    "confidence": {
+      "type": "string",
+      "enum": ["high", "medium", "low"]
+    },
+    "evidence_refs": {
+      "type": "array",
+      "items": {"type": "string"},
+      "minItems": 1
+    },
+    "raw_refs": {
+      "type": "array",
+      "items": {"type": "string"}
+    },
+    "redaction_state": {
+      "type": "string",
+      "enum": ["not_applicable", "redacted", "safe_summary"]
+    },
+    "closure_reason": {"type": "string"}
+  }
+}

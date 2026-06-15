@@ -1,0 +1,46 @@
+# Target repos — cloned at runtime, never committed
+target/*
+
+# Scan results
+scans/*
+
+# Ephemeral agent workspace
+work/*
+
+# Python venv (harness-local tooling)
+.venv/
+
+# Installed binaries
+bins/*
+!bins/.gitkeep
+
+# OSV database — downloaded by fetch-osv-db.sh, never committed
+.harness/osv-db/
+
+# Harness internal state and logs
+.harness/logs/*
+.harness/cache/*
+.harness/tmp/*
+.harness/home/*
+.harness/config/*
+.harness/data/*
+!.harness/logs/.gitkeep
+!.harness/cache/.gitkeep
+
+# Scan outputs — tracked in git for audit trail, but ignore temp files
+scans/**/*.tmp
+scans/**/*.lock
+
+# OS / editor
+.DS_Store
+*.swp
+*.swo
+*~
+codedb.snapshot
+
+# Local
+.env
+.cate
+
+# Config
+config.toml

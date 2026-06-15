@@ -1,0 +1,139 @@
+# vulnops harness — centralized configuration
+# Single source of truth for LLM endpoints, API keys, and tool settings.
+# Run `bash scripts/load-config.sh` to export env vars from this file.
+
+# ── LLM Provider ──────────────────────────────────────────────────────
+[llm]
+# OpenAI-compatible gateway endpoint (used by OMP, graphify, agent prompts)
+# Any URL reachable by the harness — local (http://localhost:8080/v1) or remote.
+base_url = ""
+
+# API key — empty string if no auth required
+api_key = ""
+
+# Default model name (used by graphify, OMP model discovery)
+# Must match a model ID served by the endpoint, or a [[llm.provider.models]] entry.
+model = "mimo-v2.5"
+
+# Provider metadata (maps to .omp/models.yml provider config)
+[llm.provider]
+name = "on-prem"
+# api: authentication protocol for the endpoint
+#   "openai-completions" — standard OpenAI /v1/chat/completions
+api = "openai-completions"
+# auth: credential mechanism
+auth = "api-key"
+#   "api-key" — sends Authorization: Bearer <api_key>
+# discovery: how to enumerate available models from the endpoint
+#   "proxy"    — auto-discovers models via GET /v1/models (requires endpoint support)
+#   "explicit" — uses [[llm.provider.models]] entries only (no /v1/models call)
+discovery = "proxy"
+
+# Uncomment when endpoint lacks /v1/models (discovery = "explicit")
+# [[llm.provider.models]]
+# id = "your-model-name"
+# name = "On-Prem Model"
+# context_window = 32768
+# max_tokens = 4096
+
+# ── Graphify (intrusion agent) ────────────────────────────────────────
+[graphify]
+# Backend: LLM backend for graphify's semantic extraction.
+#   "ollama"  — on-prem via OpenAI-compatible endpoint (uses llm.base_url)
+#   "openai"  — OpenAI API (requires api_key)
+#   "gemini"  — Google Gemini API (requires api_key)
+#   ""        — AST-only mode (no LLM needed, fully offline)
+backend = "ollama"
+
+# Override graphify's default model for this backend (empty = backend default)
+# Ignored when backend = "" (AST-only).
+model = ""
+
+# API key override — empty = use llm.api_key above
+# Only needed when graphify uses a different key than the main LLM provider.
+api_key = ""
+
+# ── Harness scan settings ─────────────────────────────────────────────
+[harness]
+# default_depth: scan intensity level
+#   "quick"     — ~5 min, focused on high-confidence vectors
+#   "balanced"  — ~15 min, broader coverage
+#   "full"      — ~30 min+, comprehensive (requires confirmation)
+default_depth = "balanced"
+
+[harness.runtime]
+# audit_offline: audit runtime must not perform internet bootstrap work.
+# The configured [llm].base_url is still allowed as the on-prem model endpoint.
+audit_offline = true
+allow_configured_llm_endpoint = true
+# Keep tool homes, temp files, caches, logs, and agent outputs inside this repo.
+contained = true
+approved_write_roots = ["scans", ".harness", "work", "bins", ".venv"]
+
+[harness.scans.sca]
+# Path to wraith binary (relative to harness root)
+binary = "bins/wraith"
+# Extra CLI flags passed to wraith
+#   "--offline" — use local OSV database, no network calls
+extra_flags = ["--offline"]
+
+[harness.scans.sast]
+# Maximum parallel workers for file analysis
+max_workers = 5
+# Number of candidate files per analysis batch
+batch_size = 10
+
+[harness.scans.sast.fanout.quick]
+deepdive_chunks = 4
+verify_findings = 4
+
+[harness.scans.sast.fanout.balanced]
+deepdive_chunks = 8
+verify_findings = 8
+
+[harness.scans.sast.fanout.full]
+deepdive_chunks = 16
+verify_findings = 12
+
+[harness.scans.secrets]
+# Path to poltergeist binary (relative to harness root)
+binary = "bins/poltergeist"
+# Extra CLI flags passed to poltergeist
+extra_flags = []
+
+[harness.scans.intrusion]
+# Whether intrusion analysis is optional (non-gate)
+#   true  — skip if graphify unavailable, continue pipeline
+#   false — halt pipeline if intrusion phase fails
+optional = true
+
+[harness.scans.reconciliation]
+# Reconcile triage findings with intrusion enrichment before report generation.
+enabled = true
+
+# ── Output ────────────────────────────────────────────────────────────
+[output]
+# Directory for all scan results (relative to harness root)
+scan_dir = "scans"
+# Report output format
+#   "markdown" — human-readable .md report only
+#   "json"     — machine-readable .json report only
+#   "both"     — generate both markdown and json
+format = "both"
+# Include raw tool stdout/stderr in the report
+#   true  — full tool output appended to report
+#   false — summary only, raw output in scans/<tool>/raw/ for reference
+include_raw = false
+
+# ── Logging ───────────────────────────────────────────────────────────
+[logging]
+# Log verbosity
+#   "debug" — full trace output (verbose)
+#   "info"  — progress and milestones (default)
+#   "warn"  — warnings and errors only
+#   "error" — errors only
+level = "info"
+# Directory for harness log files (relative to harness root)
+dir = ".harness/logs"
+# Number of recent scan log sets to retain (older logs are pruned)
+retain = 5

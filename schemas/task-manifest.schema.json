@@ -1,0 +1,33 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://vulnops.local/schemas/task-manifest.schema.json",
+  "title": "VulnOps SAST Task Manifest",
+  "type": "object",
+  "required": ["rationale", "chunks"],
+  "additionalProperties": true,
+  "properties": {
+    "rationale": {"type": "string"},
+    "chunks": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "risk_rank", "size", "files", "hypothesis", "threat_id", "lenses", "evidence_refs"],
+        "additionalProperties": true,
+        "properties": {
+          "id": {"type": "string"},
+          "risk_rank": {"type": "integer", "minimum": 1},
+          "size": {"type": "string", "enum": ["small", "medium", "large"]},
+          "files": {"type": "array", "items": {"type": "string"}, "minItems": 1},
+          "focus_entry_points": {"type": "array", "items": {"type": "string"}},
+          "hypothesis": {"type": "string"},
+          "threat_id": {"type": "string"},
+          "lenses": {"type": "array", "items": {"type": "string"}},
+          "related_advisories": {"type": "array", "items": {"type": "string"}},
+          "evidence_refs": {"type": "array", "items": {"type": "string"}, "minItems": 1}
+        }
+      }
+    },
+    "warnings": {"type": "array", "items": {"type": "string"}},
+    "errors": {"type": "array", "items": {"type": "string"}}
+  }
+}

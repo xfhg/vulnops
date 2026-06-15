@@ -1,0 +1,111 @@
+# vulnops harness configuration (REFERENCE — source of truth is config.toml)
+# This file documents scan settings for human readability.
+# Actual runtime config is in config.toml at the harness root.
+
+harness:
+  name: vulnops
+  version: "1.0.0"
+
+# Target repository configuration
+target:
+  # Repository URL to clone (SSH or HTTPS)
+  repo_url: ""
+  # Branch to checkout (default: default branch)
+  branch: ""
+  # Subdirectory within target/ for the cloned repo
+  clone_dir: "target/repo"
+
+# Scan configuration
+scans:
+  # Default scan depth: quick | balanced | full
+  # quick: ~5min, focused on high-confidence vectors
+  # balanced: ~15min, broader coverage
+  # full: ~30min+, comprehensive (requires confirmation)
+  default_depth: quick
+
+  # Which scans to run (all independent, run in parallel)
+  enabled:
+    - sca       # Software Composition Analysis (Wraith)
+    - sast      # Static Application Security Testing (AI-driven)
+    - secrets   # Secrets/credentials detection (Poltergeist)
+
+  # SCA-specific settings
+  sca:
+    # Wraith binary path (relative to harness root)
+    binary: bins/wraith
+    # Extra flags for offline scanning
+    extra_flags:
+      - --offline
+    # Environment variables for offline SCA
+    env:
+      OSV_SCANNER_LOCAL_DB_CACHE_DIRECTORY: .harness/osv-db
+
+  # SAST-specific settings
+  sast:
+    # Maximum parallel workers for file analysis
+    max_workers: 5
+    # Candidate files per batch
+    batch_size: 10
+    # OMP subagent fanout limits by depth. Overflow work is queued in batches.
+    fanout:
+      quick:
+        deepdive_chunks: 4
+        verify_findings: 4
+      balanced:
+        deepdive_chunks: 8
+        verify_findings: 8
+      full:
+        deepdive_chunks: 16
+        verify_findings: 12
+
+  # Secrets-specific settings
+  secrets:
+    binary: bins/poltergeist
+    # Extra poltergeist flags
+    extra_flags: []
+
+  # Intrusion-specific settings (Phase 5 — graph-guided deep analysis)
+  intrusion:
+    # Graphify backend: ollama (for on-prem) or omit for AST-only
+    backend: ollama
+    # Skip if graphify not installed (non-gate)
+    optional: true
+
+# Output configuration
+output:
+  # Where all scan results go
+  scan_dir: scans
+  # Report format: markdown | json | both
+  format: both
+  # Include raw tool output in report
+  include_raw: false
+
+# Tool installation
+tools:
+  # Install directory for binaries
+  install_dir: bins
+  # Platform override (auto-detected if empty)
+  platform: ""
+  # Architecture override (auto-detected if empty)
+  arch: ""
+
+# Safety constraints
+constraints:
+  # Target repo is read-only after clone
+  read_only_target: true
+  # Never write to target/ directory
+  never_write_target: true
+  # Audit runtime has no internet access except configured on-prem LLM endpoint.
+  network: false
+  allow_configured_llm_endpoint: true
+  # Jail means harness-local homes/caches/temp/dependencies, not target chmod.
+  contained_runtime: true
+  # Max token budget per scan phase (0 = unlimited)
+  max_tokens_per_phase: 0
+
+# Logging
+logging:
+  level: info  # debug | info | warn | error
+  dir: .harness/logs
+  # Keep logs from last N scans
+  retain: 5

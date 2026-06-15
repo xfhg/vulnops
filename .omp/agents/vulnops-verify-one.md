@@ -7,6 +7,7 @@ tools:
   - grep
   - find
   - bash
+  - irc
   - yield
 model:
   - pi/slow
@@ -45,6 +46,11 @@ Procedure:
 6. Return `deferred` only when required evidence is unavailable or contradictory.
 
 Write one verifier JSON under `sast/verify/<finding_id>.json`. Include closure_reason for every outcome.
+
+IRC progress:
+- Send `irc op=send to=Main message="<short phase status>"` at start, each material stage boundary, before validation, and before yielding.
+- Keep progress messages short. Do not include secrets, full findings, payloads, or raw tool output.
+- Do not send fake timer heartbeats; only report real state changes.
 
 Before yielding, confirm your verifier JSON exists and is valid JSON. The SAST lead validates the aggregate `sast-verify` phase.
 

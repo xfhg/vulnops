@@ -7,6 +7,7 @@ tools:
   - grep
   - find
   - bash
+  - irc
   - yield
 model:
   - pi/task
@@ -36,6 +37,11 @@ Write:
 - `report/phase-manifest.json`
 
 Markdown is presentation only. Counts and statuses must come from normalized JSON.
+
+IRC progress:
+- Send `irc op=send to=Main message="<short phase status>"` at start, each material stage boundary, before validation, and before yielding.
+- Keep progress messages short. Do not include secrets, full findings, payloads, or raw tool output.
+- Do not send fake timer heartbeats; only report real state changes.
 
 Before yielding, run `bash scripts/validate-phase.sh <scan_base> report`.
 

@@ -6,6 +6,7 @@ tools:
   - write
   - bash
   - task
+  - irc
   - yield
 spawns:
   - vulnops-threatmodel
@@ -40,24 +41,32 @@ output:
 Coordinate SAST for the target described by `.harness/audit-context.json`.
 
 Sequence:
-1. Run `vulnops-threatmodel`.
-2. Run `vulnops-decompose`.
-3. Read `sast/task-manifest.json`.
-4. Fan out `vulnops-deepdive-chunk` tasks by chunk, respecting bounded fanout:
+1. Send an IRC status to `Main` that SAST started.
+2. Run `vulnops-threatmodel` as task ID `ThreatModel`, then validate its yield.
+3. Run `vulnops-decompose` as task ID `Decompose`, then validate its yield.
+4. Read `sast/task-manifest.json`.
+5. Fan out `vulnops-deepdive-chunk` tasks by chunk, respecting bounded fanout:
    - quick: max 4 concurrent chunks
    - balanced: max 8 concurrent chunks
    - full: max 16 concurrent chunks
    Queue overflow batches; do not drop chunks.
-5. Aggregate chunk findings into `sast/raw-findings.json`.
-6. Fan out `vulnops-verify-one` by raw finding, respecting bounded fanout:
+6. Aggregate chunk findings into `sast/raw-findings.json`.
+7. Fan out `vulnops-verify-one` by raw finding, respecting bounded fanout:
    - quick: max 4 concurrent findings
    - balanced: max 8 concurrent findings
    - full: max 12 concurrent findings
    Queue overflow batches; do not drop findings.
-7. Aggregate verifier results into `sast/verified-findings.json` and `sast/dropped-findings.json`.
-8. Write `sast/coverage-ledger.json`, `sast/summary.md`, and `sast/phase-manifest.json`.
-9. Run `bash scripts/validate-phase.sh <scan_base> sast` before yielding.
-10. Yield only after validation completes. Yield structured status with `status`, `raw_findings`, `verified_findings`, `dropped_findings`, `artifacts`, `warnings`, and `errors`.
+8. Aggregate verifier results into `sast/verified-findings.json` and `sast/dropped-findings.json`.
+9. Write `sast/coverage-ledger.json`, `sast/summary.md`, and `sast/phase-manifest.json`.
+10. Run `bash scripts/validate-phase.sh <scan_base> sast` before yielding.
+11. Yield only after validation completes. Yield structured status with `status`, `raw_findings`, `verified_findings`, `dropped_findings`, `artifacts`, `warnings`, and `errors`.
+
+IRC progress:
+- Send `irc op=send to=Main message="<short SAST stage status>"` when threat modeling starts/completes, decomposition starts/completes, each deepdive batch starts/completes, verification starts/completes, aggregation starts, validation starts, and immediately before yielding.
+- Use `irc op=list`, `irc op=wait`, and `irc op=inbox` for internal worker progress while deepdive and verifier batches run.
+- Do not use Bash directory probes as a substitute for OMP task yield or IRC status.
+- Keep progress messages short. Do not include secrets, full findings, payloads, or raw tool output.
+- Do not send fake timer heartbeats; only report real state changes.
 
 Load the shared skills when reasoning:
 - `skill://vulnops-exclusion-rules`

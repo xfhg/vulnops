@@ -128,6 +128,7 @@ Overflow work is queued in batches, not dropped.
 | `run-audit.sh [depth]` | Detect repo in `target/`, write audit context |
 | `jail.sh <command>` | Run a command with harness-local home/cache/temp paths |
 | `load-config.sh` | Export `config.toml` env vars |
+| `bootstrap-omp.sh` | Generate harness-local OMP config/model registry from `config.toml` |
 | `validate-config.sh` | Confirm prepared audit runtime and containment |
 | `validate-phase.sh <scan_base> <phase>` | Validate one phase or SAST subphase checkpoint |
 | `wait-phase.sh <scan_base> <phase> [seconds]` | Wait deterministically for a phase, then validate it |
@@ -144,8 +145,10 @@ vulnops/
 │   ├── main/                # Main-process OMP controller prompt
 │   ├── agents/              # Project-local OMP audit agents
 │   ├── skills/              # Reusable audit skills and security lenses
-│   ├── config.yml           # Project OMP provider policy
-│   └── models.yml           # On-prem provider model mapping
+│   └── config.yml           # Project OMP provider/tool policy
+├── .harness/home/.omp/agent/
+│   ├── config.yml           # Generated OMP onboarding/model role config
+│   └── models.yml           # Generated on-prem provider model mapping
 ├── run.sh                   # Entry point
 ├── config/
 │   ├── scan-criteria.yaml   # SAST severity thresholds

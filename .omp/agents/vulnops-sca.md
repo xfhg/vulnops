@@ -7,6 +7,7 @@ tools:
   - grep
   - find
   - bash
+  - irc
   - yield
 model:
   - pi/task
@@ -39,6 +40,11 @@ Required artifacts:
 - `sca/phase-manifest.json`
 
 Preserve raw advisory records for every promoted dependency finding.
+
+IRC progress:
+- Send `irc op=send to=Main message="<short phase status>"` at start, each material stage boundary, before validation, and before yielding.
+- Keep progress messages short. Do not include secrets, full findings, payloads, or raw tool output.
+- Do not send fake timer heartbeats; only report real state changes.
 
 Before yielding, run `bash scripts/validate-phase.sh <scan_base> sca`.
 

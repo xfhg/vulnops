@@ -15,7 +15,8 @@ api_key = ""
 # Must match a model ID served by the endpoint, or a [[llm.provider.models]] entry.
 model = "mimo-v2.5"
 
-# Provider metadata (maps to .omp/models.yml provider config)
+# Provider metadata (used by scripts/bootstrap-omp.sh to generate
+# .harness/home/.omp/agent/models.yml)
 [llm.provider]
 name = "on-prem"
 # api: authentication protocol for the endpoint

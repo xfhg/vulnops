@@ -6,22 +6,22 @@ When the user asks to audit the target repo:
 
 1. Run `bash scripts/run-audit.sh <depth>` first. Default depth is `quick` unless the user asks for `balanced` or `full`.
 2. Read `.harness/audit-context.json` and use its paths as the only source of path truth.
-3. Run phase subagents directly from Main:
-   - `vulnops-recon`
-   - `vulnops-sca`
-   - `vulnops-secrets`
-   - `vulnops-sast-lead`
-   - `vulnops-triage`
-   - `vulnops-intrusion`
-   - `vulnops-reconcile`
-   - `vulnops-reporter`
+3. Run phase subagents directly from Main using stable OMP task IDs:
+   - `Recon`
+   - `SCA`
+   - `Secrets`
+   - `SASTLead`
+   - `Triage`
+   - `Intrusion`
+   - `Reconcile`
+   - `Reporter`
 4. After phase work, run `bash scripts/validate-scan.sh <scan_base>`.
 
 Pipeline:
 
-1. Run `vulnops-recon`. After it yields, run `bash scripts/validate-phase.sh <scan_base> recon`. Stop if recon fails or validation fails.
-2. Spawn `vulnops-sca`, `vulnops-secrets`, and `vulnops-sast-lead` in parallel.
-3. Treat OMP task completion/yield as the wait signal for those phases. Do not run `wait-phase.sh` while phase agents are still running.
+1. Spawn `vulnops-recon` as task ID `Recon`. After it yields, run `bash scripts/validate-phase.sh <scan_base> recon`. Stop if recon fails or validation fails.
+2. Spawn `vulnops-sca`, `vulnops-secrets`, and `vulnops-sast-lead` in one task batch with task IDs `SCA`, `Secrets`, and `SASTLead`.
+3. Treat OMP task completion/yield as the wait signal for those phases. Use `irc op=list`, `irc op=wait`, and `irc op=inbox` for live presence and progress while they run.
 4. As each phase yields, summarize its yielded status briefly and run `bash scripts/validate-phase.sh <scan_base> <phase>`.
 5. Run `vulnops-triage` only after SCA, secrets, and SAST have yielded and validated.
 6. Run `vulnops-intrusion`; do not proceed until the intrusion task yields terminal status and `bash scripts/validate-phase.sh <scan_base> intrusion` passes.
@@ -33,7 +33,13 @@ Live feedback rules:
 
 - Do not use conversation-level polling loops.
 - Do not use long foreground `bash scripts/wait-phase.sh ...` calls as the main orchestration wait mechanism.
+- Do not use Bash file probes as progress monitoring while a child task is running. In particular, do not inspect scan directories just to decide whether to keep waiting.
 - Let OMP's task/subagent UI show live phase status, duration, cost, and activity.
+- Use IRC presence and inbox messages for live feedback:
+  - `irc op=list` shows running, idle, and parked peers.
+  - `irc op=wait` waits for a child progress message.
+  - `irc op=inbox` drains queued child progress messages.
+- Use `agent://<id>` and `history://<id>` only to inspect child output or transcripts after a task yields, or to diagnose a failed/ambiguous task. Do not read them as a polling loop.
 - Maintain todos for the major pipeline phases. Mark a todo complete only after the phase task has yielded and `validate-phase.sh` has passed.
 - `scripts/wait-phase.sh` is only for manual recovery, CI, or non-OMP automation.
 - Intrusion is terminal only when `intrusion/phase-manifest.json` exists with status `ok`, `degraded`, `skipped`, or `failed`, and `intrusion/enrichment.json` exists.

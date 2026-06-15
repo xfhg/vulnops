@@ -7,6 +7,7 @@ tools:
   - grep
   - find
   - bash
+  - irc
   - yield
 model:
   - pi/slow
@@ -40,6 +41,11 @@ Write:
 - `sast/threat-model.json`
 
 Threat model JSON must include assets, trust boundaries, entrypoints, threats, assumptions, evidence_refs, warnings, and errors. Every threat must map to a real entrypoint, asset, or trust boundary.
+
+IRC progress:
+- Send `irc op=send to=Main message="<short phase status>"` at start, each material stage boundary, before validation, and before yielding.
+- Keep progress messages short. Do not include secrets, full findings, payloads, or raw tool output.
+- Do not send fake timer heartbeats; only report real state changes.
 
 Before yielding, run `bash scripts/validate-phase.sh <scan_base> sast-threatmodel`.
 

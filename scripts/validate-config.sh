@@ -82,6 +82,7 @@ harness_setup_containment "$HARNESS_ROOT"
 
 check_file "${HARNESS_ROOT}/config.toml" "config.toml"
 check_file "${HARNESS_ROOT}/scripts/load-config.sh" "load-config script"
+check_exec "${HARNESS_ROOT}/scripts/bootstrap-omp.sh" "OMP bootstrap script"
 check_exec "${HARNESS_ROOT}/scripts/validate-phase.sh" "phase validation script"
 check_exec "${HARNESS_ROOT}/scripts/wait-phase.sh" "phase wait script"
 
@@ -98,6 +99,9 @@ if [ -n "${ON_PREM_MODEL_NAME:-}" ]; then
 else
     err "llm.model is empty"
 fi
+
+OMP_PROVIDER_NAME="${ON_PREM_PROVIDER_NAME:-on-prem}"
+OMP_MODEL_SELECTOR="${OMP_PROVIDER_NAME}/${ON_PREM_MODEL_NAME:-}"
 
 check_exec "${HARNESS_ROOT}/bins/omp" "OMP binary"
 check_exec "${HARNESS_ROOT}/bins/wraith" "Wraith binary"
@@ -157,12 +161,35 @@ else
     ok "OMP audit agents exclude web/browser tools"
 fi
 
+agent_irc_report="${TMPDIR}/vulnops-omp-agent-missing-irc.txt"
+grep -L -E '^[[:space:]]*-[[:space:]]*irc[[:space:]]*$' "${HARNESS_ROOT}/.omp/agents"/vulnops-*.md >"$agent_irc_report" 2>/dev/null || true
+if [ -s "$agent_irc_report" ]; then
+    err "OMP audit agents must enable irc for live progress"
+    sed 's/^/[validate-config]   /' "$agent_irc_report" >&2
+else
+    ok "OMP audit agents enable irc"
+fi
+
+if grep -q -- '--tools "[^"]*irc' "${HARNESS_ROOT}/run.sh"; then
+    ok "run.sh exposes irc tool"
+else
+    err "run.sh --tools must include irc"
+fi
+
 lead_launch_report="${TMPDIR}/vulnops-lead-launch.txt"
 if grep -R -n -E 'agent:[[:space:]]*"vulnops-lead"|task\([^)]*vulnops-lead' "${HARNESS_ROOT}/AGENTS.md" "${HARNESS_ROOT}/.omp/main" >"$lead_launch_report" 2>/dev/null; then
     err "Main/docs must not launch vulnops-lead as a subagent"
     sed 's/^/[validate-config]   /' "$lead_launch_report" >&2
 else
     ok "no active vulnops-lead subagent launch instruction"
+fi
+
+main_polling_report="${TMPDIR}/vulnops-main-polling.txt"
+if grep -R -n -E 'sleep[[:space:]]+[0-9]|find[[:space:]].*scans|ls[[:space:]].*scans|wait and check files|wait-phase\.sh[[:space:]].*(1800|3600)' "${HARNESS_ROOT}/AGENTS.md" "${HARNESS_ROOT}/.omp/main" >"$main_polling_report" 2>/dev/null; then
+    err "Main/docs contain active Bash polling orchestration patterns"
+    sed 's/^/[validate-config]   /' "$main_polling_report" >&2
+else
+    ok "Main/docs avoid Bash polling orchestration patterns"
 fi
 
 check_file "${HARNESS_ROOT}/schemas/phase-manifest.schema.json" "phase manifest schema"
@@ -176,7 +203,37 @@ check_file "${HARNESS_ROOT}/schemas/dropped-finding.schema.json" "dropped findin
 check_file "${HARNESS_ROOT}/schemas/agent-yield.schema.json" "agent yield schema"
 
 check_file "${HARNESS_ROOT}/.omp/config.yml" "project OMP config"
-check_file "${HARNESS_ROOT}/.omp/models.yml" "project OMP models"
+check_file "${PI_CODING_AGENT_DIR}/config.yml" "harness-local OMP config"
+check_file "${PI_CODING_AGENT_DIR}/models.yml" "harness-local OMP models"
+
+if [ -f "${PI_CODING_AGENT_DIR}/config.yml" ]; then
+    if grep -q '^setupVersion:[[:space:]]*1[[:space:]]*$' "${PI_CODING_AGENT_DIR}/config.yml" &&
+        grep -q '^[[:space:]]*setupWizard:[[:space:]]*false[[:space:]]*$' "${PI_CODING_AGENT_DIR}/config.yml"; then
+        ok "OMP onboarding disabled in harness-local config"
+    else
+        err "harness-local OMP config must disable setup wizard and set setupVersion: 1"
+    fi
+    if grep -F -q "${OMP_MODEL_SELECTOR}" "${PI_CODING_AGENT_DIR}/config.yml"; then
+        ok "harness-local OMP config enables ${OMP_MODEL_SELECTOR}"
+    else
+        err "harness-local OMP config missing model selector: ${OMP_MODEL_SELECTOR}"
+    fi
+fi
+
+if [ -f "${PI_CODING_AGENT_DIR}/models.yml" ]; then
+    if grep -F -q "  ${OMP_PROVIDER_NAME}:" "${PI_CODING_AGENT_DIR}/models.yml" &&
+        grep -F -q "baseUrl:" "${PI_CODING_AGENT_DIR}/models.yml" &&
+        grep -F -q "${ON_PREM_MODEL_NAME:-}" "${PI_CODING_AGENT_DIR}/models.yml"; then
+        ok "harness-local OMP models include configured on-prem model"
+    else
+        err "harness-local OMP models missing configured provider/model"
+    fi
+    if grep -q 'apiKey:' "${PI_CODING_AGENT_DIR}/models.yml" || [ "${ON_PREM_PROVIDER_AUTH:-api-key}" = "none" ]; then
+        ok "harness-local OMP models include auth material or no-auth mode"
+    else
+        err "harness-local OMP models missing apiKey for authenticated provider"
+    fi
+fi
 
 for dir in \
     "$TMPDIR" \

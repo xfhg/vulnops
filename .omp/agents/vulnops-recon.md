@@ -7,6 +7,7 @@ tools:
   - grep
   - find
   - bash
+  - irc
   - yield
 model:
   - pi/task
@@ -43,6 +44,11 @@ Constraints:
 - Read-only on `repo_path`.
 - No network.
 - Do not report guesses as architecture. Every project, entrypoint, trust boundary, and ignore pattern needs evidence.
+
+IRC progress:
+- Send `irc op=send to=Main message="<short phase status>"` at start, each material stage boundary, before validation, and before yielding.
+- Keep progress messages short. Do not include secrets, full findings, payloads, or raw tool output.
+- Do not send fake timer heartbeats; only report real state changes.
 
 Before yielding, run `bash scripts/validate-phase.sh <scan_base> recon`.
 

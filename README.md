@@ -1,63 +1,65 @@
 # vulnops
 
-A self-contained, air-gapped security orchestration harness designed to execute automated repository audits without external network dependencies. 
+`vulnops` is a self-contained security audit harness for automated repository review in restricted and air-gapped environments.
 
-## Prerequisites
+The harness treats `target/` as read-only during audit runtime, writes deliverables under `scans/<repo-id>/`, and keeps tool homes, caches, temporary files, and agent state under `.harness/`. Audit runtime is offline except for the configured OpenAI-compatible LLM endpoint.
 
-| Requirement | Purpose | Install |
-|---|---|---|
-| **OMP** v15+ | Orchestrator | Auto-installed by `install-tools.sh` |
-| **LLM endpoint** | OpenAI-compatible (LMStudio, vLLM, Ollama, etc.) | Set `base_url` in `config.toml` |
-| **Python 3.11+** | Config parsing (`tomllib`) | Pre-installed on macOS |
-| **git** | Clone target repos | Xcode CLT or `brew install git` |
+## Requirements
 
-## Setup
+| Requirement | Purpose |
+|---|---|
+| Bash-compatible shell environment | Runs harness scripts and OMP orchestration |
+| Python 3.12+ | Configuration parsing, validators, Graphify environment, and offline setup |
+| Git | Target repository access and source metadata |
+| OpenAI-compatible LLM endpoint | Main audit orchestration and graph-guided analysis |
+
+Harness-managed tools are installed into `bins/` with `scripts/install-tools.sh`; do not install or rely on global copies for audit runtime.
+
+## Quick Start
+
+Prepare the harness:
 
 ```bash
-# 1. Install tools (wraith, poltergeist, OMP) to bins/
+cp config.toml.example config.toml
+vi config.toml
+
 bash scripts/install-tools.sh
-
-# 2. Download OSV vulnerability database (one-time)
 bash scripts/fetch-osv-db.sh
+bash scripts/validate-config.sh
 ```
 
-## Usage
+Prepare one target repository:
 
 ```bash
-# Clone a repo to audit
-bash scripts/clone-target.sh https://github.com/org/repo.git
-
-# Run the full pipeline
-bash run.sh "audit the target repo"
-
-# Or open OMP interactively
-bash run.sh
+mkdir -p target
+git clone https://github.com/org/repo.git target/repo
 ```
 
-OMP starts with `.omp/main/vulnops-main.md` appended to the main process system prompt. Main is the audit controller and spawns phase workers directly. The pipeline is: detect -> recon -> SCA + secrets + SAST lead (parallel) -> SAST threatmodel/decompose/deepdive/verify -> intelligence fusion -> triage -> LLM-backed targeted intrusion analysis -> final reconciliation -> report -> validation.
+Run the audit:
 
-### Depth
+```bash
+bash run.sh "audit the target repo"
+```
 
-Pass to `run-audit.sh` or `run.sh`:
+Check status without restarting phases:
 
-| Level | Time | Description |
-|---|---|---|
-| `quick` | ~5 min | High-confidence vectors only (default) |
-| `balanced` | ~15 min | Broader coverage |
-| `full` | ~30 min+ | Comprehensive scan |
+```bash
+bash scripts/audit-status.sh
+```
+
+Use `bash scripts/clone-target.sh <repo_url> [branch] [clone_dir]` only as a bootstrap convenience. Target cloning and dependency setup happen before audit runtime.
 
 ## Configuration
 
-`config.toml` is the single source of truth. Key sections:
+`config.toml` is the single source of truth. The required runtime settings are:
 
 ```toml
 [llm]
-base_url = "http://localhost:1234/v1"  # OpenAI-compatible endpoint
+base_url = "https://llm.example.local/v1"
 api_key = "..."
-model = "google/gemma-4-e4b"
+model = "provider/model"
 
 [graphify]
-# Empty values inherit [llm]. This is the default and preferred path.
 backend = ""
 base_url = ""
 api_key = ""
@@ -65,180 +67,151 @@ model = ""
 full_repo = false
 cluster_when = "cross_module_only"
 
-[graphify.max_scope_files]
-quick = 40
-balanced = 100
-full = 200
-
-[graphify.max_scopes]
-quick = 4
-balanced = 8
-full = 16
-
 [harness]
-default_depth = "quick"   # "quick" | "balanced" | "full"
-
-[output]
-format = "both"           # "markdown" | "json" | "both"
+default_depth = "quick" # quick | balanced | full
 ```
 
-Run `bash scripts/load-config.sh` to see exported env vars. Full options with descriptions are in `config.toml`.
+Empty `[graphify]` connection values inherit `[llm]`, which is the preferred default.
 
-Run `bash scripts/validate-config.sh` before audits to confirm the runtime is fully prepared, contained inside the harness repo, and able to reach the configured Graphify LLM. Graphify defaults to targeted scoped extraction derived from recon, deterministic tool evidence, intelligence cards, and triage; full-repo extraction is opt-in.
+Run `bash scripts/load-config.sh` to inspect the exported environment. Run `bash scripts/validate-config.sh` before audit runtime to verify tool installation, containment, OMP bootstrap state, OSV database availability, and Graphify LLM access.
 
-Run `bash scripts/audit-status.sh` for a read-only audit status check. If it reports the scan complete, answer once and stop; do not re-run phases or keep restating the same result.
+Graphify defaults to scoped extraction derived from repository context, deterministic tool evidence, intelligence cards, and triage. Full-repository extraction is opt-in.
 
-## Pipeline
+## Audit Workflow
 
-```
-User: "audit the target repo"
-       │
-       ▼
-  ┌──────────┐
-  │  Recon    │  Architecture, trust boundaries, security surfaces
-  └────┬─────┘
-       │
-  ┌────▼────────────────────────┐
-  │  Parallel Scans             │
-  │  ├── SCA (wraith + OSV db) │
-  │  ├── SAST lead            │
-  │  │   ├── threatmodel      │
-  │  │   ├── decompose        │
-  │  │   ├── deepdive chunks  │
-  │  │   └── verify findings  │
-  │  └── Secrets (poltergeist)  │
-  └────┬────────────────────────┘
-       │
-  ┌────▼────────────┐
-  │ Intelligence    │  Evidence corpus, attack map, graph hypotheses
-  └────┬────────────┘
-       │
-  ┌────▼────┐
-  │ Triage  │  Consolidated findings with risk scores
-  └────┬────┘
-       │
-  ┌────▼──────────┐
-  │ Intrusion     │  LLM-backed graph-guided deep discovery
-  └────┬──────────┘
-       │
-  ┌────▼──────────┐
-  │ Reconcile     │  Final normalized findings
-  └────┬──────────┘
-       │
-  ┌────▼────┐
-  │ Report  │  security-report.md + security-report.json
-  └─────────┘
-       │
-       ▼
-  validate-scan.sh
+The operator request is:
+
+```text
+audit the target repo
 ```
 
-SAST subagent fanout is bounded by depth:
+`run.sh` validates the prepared runtime, starts OMP with the project main prompt, and lets the main OMP process coordinate phase agents. The high-level pipeline is:
 
-| Depth | Deepdive concurrency | Verify concurrency |
-|---|---:|---:|
-| `quick` | 4 chunks | 4 findings |
-| `balanced` | 8 chunks | 8 findings |
-| `full` | 16 chunks | 12 findings |
+1. Detect the target repository and create `.harness/audit-context.json`.
+2. Build repository context and security-surface inventory.
+3. Run SCA, secrets, and SAST in parallel.
+4. Fuse evidence into intelligence artifacts and graph-guided hypotheses.
+5. Triage verified candidates into normalized findings.
+6. Run targeted intrusion analysis with scoped Graphify output.
+7. Reconcile final findings and generate reports.
+8. Validate scan integrity.
 
-Overflow work is queued in batches, not dropped.
+Depth controls SAST fanout and analysis breadth:
 
-## Scripts
+| Depth | Deepdive concurrency | Verify concurrency | Intended use |
+|---|---:|---:|---|
+| `quick` | 4 chunks | 4 findings | Fast, high-confidence review |
+| `balanced` | 8 chunks | 8 findings | Broader default review |
+| `full` | 16 chunks | 12 findings | Maximum coverage |
 
-| Script | Purpose |
+Operational doctrine, phase contracts, and worker-agent responsibilities are defined in `AGENTS.md`.
+
+## Outputs
+
+Each audit writes to:
+
+```text
+scans/<repo-id>/
+```
+
+Primary deliverables:
+
+| Path | Purpose |
 |---|---|
-| `run.sh [prompt]` | Entry point — loads config, runs OMP |
-| `install-tools.sh` | Download wraith, poltergeist, OMP to `bins/` |
-| `fetch-osv-db.sh` | Download OSV database for offline SCA |
-| `clone-target.sh <url> [branch]` | Clone a repo to `target/` for auditing |
-| `run-audit.sh [depth]` | Detect repo in `target/`, write audit context |
-| `jail.sh <command>` | Run a command with harness-local home/cache/temp paths |
-| `load-config.sh` | Export `config.toml` env vars |
-| `bootstrap-omp.sh` | Generate harness-local OMP config/model registry from `config.toml` |
-| `build-intelligence.py <repo> <scan>` | Build/finalize OODA intelligence artifacts after deterministic phases |
-| `validate-config.sh` | Confirm prepared audit runtime, containment, and Graphify LLM access |
-| `audit-status.sh [scan_base]` | Read-only audit status without restarting phases |
-| `validate-phase.sh <scan_base> <phase>` | Validate one phase or SAST subphase checkpoint |
-| `wait-phase.sh <scan_base> <phase> [seconds]` | Wait deterministically for a phase, then validate it |
-| `validate-scan.sh <scan_base>` | Validate manifests, findings, report counts, and redaction |
-| `cleanup.sh [all\|target\|work\|logs]` | Clean ephemeral state |
-| `offline-pack.sh [options]` | Build self-contained offline tar.gz and 45 MiB Git chunks for airgapped Linux AMD64 deployment |
-| `offline-build.sh [--force]` | Rebuild the offline tar.gz from committed `offline/` chunks |
+| `report/security-report.md` | Human-readable final report |
+| `report/security-report.json` | Machine-readable final report and metrics |
+| `final-reconciliation/findings.json` | Source of truth for final normalized findings |
+| `triage/findings.json` | Deduplicated candidates before final reconciliation |
+| `intelligence/` | Evidence corpus, attack-surface map, hypotheses, coverage gaps |
+| `sast/`, `sca/`, `secrets/`, `intrusion/` | Phase artifacts and manifests |
+
+Every completed scan should pass:
+
+```bash
+bash scripts/validate-scan.sh scans/<repo-id>
+```
 
 ## Offline / Airgapped Deployment
 
-For datacenter nodes with no internet, build a single tar.gz on a Linux AMD64 machine that has connectivity. The build also writes 45 MiB chunks under `offline/` so the offline pack can be pushed through Git while the large tarball stays ignored.
-
-**Build machine** (Linux x86_64 with internet):
+Build the offline pack on a Linux AMD64 machine with network access:
 
 ```bash
 bash scripts/offline-pack.sh
-# Produces: vulnops-offline-<timestamp>.tar.gz (~500 MB, ignored by git)
-# Produces: offline/vulnops-offline-<timestamp>.tar.gz.part-* and offline/offline-pack-chunks.json
+```
 
+The build produces:
+
+| Artifact | Git policy |
+|---|---|
+| `vulnops-offline-<timestamp>.tar.gz` | Ignored; do not commit |
+| `offline/vulnops-offline-<timestamp>.tar.gz.part-*` | Commit for Git transport |
+| `offline/offline-pack-chunks.json` | Commit with the chunks |
+
+Commit the chunk set:
+
+```bash
 git add offline/ offline-build.sh
 git commit -m "Update offline pack chunks"
 ```
 
-The default pack contains harness source, locked Linux AMD64 binaries (omp, wraith, poltergeist, osv-scanner), the full OSV database, Python wheels for graphifyy + tree-sitter parsers, an audit manifest, and a `setup.sh` that the target runs once. It does not include live credentials by default: `config.toml.example` is packaged as `config.toml`. Each pack build replaces the previous `offline/` chunk set.
-
-Useful options:
-
-```bash
-bash scripts/offline-pack.sh --output /tmp/vulnops-pack.tar.gz
-bash scripts/offline-pack.sh --force --output /tmp/vulnops-pack.tar.gz
-bash scripts/offline-pack.sh --include-config        # explicitly include local config.toml
-bash scripts/offline-pack.sh --refresh-lock          # intentionally refresh locked versions
-```
-
-**Airgapped target** (Linux x86_64, Python 3.12, bash 4+, git):
+On the target side, rebuild and extract the tarball:
 
 ```bash
 bash offline-build.sh
-# Rebuilds: ./vulnops-offline-<timestamp>.tar.gz
 
 mkdir -p /opt/vulnops
 tar -xzf vulnops-offline-*.tar.gz -C /opt/vulnops
 cd /opt/vulnops
-# Edit config.toml with your on-prem LLM endpoint and API key
-bash setup.sh        # creates venv, seeds OMP config, validates readiness
-bash run.sh "audit the target repo"
+vi config.toml
+bash setup.sh
 ```
 
-`setup.sh` refuses to continue while the packaged redacted config still has empty `[llm]` fields. After setup, the pipeline runs identically to online — zero network access required except the configured LLM endpoint. The bundled Python wheels are cp312-specific, so the target must have Python 3.12. The `wheels/` directory can be deleted after setup if disk space is tight.
+`offline-build.sh` verifies every chunk and the reconstructed tarball SHA256 before writing the final archive. `scripts/offline-pack.sh` excludes live `config.toml` by default and packages `config.toml.example` as `config.toml`; use `--include-config` only when intentionally packaging live credentials.
 
-## Directory Structure
+Each offline pack build replaces the previous `offline/` chunk set.
 
-```
+## Script Reference
+
+| Script | Operator use |
+|---|---|
+| `run.sh [prompt]` | Validate runtime and start OMP |
+| `scripts/install-tools.sh` | Install harness tools into `bins/` |
+| `scripts/fetch-osv-db.sh` | Fetch the OSV database for offline SCA |
+| `scripts/clone-target.sh <url> [branch] [dir]` | Optional pre-runtime target clone helper |
+| `scripts/run-audit.sh [depth]` | Detect target and create audit context |
+| `scripts/audit-status.sh [scan_base]` | Read-only scan status |
+| `scripts/validate-config.sh` | Validate prepared runtime |
+| `scripts/validate-phase.sh <scan_base> <phase>` | Validate a phase checkpoint |
+| `scripts/validate-scan.sh <scan_base>` | Validate final scan artifacts |
+| `scripts/offline-pack.sh [options]` | Build tarball and Git-friendly chunks |
+| `offline-build.sh [--force]` | Rebuild tarball from `offline/` chunks |
+| `scripts/cleanup.sh [all|target|work|logs]` | Remove selected ephemeral state |
+
+## Repository Layout
+
+```text
 vulnops/
-├── config.toml              # Single source of truth
-├── AGENTS.md                # OMP pipeline instructions
-├── .omp/
-│   ├── main/                # Main-process OMP controller prompt
-│   ├── agents/              # Project-local OMP audit agents
-│   ├── skills/              # Reusable audit skills and security lenses
-│   └── config.yml           # Project OMP provider/tool policy
-├── .harness/home/.omp/agent/
-│   ├── config.yml           # Generated OMP onboarding/model role config
-│   └── models.yml           # Generated on-prem provider model mapping
-├── run.sh                   # Entry point
-├── config/
-│   ├── scan-criteria.yaml   # SAST severity thresholds
-│   └── agents/              # Compatibility prompt files used by OMP agents
-├── scripts/                 # Harness scripts
-├── bins/                    # Installed tool binaries (wraith, poltergeist, omp)
-├── target/                  # Cloned repos (gitignored; read-only by policy)
-├── schemas/                 # Scan artifact schemas
-├── scans/                   # Audit deliverables
-└── work/                    # Ephemeral workspace (gitignored)
+├── AGENTS.md              # Audit orchestration doctrine
+├── config.toml.example    # Configuration template
+├── config/                # Agent prompts, lock files, and scan criteria
+├── .omp/                  # Main prompt, phase agents, and audit skills
+├── scripts/               # Harness operations and validation scripts
+├── schemas/               # Structured artifact schemas
+├── target/                # One target repository, prepared before audit runtime
+├── scans/                 # Audit deliverables
+├── offline/               # Committable offline pack chunks
+├── bins/                  # Harness-managed tool binaries
+└── .harness/              # Runtime home, cache, temp, logs, and generated OMP config
 ```
 
 ## Cleanup
 
 ```bash
-bash scripts/cleanup.sh all       # Clean everything except scans/
-bash scripts/cleanup.sh target    # Just the cloned repo
-bash scripts/cleanup.sh work      # Just the ephemeral workspace
+bash scripts/cleanup.sh all
+bash scripts/cleanup.sh target
+bash scripts/cleanup.sh work
+bash scripts/cleanup.sh logs
+bash scripts/cleanup.sh --full
 ```
 
-Scan results in `scans/` are preserved — they are the deliverables.
+`all` preserves scan deliverables. Use `--full` only when intentionally removing `scans/`.

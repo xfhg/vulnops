@@ -1,0 +1,45 @@
+{
+  "chunk_size_bytes": 47185920,
+  "chunk_size_label": "45MiB",
+  "chunks": [
+    {
+      "file": "vulnops-offline-20260617-073015.tar.gz.part-aa",
+      "sha256": "9e7f4cde62e26a49eacba94464c651ba4fa43d287176a0b23acefa312d39d568",
+      "size": 47185920
+    },
+    {
+      "file": "vulnops-offline-20260617-073015.tar.gz.part-ab",
+      "sha256": "c9d11c99de95efc701e9610424e70fb82b225597768cbd8f34ad29f3fb63ddcb",
+      "size": 47185920
+    },
+    {
+      "file": "vulnops-offline-20260617-073015.tar.gz.part-ac",
+      "sha256": "51ff45c670b43219e8288fbec32e1b3018827f15a9d730c1e5bc912fc0847b1c",
+      "size": 47185920
+    },
+    {
+      "file": "vulnops-offline-20260617-073015.tar.gz.part-ad",
+      "sha256": "ec4856f1e4c789881240f83850732f0ee1f52e28d02e6895af2b14b9e1aa0071",
+      "size": 47185920
+    },
+    {
+      "file": "vulnops-offline-20260617-073015.tar.gz.part-ae",
+      "sha256": "3dff5aab967965dbb9eb28a0aaf69f1c901e711307e823c64b3149d66aedb585",
+      "size": 47185920
+    },
+    {
+      "file": "vulnops-offline-20260617-073015.tar.gz.part-af",
+      "sha256": "f2920aa7834647d7a755c7b199505313d1366804c2503f158032f5f18b149df1",
+      "size": 47185920
+    },
+    {
+      "file": "vulnops-offline-20260617-073015.tar.gz.part-ag",
+      "sha256": "00b5f98e50aaee7dbee7a7bda94d3871186f5b98b624d7027ee899d2e115779c",
+      "size": 37576777
+    }
+  ],
+  "schema": "vulnops.offline-pack-chunks.v1",
+  "tar_name": "vulnops-offline-20260617-073015.tar.gz",
+  "tar_sha256": "367c912b91c772f433980f4d04d94218c251261e69581eb91922a74ca2da64d0",
+  "tar_size": 320692297
+}

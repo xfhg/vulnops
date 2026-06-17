@@ -162,20 +162,25 @@ Overflow work is queued in batches, not dropped.
 | `wait-phase.sh <scan_base> <phase> [seconds]` | Wait deterministically for a phase, then validate it |
 | `validate-scan.sh <scan_base>` | Validate manifests, findings, report counts, and redaction |
 | `cleanup.sh [all\|target\|work\|logs]` | Clean ephemeral state |
-| `offline-pack.sh [options]` | Build self-contained offline tar.gz for airgapped Linux AMD64 deployment |
+| `offline-pack.sh [options]` | Build self-contained offline tar.gz and 45 MiB Git chunks for airgapped Linux AMD64 deployment |
+| `offline-build.sh [--force]` | Rebuild the offline tar.gz from committed `offline/` chunks |
 
 ## Offline / Airgapped Deployment
 
-For datacenter nodes with no internet, build a single tar.gz on a Linux AMD64 machine that has connectivity, then transfer it to the airgapped target.
+For datacenter nodes with no internet, build a single tar.gz on a Linux AMD64 machine that has connectivity. The build also writes 45 MiB chunks under `offline/` so the offline pack can be pushed through Git while the large tarball stays ignored.
 
 **Build machine** (Linux x86_64 with internet):
 
 ```bash
 bash scripts/offline-pack.sh
-# Produces: vulnops-offline-<timestamp>.tar.gz (~500 MB)
+# Produces: vulnops-offline-<timestamp>.tar.gz (~500 MB, ignored by git)
+# Produces: offline/vulnops-offline-<timestamp>.tar.gz.part-* and offline/offline-pack-chunks.json
+
+git add offline/ offline-build.sh
+git commit -m "Update offline pack chunks"
 ```
 
-The default pack contains harness source, locked Linux AMD64 binaries (omp, wraith, poltergeist, osv-scanner), the full OSV database, Python wheels for graphifyy + tree-sitter parsers, an audit manifest, and a `setup.sh` that the target runs once. It does not include live credentials by default: `config.toml.example` is packaged as `config.toml`.
+The default pack contains harness source, locked Linux AMD64 binaries (omp, wraith, poltergeist, osv-scanner), the full OSV database, Python wheels for graphifyy + tree-sitter parsers, an audit manifest, and a `setup.sh` that the target runs once. It does not include live credentials by default: `config.toml.example` is packaged as `config.toml`. Each pack build replaces the previous `offline/` chunk set.
 
 Useful options:
 
@@ -189,6 +194,9 @@ bash scripts/offline-pack.sh --refresh-lock          # intentionally refresh loc
 **Airgapped target** (Linux x86_64, Python 3.12, bash 4+, git):
 
 ```bash
+bash offline-build.sh
+# Rebuilds: ./vulnops-offline-<timestamp>.tar.gz
+
 mkdir -p /opt/vulnops
 tar -xzf vulnops-offline-*.tar.gz -C /opt/vulnops
 cd /opt/vulnops

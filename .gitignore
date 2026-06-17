@@ -47,3 +47,8 @@ config.toml
 
 # Offline pack output (large tarball — ~500 MB, never commit)
 vulnops-offline-*.tar.gz
+
+# Offline pack chunks are intentionally committed for Git transport
+!offline/
+!offline/offline-pack-chunks.json
+!offline/*.part-*

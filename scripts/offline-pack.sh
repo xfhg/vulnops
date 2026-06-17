@@ -6,6 +6,9 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 HARNESS_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 LOCK_FILE="${HARNESS_ROOT}/config/offline-pack.lock"
+OFFLINE_DIR="${HARNESS_ROOT}/offline"
+CHUNK_SIZE_BYTES=$((45 * 1024 * 1024))
+CHUNK_SIZE_LABEL="45MiB"
 
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -22,6 +25,7 @@ usage() {
 Usage: $0 [options]
 
 Build a self-contained offline bundle for airgapped Linux AMD64 deployment.
+Also writes 45MiB Git-friendly chunks under ./offline/.
 
 Options:
   --output <path>        Output tar.gz path
@@ -34,6 +38,8 @@ Options:
 
 Default output:
   ./vulnops-offline-<timestamp>.tar.gz
+  ./offline/<tar-name>.part-aa, ./offline/<tar-name>.part-ab, ...
+  ./offline/offline-pack-chunks.json
 
 Default security posture:
   config.toml.example is packaged as config.toml. Live config.toml is included
@@ -216,6 +222,69 @@ manifest = {
 PY
 }
 
+write_chunk_manifest() {
+    python3 - "$OUTPUT" "$OFFLINE_DIR" "$CHUNK_SIZE_BYTES" "$CHUNK_SIZE_LABEL" <<'PY'
+import hashlib
+import json
+import string
+import sys
+from pathlib import Path
+
+tar_path = Path(sys.argv[1])
+offline_dir = Path(sys.argv[2])
+chunk_size = int(sys.argv[3])
+chunk_size_label = sys.argv[4]
+
+alphabet = string.ascii_lowercase
+
+def sha(path: Path) -> str:
+    h = hashlib.sha256()
+    with path.open("rb") as f:
+        for chunk in iter(lambda: f.read(1024 * 1024), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+def suffix(index: int) -> str:
+    if index >= len(alphabet) * len(alphabet):
+        raise SystemExit("too many chunks for two-letter suffixes")
+    return alphabet[index // len(alphabet)] + alphabet[index % len(alphabet)]
+
+tar_name = tar_path.name
+chunks = []
+with tar_path.open("rb") as src:
+    index = 0
+    while True:
+        data = src.read(chunk_size)
+        if not data:
+            break
+        chunk_name = f"{tar_name}.part-{suffix(index)}"
+        chunk_path = offline_dir / chunk_name
+        chunk_path.write_bytes(data)
+        chunks.append(
+            {
+                "file": chunk_name,
+                "size": len(data),
+                "sha256": hashlib.sha256(data).hexdigest(),
+            }
+        )
+        index += 1
+
+manifest = {
+    "schema": "vulnops.offline-pack-chunks.v1",
+    "tar_name": tar_name,
+    "tar_size": tar_path.stat().st_size,
+    "tar_sha256": sha(tar_path),
+    "chunk_size_bytes": chunk_size,
+    "chunk_size_label": chunk_size_label,
+    "chunks": chunks,
+}
+(offline_dir / "offline-pack-chunks.json").write_text(
+    json.dumps(manifest, indent=2, sort_keys=True) + "\n"
+)
+print(len(chunks))
+PY
+}
+
 # ── Parse arguments ──────────────────────────────────────────────────────
 
 OUTPUT=""
@@ -249,6 +318,11 @@ fi
 
 mkdir -p "$(dirname "$OUTPUT")"
 OUTPUT="$(cd "$(dirname "$OUTPUT")" && pwd)/$(basename "$OUTPUT")"
+case "$OUTPUT" in
+    "$OFFLINE_DIR"|"$OFFLINE_DIR"/*)
+        die "--output must not be inside $OFFLINE_DIR because that directory is replaced with chunk files"
+        ;;
+esac
 if [ -e "$OUTPUT" ] && [ "$FORCE" != true ]; then
     die "Output already exists: $OUTPUT (use --force to overwrite)"
 fi
@@ -485,18 +559,40 @@ tar -czf "$OUTPUT" -C "$STAGING" .
 pack_size="$(du -sh "$OUTPUT" | awk '{print $1}')"
 pack_sha="$(sha256_file "$OUTPUT")"
 
+# ── Step 8: Split pack for Git transport ─────────────────────────────────
+
+log "Writing ${CHUNK_SIZE_LABEL} chunks to offline/..."
+rm -rf "$OFFLINE_DIR"
+mkdir -p "$OFFLINE_DIR"
+chunk_count="$(write_chunk_manifest)"
+chunks_manifest="${OFFLINE_DIR}/offline-pack-chunks.json"
+chunks_manifest_sha="$(sha256_file "$chunks_manifest")"
+log "  Chunks: ${chunk_count}"
+log "  Manifest: ${chunks_manifest}"
+log "  Manifest SHA256: ${chunks_manifest_sha}"
+
 echo ""
 log "Created: $OUTPUT"
 log "Size: $pack_size"
 log "SHA256: $pack_sha"
+log "Chunks: $OFFLINE_DIR (${chunk_count} files, ${CHUNK_SIZE_LABEL} each except final)"
 echo ""
 echo "  Manifest:"
 echo "    File:          offline-pack-manifest.json"
 echo "    SHA256:        $manifest_sha"
+echo "    Chunks:        offline/offline-pack-chunks.json"
+echo "    Chunks SHA256: $chunks_manifest_sha"
 echo "    Binaries:      omp, wraith, poltergeist, osv-scanner (linux_amd64)"
 echo "    OSV database:  ${db_file_count} files, $((db_size_kb / 1024)) MB"
 echo "    Python wheels: ${wheel_count} packages (graphifyy ${ACTUAL_GRAPHIFYY_VERSION})"
 echo "    Config:        $([ "$INCLUDE_CONFIG" = true ] && echo 'live config.toml included' || echo 'redacted config.toml template')"
+echo ""
+echo "  Git transport:"
+echo "    git add offline/ offline-build.sh"
+echo "    git commit -m \"Update offline pack chunks\""
+echo ""
+echo "  Rebuild tarball from chunks:"
+echo "    bash offline-build.sh"
 echo ""
 echo "  Airgapped deployment:"
 echo "    mkdir -p /opt/vulnops"

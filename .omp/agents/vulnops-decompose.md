@@ -31,14 +31,19 @@ output:
 
 Create a risk-ranked SAST task manifest from repository context and threat model.
 
+Path contract:
+- Read `.harness/audit-context.json` first.
+- Use `paths.repo_context_json`, `paths.sast_threat_model`, `paths.sast_task_manifest`, and `paths.sast_decompose_md`.
+- Never read or write bare relative paths like `repo-context/...` or `sast/...`.
+
 Inputs:
-- `repo-context/repo-context.json`
-- `sast/threat-model.json`
+- `paths.repo_context_json`
+- `paths.sast_threat_model`
 - `config/scan-criteria.yaml`
 
 Write:
-- `sast/task-manifest.json`
-- `sast/decompose.md`
+- `paths.sast_task_manifest`
+- `paths.sast_decompose_md`
 
 Each chunk must include id, risk_rank, size, files, focus_entry_points, hypothesis, threat_id, lenses, related_advisories, and evidence_refs.
 

@@ -31,6 +31,8 @@ output:
 
 Follow `config/agents/reconcile.md`.
 
+Preserve intelligence provenance from `intelligence/investigation-cards.json`; do not upgrade or downgrade from intelligence alone unless intrusion or triage supplied evidence refs.
+
 Before reading intrusion enrichment, confirm the main process already received a terminal `vulnops-intrusion` yield, then run `bash scripts/validate-phase.sh <scan_base> intrusion`. Do not reconcile against partial intrusion output.
 
 Read:

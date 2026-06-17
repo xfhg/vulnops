@@ -64,12 +64,29 @@ scans:
     # Extra poltergeist flags
     extra_flags: []
 
-  # Intrusion-specific settings (Phase 5 — graph-guided deep analysis)
+  # Intelligence Fusion runs after deterministic scans and before triage.
+  intelligence:
+    # Uses the same Graphify controls as intrusion: scoped, LLM-backed, no AST-only fallback.
+    optional: false
+
+  # Intrusion-specific settings (graph-guided deep analysis after triage)
   intrusion:
-    # Graphify backend: ollama (for on-prem) or omit for AST-only
-    backend: ollama
-    # Skip if graphify not installed (non-gate)
-    optional: true
+    # Empty backend means harness-generated OpenAI-compatible provider using [llm].
+    # Use ollama only for a real local Ollama endpoint.
+    backend: ""
+    # Targeted OODA mode is the default. Full-repo graph extraction is opt-in.
+    full_repo: false
+    max_scope_files:
+      quick: 40
+      balanced: 100
+      full: 200
+    max_scopes:
+      quick: 4
+      balanced: 8
+      full: 16
+    cluster_when: cross_module_only
+    # LLM-backed graphify is required; AST-only intrusion output is invalid.
+    optional: false
 
 # Output configuration
 output:

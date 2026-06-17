@@ -26,11 +26,14 @@ These are provided in your assignment:
 Read these files:
 1. `<repo_context>` — repository architecture and security surface
 2. `<scan_base>/final-reconciliation/findings.json` — final normalized finding list and source of truth
-3. `<scan_base>/triage/consolidated.md` — deduplicated findings for context only
-4. `<scan_base>/sca/summary.md` — SCA scan summary
-5. `<scan_base>/sast/summary.md` — SAST scan summary
-6. `<scan_base>/secrets/summary.md` — Secrets scan summary
-7. `<scan_base>/intrusion/enrichment.json` — graph enrichment context, if present
+3. `<scan_base>/intelligence/investigation-cards.json` — open hypotheses, graph intelligence, and coverage-gap context
+4. `<scan_base>/intelligence/coverage-gaps.json` — surfaces not fully resolved
+5. `<scan_base>/intelligence/rule-gaps.json` — detection improvements
+6. `<scan_base>/triage/consolidated.md` — deduplicated findings for context only
+7. `<scan_base>/sca/summary.md` — SCA scan summary
+8. `<scan_base>/sast/summary.md` — SAST scan summary
+9. `<scan_base>/secrets/summary.md` — Secrets scan summary
+10. `<scan_base>/intrusion/enrichment.json` — graph enrichment context, if present
 
 Do not calculate final counts from Markdown. Counts, statuses, severities, and confidence values must come from `final-reconciliation/findings.json`.
 
@@ -174,6 +177,16 @@ was not modified during scanning. Findings are based on:
 
 ---
 
+## Coverage and Open Questions
+
+Summarize unresolved intelligence without promoting it to a verified finding:
+- open coverage gaps from `intelligence/coverage-gaps.json`
+- deferred or unresolved investigation cards
+- Graphify scopes that were optional, skipped, or inconclusive
+- rule gaps that should become future guardrails
+
+---
+
 ## Appendix
 
 ### Files Scanned
@@ -225,6 +238,11 @@ Create `<output_dir>/security-report.json`:
     "sca": {"lockfiles": <N>, "vulnerabilities": <N>},
     "sast": {"files": <N>, "findings": <N>},
     "secrets": {"candidates": <N>, "confirmed": <N>}
+  },
+  "intelligence": {
+    "open_coverage_gaps": <N>,
+    "open_investigation_cards": <N>,
+    "rule_gaps": <N>
   }
 }
 ```

@@ -78,16 +78,29 @@ required_paths() {
                 "${SCAN_BASE}/sast/summary.md" \
                 "${SCAN_BASE}/sast/phase-manifest.json"
             ;;
+        intelligence)
+            printf '%s\n' \
+                "${SCAN_BASE}/intelligence/evidence-corpus.json" \
+                "${SCAN_BASE}/intelligence/attack-surface-map.json" \
+                "${SCAN_BASE}/intelligence/graphify-intel-plan.json" \
+                "${SCAN_BASE}/intelligence/investigation-cards.json" \
+                "${SCAN_BASE}/intelligence/coverage-gaps.json" \
+                "${SCAN_BASE}/intelligence/rule-gaps.json" \
+                "${SCAN_BASE}/intelligence/summary.md" \
+                "${SCAN_BASE}/intelligence/phase-manifest.json"
+            ;;
         triage)
             printf '%s\n' \
                 "${SCAN_BASE}/triage/consolidated.md" \
                 "${SCAN_BASE}/triage/findings.json" \
+                "${SCAN_BASE}/triage/intrusion-seeds.json" \
                 "${SCAN_BASE}/triage/phase-manifest.json"
             ;;
         intrusion)
             printf '%s\n' \
                 "${SCAN_BASE}/intrusion/summary.md" \
                 "${SCAN_BASE}/intrusion/enrichment.json" \
+                "${SCAN_BASE}/intrusion/graphify-plan.json" \
                 "${SCAN_BASE}/intrusion/phase-manifest.json"
             ;;
         final-reconciliation)
@@ -125,14 +138,16 @@ from pathlib import Path
 scan = Path(sys.argv[1])
 manifest_path = scan / "intrusion" / "phase-manifest.json"
 enrichment_path = scan / "intrusion" / "enrichment.json"
-if not manifest_path.is_file() or not enrichment_path.is_file():
+plan_path = scan / "intrusion" / "graphify-plan.json"
+if not manifest_path.is_file() or not enrichment_path.is_file() or not plan_path.is_file():
     sys.exit(1)
 try:
     manifest = json.loads(manifest_path.read_text())
     json.loads(enrichment_path.read_text())
+    plan = json.loads(plan_path.read_text())
 except Exception:
     sys.exit(1)
-sys.exit(0 if manifest.get("status") in {"ok", "degraded", "skipped", "failed"} else 1)
+sys.exit(0 if manifest.get("status") == "ok" and plan.get("mode") == "targeted-ooda" else 1)
 PY
 }
 

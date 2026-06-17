@@ -1,0 +1,17 @@
+# offline-pack.lock — exact versions used by scripts/offline-pack.sh
+# Refresh intentionally with: bash scripts/offline-pack.sh --refresh-lock
+
+OFFLINE_PACK_PLATFORM=linux_amd64
+OFFLINE_PACK_PYTHON_VERSION=3.12
+OFFLINE_PACK_PYTHON_TAG=cp312
+OFFLINE_PACK_WHEEL_PLATFORM=manylinux2014_x86_64
+
+WRAITH_VERSION=v2.0.2
+POLTERGEIST_VERSION=v2.0.5
+OMP_VERSION=v16.0.3
+OSV_SCANNER_VERSION=v2.3.8
+GRAPHIFYY_VERSION=0.8.39
+
+MIN_OSV_DB_FILES=3
+MIN_OSV_DB_SIZE_KB=51200
+MIN_WHEEL_COUNT=31

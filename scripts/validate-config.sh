@@ -50,6 +50,22 @@ check_nonempty_dir() {
     fi
 }
 
+check_python_import() {
+    local module="$1"
+    local label="$2"
+    if "${HARNESS_ROOT}/.venv/bin/python" - "$module" <<'PY' >/dev/null 2>&1
+import importlib
+import sys
+
+importlib.import_module(sys.argv[1])
+PY
+    then
+        ok "$label"
+    else
+        err "$label missing; install Graphify with: ${HARNESS_ROOT}/.venv/bin/pip install 'graphifyy[openai]'"
+    fi
+}
+
 check_osv_db() {
     local path="$1"
     local count size
@@ -78,11 +94,112 @@ check_env_path_inside() {
     esac
 }
 
+check_graphify_llm_preflight() {
+    local log_path="${HARNESS_ROOT}/.harness/logs/graphify-llm-preflight.log"
+    mkdir -p "$(dirname "$log_path")"
+
+    if [ -z "${GRAPHIFY_BASE_URL:-}" ]; then
+        err "Graphify LLM base URL is empty; set llm.base_url or graphify.base_url"
+        return
+    fi
+    if [ -z "${GRAPHIFY_MODEL:-}" ]; then
+        err "Graphify LLM model is empty; set llm.model or graphify.model"
+        return
+    fi
+    if [ -z "${VULNOPS_GRAPHIFY_API_KEY:-}" ]; then
+        err "Graphify LLM API key is empty; set llm.api_key or graphify.api_key"
+        return
+    fi
+
+    if [ "${GRAPHIFY_BACKEND:-}" = "ollama" ]; then
+        if ! "${HARNESS_ROOT}/.venv/bin/python" - "${GRAPHIFY_BASE_URL}" <<'PY'
+import sys
+from urllib.parse import urlparse
+
+host = (urlparse(sys.argv[1]).hostname or "").lower()
+if host in ("localhost", "127.0.0.1", "::1") or host.startswith("127."):
+    sys.exit(0)
+sys.exit(1)
+PY
+        then
+            err "graphify.backend=ollama is only valid for a real local Ollama endpoint; use backend=\"\" for the harness OpenAI-compatible provider"
+            return
+        fi
+    fi
+
+    if "${HARNESS_ROOT}/.venv/bin/python" - "$log_path" <<'PY'
+import json
+import os
+import sys
+import urllib.error
+import urllib.request
+
+log_path = sys.argv[1]
+base_url = os.environ["GRAPHIFY_BASE_URL"].rstrip("/")
+model = os.environ["GRAPHIFY_MODEL"]
+api_key = os.environ.get("VULNOPS_GRAPHIFY_API_KEY", "")
+auth = os.environ.get("GRAPHIFY_PROVIDER_AUTH", "api-key")
+url = f"{base_url}/chat/completions"
+payload = json.dumps(
+    {
+        "model": model,
+        "messages": [{"role": "user", "content": "Reply with OK."}],
+    }
+).encode("utf-8")
+headers = {"Content-Type": "application/json"}
+if auth != "none":
+    headers["Authorization"] = f"Bearer {api_key}"
+request = urllib.request.Request(url, data=payload, headers=headers, method="POST")
+
+def sanitize(text: str) -> str:
+    for value in (api_key, os.environ.get("ON_PREM_API_KEY", "")):
+        if value:
+            text = text.replace(value, "<redacted>")
+    return text
+
+try:
+    with urllib.request.urlopen(request, timeout=30) as response:
+        body = response.read(2_000_000)
+except urllib.error.HTTPError as exc:
+    body = exc.read(4000).decode("utf-8", errors="replace")
+    with open(log_path, "w", encoding="utf-8") as log:
+        log.write(sanitize(f"HTTP {exc.code} from {url}\n{body}\n"))
+    sys.exit(1)
+except Exception as exc:
+    with open(log_path, "w", encoding="utf-8") as log:
+        log.write(sanitize(f"{type(exc).__name__}: {exc}\n"))
+    sys.exit(1)
+
+try:
+    data = json.loads(body.decode("utf-8"))
+except Exception as exc:
+    with open(log_path, "w", encoding="utf-8") as log:
+        log.write(f"Invalid JSON response from {url}: {exc}\n")
+    sys.exit(1)
+
+choices = data.get("choices")
+if not isinstance(choices, list) or not choices:
+    with open(log_path, "w", encoding="utf-8") as log:
+        log.write(f"Response from {url} missing non-empty choices array\n")
+    sys.exit(1)
+
+with open(log_path, "w", encoding="utf-8") as log:
+    log.write(f"Graphify LLM preflight OK: {base_url} model={model}\n")
+PY
+    then
+        ok "Graphify LLM preflight (${GRAPHIFY_BACKEND:-unset}/${GRAPHIFY_MODEL})"
+    else
+        err "Graphify LLM preflight failed; see sanitized log: ${log_path}"
+    fi
+}
+
 harness_setup_containment "$HARNESS_ROOT"
 
 check_file "${HARNESS_ROOT}/config.toml" "config.toml"
 check_file "${HARNESS_ROOT}/scripts/load-config.sh" "load-config script"
 check_exec "${HARNESS_ROOT}/scripts/bootstrap-omp.sh" "OMP bootstrap script"
+check_exec "${HARNESS_ROOT}/scripts/audit-status.sh" "audit status script"
+check_exec "${HARNESS_ROOT}/scripts/build-intelligence.py" "intelligence builder script"
 check_exec "${HARNESS_ROOT}/scripts/validate-phase.sh" "phase validation script"
 check_exec "${HARNESS_ROOT}/scripts/wait-phase.sh" "phase wait script"
 
@@ -100,6 +217,16 @@ else
     err "llm.model is empty"
 fi
 
+if [ "${GRAPHIFY_BACKEND:-}" = "${GRAPHIFY_PROVIDER_NAME:-vulnops-onprem}" ] &&
+    [ "${GRAPHIFY_BASE_URL:-}" = "${ON_PREM_LLM_BASE_URL:-}" ] &&
+    [ "${GRAPHIFY_MODEL:-}" = "${ON_PREM_MODEL_NAME:-}" ]; then
+    ok "Graphify inherits OMP LLM endpoint/model"
+elif [ -n "${GRAPHIFY_BACKEND:-}" ] && [ -n "${GRAPHIFY_BASE_URL:-}" ] && [ -n "${GRAPHIFY_MODEL:-}" ]; then
+    ok "Graphify LLM override configured"
+else
+    err "Graphify LLM configuration incomplete"
+fi
+
 OMP_PROVIDER_NAME="${ON_PREM_PROVIDER_NAME:-on-prem}"
 OMP_MODEL_SELECTOR="${OMP_PROVIDER_NAME}/${ON_PREM_MODEL_NAME:-}"
 
@@ -109,10 +236,13 @@ check_exec "${HARNESS_ROOT}/bins/poltergeist" "Poltergeist binary"
 check_exec "${HARNESS_ROOT}/bins/osv-scanner" "OSV scanner binary"
 check_exec "${HARNESS_ROOT}/.venv/bin/graphify" "Graphify CLI"
 check_exec "${HARNESS_ROOT}/.venv/bin/python" "Harness Python"
+check_python_import openai "Graphify OpenAI-compatible backend dependency"
+
+check_graphify_llm_preflight
 
 check_osv_db "${HARNESS_ROOT}/.harness/osv-db"
 
-for agent in recon sca sast secrets triage intrusion reconcile reporter; do
+for agent in recon sca sast secrets intelligence triage intrusion reconcile reporter; do
     check_file "${HARNESS_ROOT}/config/agents/${agent}.md" "agent prompt: ${agent}"
 done
 
@@ -133,6 +263,7 @@ for agent in \
     vulnops-decompose \
     vulnops-deepdive-chunk \
     vulnops-verify-one \
+    vulnops-intelligence \
     vulnops-triage \
     vulnops-intrusion \
     vulnops-reconcile \
@@ -190,6 +321,14 @@ if grep -R -n -E 'sleep[[:space:]]+[0-9]|find[[:space:]].*scans|ls[[:space:]].*s
     sed 's/^/[validate-config]   /' "$main_polling_report" >&2
 else
     ok "Main/docs avoid Bash polling orchestration patterns"
+fi
+
+history_uri_report="${TMPDIR}/vulnops-history-uri.txt"
+if grep -R -n -E 'agent://|history://' "${HARNESS_ROOT}/.omp/main" >"$history_uri_report" 2>/dev/null; then
+    err "Main prompt must not use agent:// or history:// transcript URIs; use OMP yield, IRC, and validation artifacts"
+    sed 's/^/[validate-config]   /' "$history_uri_report" >&2
+else
+    ok "Main prompt avoids transcript URI tool-call hazards"
 fi
 
 check_file "${HARNESS_ROOT}/schemas/phase-manifest.schema.json" "phase manifest schema"

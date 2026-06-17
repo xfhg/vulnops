@@ -29,7 +29,9 @@ output:
         type: string
 ---
 
-Follow `config/agents/triage.md`, with one override: SAST input comes from `sast/verified-findings.json`, not raw SAST files.
+Follow `config/agents/triage.md`, with one override: SAST input comes from `.harness/audit-context.json` `paths.sast_verified_findings`, not raw SAST files.
+
+Read `intelligence/investigation-cards.json` and preserve intelligence provenance in `raw_refs`, `intelligence_refs`, `new_hypotheses`, and intrusion seeds. Do not let deferred intelligence cards disappear.
 
 Read SCA, secrets, and verified SAST outputs. Deduplicate, filter, and rank. Do not promote unverified SAST findings.
 

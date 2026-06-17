@@ -8,7 +8,7 @@
   "properties": {
     "phase": {
       "type": "string",
-      "enum": ["recon", "sca", "sast", "secrets", "triage", "intrusion", "final-reconciliation", "report"]
+      "enum": ["recon", "sca", "sast", "secrets", "intelligence", "triage", "intrusion", "final-reconciliation", "report"]
     },
     "status": {
       "type": "string",

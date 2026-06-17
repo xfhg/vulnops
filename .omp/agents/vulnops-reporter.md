@@ -29,7 +29,9 @@ output:
         type: string
 ---
 
-Follow `config/agents/reporter.md`, with one hard rule: `final-reconciliation/findings.json` is the source of truth.
+Follow `config/agents/reporter.md`, with one hard rule: `final-reconciliation/findings.json` is the source of truth for verified findings.
+
+Report intelligence coverage gaps and open questions separately. Do not mix unresolved hypotheses into verified finding counts.
 
 Write:
 - `report/security-report.md`

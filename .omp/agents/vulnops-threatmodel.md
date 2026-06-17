@@ -31,14 +31,19 @@ output:
 
 Build a threat model from recon output, not from blind file sampling.
 
+Path contract:
+- Read `.harness/audit-context.json` first.
+- Use `paths.repo_md`, `paths.repo_context_json`, `paths.sast_threat_model_md`, and `paths.sast_threat_model`.
+- Never read or write bare relative paths like `repo-context/...` or `sast/...`.
+
 Inputs:
 - `.harness/audit-context.json`
-- `repo-context/repo.md`
-- `repo-context/repo-context.json`
+- `paths.repo_md`
+- `paths.repo_context_json`
 
 Write:
-- `sast/threat-model.md`
-- `sast/threat-model.json`
+- `paths.sast_threat_model_md`
+- `paths.sast_threat_model`
 
 Threat model JSON must include assets, trust boundaries, entrypoints, threats, assumptions, evidence_refs, warnings, and errors. Every threat must map to a real entrypoint, asset, or trust boundary.
 

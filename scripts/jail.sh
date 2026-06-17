@@ -37,7 +37,7 @@ if [ $# -eq 0 ]; then
     elif command -v graphify &>/dev/null; then
         echo "  graphify: $(command -v graphify)"
     else
-        echo "  graphify: NOT INSTALLED (optional — run: bash scripts/install-tools.sh)"
+        echo "  graphify: NOT INSTALLED (required — run: bash scripts/install-tools.sh)"
     fi
     exit 0
 fi

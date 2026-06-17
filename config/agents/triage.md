@@ -23,12 +23,15 @@ These are provided in your assignment:
 ### Step 1: Collect All Findings
 
 Read findings from each scan directory:
+- `<scan_base>/intelligence/investigation-cards.json` — OODA hypotheses, Graphify intelligence, coverage gaps, and provenance
+- `<scan_base>/intelligence/evidence-corpus.json` — normalized upstream evidence from recon/SCA/secrets/SAST
 - `<scan_base>/sca/findings/*.md` — dependency vulnerabilities
 - `<scan_base>/sast/verified-findings.json` — verified code vulnerabilities
 - `<scan_base>/sast/dropped-findings.json` — false-positive/deferred audit trail, not candidates
 - `<scan_base>/secrets/findings/*.md` — secrets/credentials
 
 Also read summaries:
+- `<scan_base>/intelligence/summary.md`
 - `<scan_base>/sca/summary.md`
 - `<scan_base>/sast/summary.md`
 - `<scan_base>/secrets/summary.md`
@@ -46,6 +49,7 @@ For each duplicate group, create a merged finding that preserves:
 - The highest confidence assessment
 - Evidence from all source scans
 - The most specific severity rating
+- Any intelligence card IDs and graph scope IDs that explain reachability, blast radius, dependency impact, or coverage uncertainty
 
 ### Step 3: False Positive Filtering
 
@@ -123,12 +127,47 @@ Create `<scan_base>/triage/`:
     "confidence": "high",
     "status": "verified",
     "evidence_refs": ["src/api/users.ts:42"],
-    "raw_refs": ["sast/verified-findings.json", "sast/verify/SAST-001.json"],
+    "raw_refs": ["intelligence/investigation-cards.json:I-001", "sast/verified-findings.json", "sast/verify/SAST-001.json"],
+    "intelligence_refs": ["I-001"],
+    "new_hypotheses": [
+      {
+        "source": "tool_evidence|graph_inference|agent_exploration|coverage_gap",
+        "statement": "...",
+        "status": "promoted|deferred|dropped",
+        "closure_reason": "..."
+      }
+    ],
     "redaction_state": "not_applicable",
     "closure_reason": "source finding re-read and confirmed"
   }
 ]
 ```
+
+**`triage/intrusion-seeds.json`** — Targeted Graphify questions for verified findings only:
+```json
+{
+  "schema_version": "1.0",
+  "seeds": [
+    {
+      "id": "T-001",
+      "title": "...",
+      "severity": "critical",
+      "confidence": "high",
+      "question_type": "<attack_path|credential_flow|dependency_reachability|cross_boundary|reachability>",
+      "files": ["src/api/users.ts"],
+      "evidence_refs": ["src/api/users.ts:42"],
+      "raw_refs": ["intelligence/investigation-cards.json:I-001", "sast/verified-findings.json:V-001"],
+      "intelligence_refs": ["I-001"],
+      "graph_questions": ["<exact reachability/path/blast-radius question Graphify should answer>"],
+      "requires_cluster": false
+    }
+  ]
+}
+```
+
+Do not create intrusion seeds for false positives, dropped SAST findings, unverified findings, or presentation-only report items.
+
+Exploratory intelligence cards may become new triage findings only when you re-read the cited source evidence and can satisfy the normal evidence gate. Otherwise, preserve them in `new_hypotheses[]` with `status: "deferred"` or mention them in the false-positive/deferred appendix. Do not let intelligence cards silently disappear.
 
 Do not mark a finding `verified` unless the evidence was re-read during triage. Do not leave critical or high findings as `unverified` unless they are explicitly `deferred` or excluded from final reporting with a clear `closure_reason`.
 

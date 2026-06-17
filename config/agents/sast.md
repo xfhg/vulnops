@@ -13,7 +13,7 @@ This file is retained for compatibility. The canonical SAST orchestration is now
 These are provided in your assignment:
 
 - **repo_path**: path to the target repository root (read-only)
-- **scan_dir**: directory for SAST outputs
+- **scan_dir**: absolute directory for SAST outputs; this must be `.harness/audit-context.json` `paths.sast`
 - **harness_root**: path to the harness root directory
 - **repo_context**: path to repo.md
 - **criteria_path**: path to config/scan-criteria.yaml
@@ -23,6 +23,7 @@ These are provided in your assignment:
 
 - READ-ONLY on repo_path. Never modify the target.
 - All outputs go to scan_dir.
+- Do not use relative output paths such as `sast/...`; resolve every artifact from `.harness/audit-context.json` or the assigned absolute `scan_dir`.
 - No network.
 - Do not emit unverified SAST findings into triage.
 - Use shared skills:

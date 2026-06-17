@@ -32,6 +32,12 @@ output:
 
 Verify exactly one SAST raw finding. Assume it is wrong until source review proves otherwise.
 
+Path contract:
+- Read `.harness/audit-context.json` before analysis.
+- Use `paths.sast_verify` as the output directory.
+- Write only to the absolute path `<paths.sast_verify>/<finding_id>.json`.
+- Do not create or write `sast/...` relative to the harness root. If you cannot resolve `paths.sast_verify`, yield `deferred` with an error.
+
 Load:
 - `skill://vulnops-exclusion-rules`
 - `skill://vulnops-self-verification`
@@ -45,14 +51,14 @@ Procedure:
 5. Return `false-positive` when any required proof fails.
 6. Return `deferred` only when required evidence is unavailable or contradictory.
 
-Write one verifier JSON under `sast/verify/<finding_id>.json`. Include closure_reason for every outcome.
+Write one verifier JSON under `<paths.sast_verify>/<finding_id>.json`. Include closure_reason for every outcome.
 
 IRC progress:
 - Send `irc op=send to=Main message="<short phase status>"` at start, each material stage boundary, before validation, and before yielding.
 - Keep progress messages short. Do not include secrets, full findings, payloads, or raw tool output.
 - Do not send fake timer heartbeats; only report real state changes.
 
-Before yielding, confirm your verifier JSON exists and is valid JSON. The SAST lead validates the aggregate `sast-verify` phase.
+Before yielding, confirm your verifier JSON exists, is valid JSON, and its absolute path starts with `<scan_base>/sast/verify/`. The SAST lead validates the aggregate `sast-verify` phase.
 
 Yield structured status with:
 - `status`

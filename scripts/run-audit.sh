@@ -125,6 +125,7 @@ main() {
     mkdir -p "${scan_base}/sast/deepdive"
     mkdir -p "${scan_base}/sast/verify"
     mkdir -p "${scan_base}/secrets/findings"
+    mkdir -p "${scan_base}/intelligence/graphify-runs"
     mkdir -p "${scan_base}/triage"
     mkdir -p "${scan_base}/report"
     mkdir -p "${scan_base}/intrusion/findings"
@@ -146,6 +147,7 @@ main() {
 	    "repo_context": "${scan_base}/repo-context",
 	    "repo_md": "${scan_base}/repo-context/repo.md",
 	    "repo_context_json": "${scan_base}/repo-context/repo-context.json",
+	    "security_surfaces_json": "${scan_base}/repo-context/security-surfaces.json",
 	    "sca": "${scan_base}/sca",
 	    "sca_raw_advisories": "${scan_base}/sca/raw-advisories.json",
 	    "sast": "${scan_base}/sast",
@@ -161,11 +163,22 @@ main() {
 	    "sast_coverage_ledger": "${scan_base}/sast/coverage-ledger.json",
 	    "secrets": "${scan_base}/secrets",
 	    "secrets_redacted_candidates": "${scan_base}/secrets/redacted-candidates.json",
+	    "intelligence": "${scan_base}/intelligence",
+	    "intelligence_evidence_corpus": "${scan_base}/intelligence/evidence-corpus.json",
+	    "intelligence_attack_surface_map": "${scan_base}/intelligence/attack-surface-map.json",
+	    "intelligence_graphify_plan": "${scan_base}/intelligence/graphify-intel-plan.json",
+	    "intelligence_cards": "${scan_base}/intelligence/investigation-cards.json",
+	    "intelligence_coverage_gaps": "${scan_base}/intelligence/coverage-gaps.json",
+	    "intelligence_rule_gaps": "${scan_base}/intelligence/rule-gaps.json",
+	    "intelligence_graphify_runs": "${scan_base}/intelligence/graphify-runs",
 	    "triage": "${scan_base}/triage",
+	    "intrusion_seeds": "${scan_base}/triage/intrusion-seeds.json",
 	    "report": "${scan_base}/report",
 	    "intrusion": "${scan_base}/intrusion",
 	    "intrusion_findings": "${scan_base}/intrusion/findings",
 	    "intrusion_enrichment": "${scan_base}/intrusion/enrichment.json",
+	    "graphify_plan": "${scan_base}/intrusion/graphify-plan.json",
+	    "graphify_runs": "${scan_base}/intrusion/graphify-runs",
 	    "final_reconciliation": "${scan_base}/final-reconciliation",
 	    "final_reconciliation_findings": "${scan_base}/final-reconciliation/findings.json",
 	    "final_report_md": "${scan_base}/report/security-report.md",
@@ -178,7 +191,8 @@ main() {
     "osv_scanner": "${HARNESS_ROOT}/bins/osv-scanner",
     "run_wraith": "${HARNESS_ROOT}/scripts/run-wraith.sh",
     "run_poltergeist": "${HARNESS_ROOT}/scripts/run-poltergeist.sh",
-    "run_graphify": "${HARNESS_ROOT}/scripts/run-graphify.sh"
+    "run_graphify": "${HARNESS_ROOT}/scripts/run-graphify.sh",
+    "build_intelligence": "${HARNESS_ROOT}/scripts/build-intelligence.py"
   },
   "created_at": "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 }

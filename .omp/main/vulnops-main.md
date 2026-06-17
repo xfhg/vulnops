@@ -11,11 +11,18 @@ When the user asks to audit the target repo:
    - `SCA`
    - `Secrets`
    - `SASTLead`
+   - `Intelligence`
    - `Triage`
    - `Intrusion`
    - `Reconcile`
    - `Reporter`
 4. After phase work, run `bash scripts/validate-scan.sh <scan_base>`.
+
+When the user asks only for audit status:
+
+1. Run `bash scripts/audit-status.sh`.
+2. Report the command output briefly.
+3. Stop. Do not create todos, inspect child transcripts, re-run phases, or continue after reporting a complete status.
 
 Pipeline:
 
@@ -23,11 +30,14 @@ Pipeline:
 2. Spawn `vulnops-sca`, `vulnops-secrets`, and `vulnops-sast-lead` in one task batch with task IDs `SCA`, `Secrets`, and `SASTLead`.
 3. Treat OMP task completion/yield as the wait signal for those phases. Use `irc op=list`, `irc op=wait`, and `irc op=inbox` for live presence and progress while they run.
 4. As each phase yields, summarize its yielded status briefly and run `bash scripts/validate-phase.sh <scan_base> <phase>`.
-5. Run `vulnops-triage` only after SCA, secrets, and SAST have yielded and validated.
-6. Run `vulnops-intrusion`; do not proceed until the intrusion task yields terminal status and `bash scripts/validate-phase.sh <scan_base> intrusion` passes.
-7. Run `vulnops-reconcile`; after it yields, run `bash scripts/validate-phase.sh <scan_base> final-reconciliation`.
-8. Run `vulnops-reporter`; after it yields, run `bash scripts/validate-phase.sh <scan_base> report`.
-9. Run final scan validation.
+5. Run `vulnops-intelligence` only after SCA, secrets, and SAST have yielded and validated. After it yields, run `bash scripts/validate-phase.sh <scan_base> intelligence`.
+6. Run `vulnops-triage` only after Intelligence Fusion has yielded and validated.
+7. Run `vulnops-intrusion`; do not proceed until the intrusion task yields terminal status and `bash scripts/validate-phase.sh <scan_base> intrusion` passes.
+8. Run `vulnops-reconcile`; after it yields, run `bash scripts/validate-phase.sh <scan_base> final-reconciliation`.
+9. Run `vulnops-reporter`; after it yields, run `bash scripts/validate-phase.sh <scan_base> report`.
+10. Run final scan validation.
+
+After `bash scripts/validate-scan.sh <scan_base>` succeeds, the audit is terminal. Give one concise final answer with the report paths and counts, mark any audit todos complete, and stop issuing tool calls. Do not re-check status, re-run validation, or resume the same completed status answer after compaction unless the user asks a new actionable question.
 
 Live feedback rules:
 
@@ -39,12 +49,12 @@ Live feedback rules:
   - `irc op=list` shows running, idle, and parked peers.
   - `irc op=wait` waits for a child progress message.
   - `irc op=inbox` drains queued child progress messages.
-- Use `agent://<id>` and `history://<id>` only to inspect child output or transcripts after a task yields, or to diagnose a failed/ambiguous task. Do not read them as a polling loop.
+- Never inspect child transcripts through URI-style pseudo paths. Some OpenAI-compatible gateways reject the malformed tool-call transcript that can result when the model treats those pseudo paths as function names. Use OMP task yield, IRC, and validation artifacts instead.
 - Maintain todos for the major pipeline phases. Mark a todo complete only after the phase task has yielded and `validate-phase.sh` has passed.
 - `scripts/wait-phase.sh` is only for manual recovery, CI, or non-OMP automation.
-- Intrusion is terminal only when `intrusion/phase-manifest.json` exists with status `ok`, `degraded`, `skipped`, or `failed`, and `intrusion/enrichment.json` exists.
-- Reconciliation must not start while intrusion is still running, graphify is still producing partial output, or the intrusion manifest is absent/non-terminal.
-- If intrusion cannot complete, the intrusion phase must yield only after it writes a degraded/skipped/failed manifest, a safe `intrusion/enrichment.json`, and `intrusion/summary.md`.
+- Intrusion is terminal only when `intrusion/phase-manifest.json` exists with status `ok`, `intrusion/enrichment.json` exists, `intrusion/graphify-plan.json` exists, and required scoped Graphify runs under `intrusion/graphify-runs/` validate.
+- Reconciliation must not start while intrusion is still running, graphify is still producing partial scoped output, or the intrusion manifest is absent/non-terminal.
+- If intrusion cannot complete with LLM-backed Graphify, the intrusion phase must write a failed manifest, a safe `intrusion/enrichment.json`, and `intrusion/summary.md`, then validation must fail. Do not continue to reconciliation.
 
 Constraints:
 
@@ -53,3 +63,4 @@ Constraints:
 - Keep all writes under harness-approved locations.
 - Filesystem artifacts are the source of truth; subagent yield output is only a summary.
 - If validation fails, report the validation errors instead of claiming the audit completed.
+- A completed status answer is terminal for that user request. Repeating it is a bug, not helpfulness.

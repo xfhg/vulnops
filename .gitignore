@@ -44,3 +44,6 @@ codedb.snapshot
 
 # Config
 config.toml
+
+# Offline pack output (large tarball — ~500 MB, never commit)
+vulnops-offline-*.tar.gz

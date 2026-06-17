@@ -68,7 +68,7 @@ For downstream security scanners, identify:
 - **Prototype/example code** that should be deprioritized
 - **Commented-out code** that scanners may flag
 
-### Step 6: Write repo.md and repo-context.json
+### Step 6: Write repo.md, repo-context.json, and security-surfaces.json
 
 Write the complete analysis to `<scan_dir>/repo.md` using this format:
 
@@ -149,11 +149,35 @@ Also write `<scan_dir>/repo-context.json`:
 }
 ```
 
+Also write `<scan_dir>/security-surfaces.json` for downstream OODA routing:
+```json
+{
+  "schema_version": "1.0",
+  "repository": "<repo_name>",
+  "entry_points": [
+    {"project_id": "<project_id>", "path": "<path>", "kind": "<http|cli|worker|library|other>", "evidence": "<why>"}
+  ],
+  "trust_boundaries": [
+    {"project_id": "<project_id>", "boundary": "<untrusted-to-trusted crossing>"}
+  ],
+  "security_relevant_files": [
+    {
+      "path": "<relative path>",
+      "categories": ["entry_point", "auth", "authorization", "privileged_sink", "external_call", "config_secret", "security_context"],
+      "evidence": ["<file:line or path evidence>"]
+    }
+  ],
+  "ignore_patterns": ["<generated/test/build pattern>"],
+  "generated_ignorable": ["<path or pattern>"],
+  "sensitive_data_types": ["<type>"]
+}
+```
+
 Finally write `<scan_dir>/phase-manifest.json` with `phase: "recon"`, `status`, `inputs`, `outputs`, `coverage`, `tool_versions`, `warnings`, and `errors`.
 
 ## Completion
 
 After writing repo.md:
 1. Verify the file exists and is well-formed
-2. Verify `repo-context.json` and `phase-manifest.json` exist
+2. Verify `repo-context.json`, `security-surfaces.json`, and `phase-manifest.json` exist
 3. Report: "Repository context built: <N> projects detected, <M> entry points mapped"

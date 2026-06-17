@@ -66,10 +66,61 @@ sys.exit(0 if manifest.get("status") in allowed else 1)
 PY
 }
 
+check_sast_deepdive_chunks() {
+    local manifest="${SCAN_BASE}/sast/task-manifest.json"
+    local deepdive_dir="${SCAN_BASE}/sast/deepdive"
+
+    if [ ! -f "$manifest" ]; then
+        err "missing: $manifest"
+        return
+    fi
+
+    "$PYTHON" - "$manifest" "$deepdive_dir" <<'PY' || err "SAST deepdive chunk validation failed"
+import json
+import sys
+from pathlib import Path
+
+manifest = Path(sys.argv[1])
+deepdive_dir = Path(sys.argv[2])
+
+try:
+    data = json.loads(manifest.read_text())
+except Exception as exc:
+    print(f"invalid task manifest JSON: {exc}", file=sys.stderr)
+    raise SystemExit(1)
+
+chunks = data.get("chunks")
+if not isinstance(chunks, list):
+    print("task manifest missing chunks list", file=sys.stderr)
+    raise SystemExit(1)
+
+failed = False
+for chunk in chunks:
+    if not isinstance(chunk, dict) or not str(chunk.get("id", "")).strip():
+        print("task manifest chunk missing id", file=sys.stderr)
+        failed = True
+        continue
+    chunk_id = str(chunk["id"])
+    path = deepdive_dir / f"{chunk_id}.json"
+    if not path.is_file():
+        print(f"missing deepdive chunk output: {path}", file=sys.stderr)
+        failed = True
+        continue
+    try:
+        json.loads(path.read_text())
+    except Exception as exc:
+        print(f"invalid deepdive chunk JSON: {path}: {exc}", file=sys.stderr)
+        failed = True
+
+raise SystemExit(1 if failed else 0)
+PY
+}
+
 case "$PHASE" in
     recon)
         check_file "${SCAN_BASE}/repo-context/repo.md"
         check_json "${SCAN_BASE}/repo-context/repo-context.json"
+        check_json "${SCAN_BASE}/repo-context/security-surfaces.json"
         check_json "${SCAN_BASE}/repo-context/phase-manifest.json"
         ;;
     sca)
@@ -91,6 +142,7 @@ case "$PHASE" in
         check_json "${SCAN_BASE}/sast/task-manifest.json"
         ;;
     sast-deepdive)
+        check_sast_deepdive_chunks
         check_json "${SCAN_BASE}/sast/raw-findings.json"
         ;;
     sast-verify)
@@ -100,6 +152,7 @@ case "$PHASE" in
     sast)
         check_json "${SCAN_BASE}/sast/threat-model.json"
         check_json "${SCAN_BASE}/sast/task-manifest.json"
+        check_sast_deepdive_chunks
         check_json "${SCAN_BASE}/sast/raw-findings.json"
         check_json "${SCAN_BASE}/sast/verified-findings.json"
         check_json "${SCAN_BASE}/sast/dropped-findings.json"
@@ -107,16 +160,110 @@ case "$PHASE" in
         check_file "${SCAN_BASE}/sast/summary.md"
         check_json "${SCAN_BASE}/sast/phase-manifest.json"
         ;;
+    intelligence)
+        check_json "${SCAN_BASE}/intelligence/evidence-corpus.json"
+        check_json "${SCAN_BASE}/intelligence/attack-surface-map.json"
+        check_json "${SCAN_BASE}/intelligence/graphify-intel-plan.json"
+        check_json "${SCAN_BASE}/intelligence/investigation-cards.json"
+        check_json "${SCAN_BASE}/intelligence/coverage-gaps.json"
+        check_json "${SCAN_BASE}/intelligence/rule-gaps.json"
+        check_file "${SCAN_BASE}/intelligence/summary.md"
+        check_json "${SCAN_BASE}/intelligence/phase-manifest.json"
+        check_manifest_status "${SCAN_BASE}/intelligence/phase-manifest.json" ok
+        if [ -f "${SCAN_BASE}/intelligence/phase-manifest.json" ] && [ -f "${SCAN_BASE}/intelligence/graphify-intel-plan.json" ] && [ -f "${SCAN_BASE}/intelligence/investigation-cards.json" ]; then
+            "$PYTHON" - "${SCAN_BASE}/intelligence/phase-manifest.json" "${SCAN_BASE}/intelligence/graphify-intel-plan.json" "${SCAN_BASE}/intelligence/investigation-cards.json" "${SCAN_BASE}/intelligence" <<'PY' || err "intelligence OODA validation failed"
+import json
+import sys
+from pathlib import Path
+
+manifest = json.loads(Path(sys.argv[1]).read_text())
+plan = json.loads(Path(sys.argv[2]).read_text())
+cards_doc = json.loads(Path(sys.argv[3]).read_text())
+intelligence_dir = Path(sys.argv[4])
+if manifest.get("phase") != "intelligence" or manifest.get("status") != "ok":
+    raise SystemExit(1)
+if plan.get("mode") != "intelligence-ooda":
+    raise SystemExit(1)
+scopes = plan.get("scopes")
+if not isinstance(scopes, list):
+    raise SystemExit(1)
+cards = cards_doc.get("cards")
+if not isinstance(cards, list):
+    raise SystemExit(1)
+allowed_sources = {"tool_evidence", "graph_inference", "agent_exploration", "coverage_gap"}
+for card in cards:
+    if not isinstance(card, dict) or card.get("source") not in allowed_sources:
+        raise SystemExit(1)
+    if not card.get("raw_refs"):
+        raise SystemExit(1)
+    if card.get("source") != "coverage_gap" and not card.get("evidence_refs"):
+        raise SystemExit(1)
+for scope in scopes:
+    if not isinstance(scope, dict) or not scope.get("id"):
+        raise SystemExit(1)
+    if scope.get("required"):
+        sid = str(scope["id"])
+        graph_path = intelligence_dir / "graphify-runs" / sid / "graphify-out" / "graph.json"
+        quality_path = intelligence_dir / "graphify-runs" / sid / "graphify-quality.json"
+        if not graph_path.is_file() or not quality_path.is_file():
+            raise SystemExit(1)
+        graph = json.loads(graph_path.read_text())
+        if not isinstance(graph.get("nodes"), list) or not graph.get("nodes"):
+            raise SystemExit(1)
+PY
+        fi
+        ;;
     triage)
         check_file "${SCAN_BASE}/triage/consolidated.md"
         check_json "${SCAN_BASE}/triage/findings.json"
+        check_json "${SCAN_BASE}/triage/intrusion-seeds.json"
         check_json "${SCAN_BASE}/triage/phase-manifest.json"
         ;;
     intrusion)
         check_file "${SCAN_BASE}/intrusion/summary.md"
         check_json "${SCAN_BASE}/intrusion/enrichment.json"
+        check_json "${SCAN_BASE}/intrusion/graphify-plan.json"
         check_json "${SCAN_BASE}/intrusion/phase-manifest.json"
-        check_manifest_status "${SCAN_BASE}/intrusion/phase-manifest.json" ok degraded skipped failed
+        check_manifest_status "${SCAN_BASE}/intrusion/phase-manifest.json" ok
+        if [ -f "${SCAN_BASE}/intrusion/phase-manifest.json" ] && [ -f "${SCAN_BASE}/intrusion/graphify-plan.json" ]; then
+            "$PYTHON" - "${SCAN_BASE}/intrusion/phase-manifest.json" "${SCAN_BASE}/intrusion/graphify-plan.json" "${SCAN_BASE}/intrusion" <<'PY' || err "intrusion scoped Graphify validation failed"
+import json
+import sys
+from pathlib import Path
+
+manifest = json.loads(Path(sys.argv[1]).read_text())
+plan = json.loads(Path(sys.argv[2]).read_text())
+intrusion_dir = Path(sys.argv[3])
+text = json.dumps(manifest).lower()
+bad = ("ast-only", "llm unavailable", "llm_backend\": \"ollama (unavailable", "degraded")
+if any(item in text for item in bad):
+    raise SystemExit(1)
+if plan.get("mode") != "targeted-ooda":
+    raise SystemExit(1)
+scopes = plan.get("scopes")
+if not isinstance(scopes, list) or not scopes:
+    raise SystemExit(1)
+required_scopes = [scope for scope in scopes if isinstance(scope, dict) and scope.get("required")]
+if not required_scopes:
+    required_scopes = [scope for scope in scopes if isinstance(scope, dict)]
+for scope in required_scopes:
+    sid = scope.get("id")
+    if not sid:
+        raise SystemExit(1)
+    graph_path = intrusion_dir / "graphify-runs" / str(sid) / "graphify-out" / "graph.json"
+    quality_path = intrusion_dir / "graphify-runs" / str(sid) / "graphify-quality.json"
+    if not graph_path.is_file() or not quality_path.is_file():
+        raise SystemExit(1)
+    graph = json.loads(graph_path.read_text())
+    nodes = graph.get("nodes", [])
+    edges = graph.get("links", graph.get("edges", []))
+    if not isinstance(nodes, list) or not nodes:
+        raise SystemExit(1)
+    if any(cmd.get("type") in {"query", "path", "affected"} for cmd in scope.get("commands", []) if isinstance(cmd, dict)):
+        if not isinstance(edges, list) or not edges:
+            raise SystemExit(1)
+PY
+        fi
         ;;
     final-reconciliation)
         check_json "${SCAN_BASE}/final-reconciliation/findings.json"

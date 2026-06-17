@@ -171,6 +171,28 @@ download_and_extract() {
         return 1
     fi
 }
+
+version_for_tool() {
+    local tool="$1"
+    local default_version="$2"
+    local var_name value
+    case "$tool" in
+        wraith) var_name="WRAITH_VERSION" ;;
+        poltergeist) var_name="POLTERGEIST_VERSION" ;;
+        omp) var_name="OMP_VERSION" ;;
+        osv-scanner) var_name="OSV_SCANNER_VERSION" ;;
+        *) var_name="" ;;
+    esac
+    if [ -n "$var_name" ]; then
+        value="${!var_name:-}"
+        if [ -n "$value" ]; then
+            echo "$value"
+            return
+        fi
+    fi
+    echo "$default_version"
+}
+
 download_omp() {
     local version="$1"
     local platform
@@ -354,23 +376,34 @@ fix_binary() {
 }
 
 ensure_osv_scanner() {
+    local requested_version="${1:-latest}"
     # wraith shells out to osv-scanner — it must be next to wraith in bins/
     local target="${INSTALL_DIR}/osv-scanner"
-    if [ -x "$target" ]; then
+    local version_file="${INSTALL_DIR}/.osv-scanner.version"
+    if [ -x "$target" ] && [ -f "$version_file" ]; then
+        local installed_version
+        installed_version="$(cat "$version_file")"
+        if [ "$requested_version" = "latest" ] || [ "$installed_version" = "$requested_version" ]; then
+            log "  osv-scanner: already in ${INSTALL_DIR} (${installed_version})"
+            return 0
+        fi
+    elif [ -x "$target" ] && [ "$requested_version" = "latest" ]; then
         log "  osv-scanner: already in ${INSTALL_DIR}"
         return 0
+    else
+        rm -f "$target"
     fi
     # Check PATH
     local sys_bin
     sys_bin="$(command -v osv-scanner 2>/dev/null || true)"
-    if [ -n "$sys_bin" ] && [ -x "$sys_bin" ]; then
+    if [ -n "$sys_bin" ] && [ -x "$sys_bin" ] && [ "$requested_version" = "latest" ]; then
         cp "$sys_bin" "$target"
         chmod +x "$target"
         fix_binary "$target"
         log "  osv-scanner: copied from ${sys_bin}"
         return 0
     fi
-    download_osv_scanner latest
+    download_osv_scanner "$requested_version"
 }
 
 usage() {
@@ -422,31 +455,33 @@ main() {
     for tool in "${tools[@]}"; do
         case "$tool" in
             wraith)
-                download_and_extract "ghostsecurity/wraith" "wraith" "$version" || ((failures++))
+                download_and_extract "ghostsecurity/wraith" "wraith" "$(version_for_tool wraith "$version")" || ((failures++))
                 ;;
             poltergeist)
-                download_and_extract "ghostsecurity/poltergeist" "poltergeist" "$version" || ((failures++))
+                download_and_extract "ghostsecurity/poltergeist" "poltergeist" "$(version_for_tool poltergeist "$version")" || ((failures++))
                 ;;
             osv-scanner)
-                download_osv_scanner "$version" || ((failures++))
+                download_osv_scanner "$(version_for_tool osv-scanner "$version")" || ((failures++))
                 ;;
             omp)
-                download_omp "$version" || ((failures++))
+                download_omp "$(version_for_tool omp "$version")" || ((failures++))
                 ;;
             all)
-                download_and_extract "ghostsecurity/wraith" "wraith" "$version" || ((failures++))
-                download_and_extract "ghostsecurity/poltergeist" "poltergeist" "$version" || ((failures++))
-                download_omp "$version" || ((failures++))
+                download_and_extract "ghostsecurity/wraith" "wraith" "$(version_for_tool wraith "$version")" || ((failures++))
+                download_and_extract "ghostsecurity/poltergeist" "poltergeist" "$(version_for_tool poltergeist "$version")" || ((failures++))
+                download_omp "$(version_for_tool omp "$version")" || ((failures++))
                 ;;
         esac
     done
 
     # ── osv-scanner (wraith dependency) ──
-    ensure_osv_scanner || ((failures++))
-    # ── Graphify (optional — graph-guided intrusion analysis) ──
+    ensure_osv_scanner "$(version_for_tool osv-scanner latest)" || ((failures++))
+    # ── Graphify (required — graph-guided intrusion analysis) ──
     local VENV_DIR="${HARNESS_ROOT}/.venv"
     local graphify_failed=false
-    if [ -x "${VENV_DIR}/bin/graphify" ]; then
+    if [ "${SKIP_GRAPHIFY_INSTALL:-0}" = "1" ]; then
+        log "  graphify: skipped by SKIP_GRAPHIFY_INSTALL=1"
+    elif [ -x "${VENV_DIR}/bin/graphify" ]; then
         log "  graphify: already installed (${VENV_DIR}/bin/graphify)"
     elif command -v python3 &>/dev/null; then
         log "  graphify: installing into ${VENV_DIR}..."
@@ -457,7 +492,7 @@ main() {
         if [ -x "${VENV_DIR}/bin/pip" ]; then
             local graphify_log="${HARNESS_ROOT}/.harness/logs/graphify-pip-install.log"
             mkdir -p "$(dirname "$graphify_log")"
-            "${VENV_DIR}/bin/pip" install -q graphifyy >"$graphify_log" 2>&1 \
+            "${VENV_DIR}/bin/pip" install -q "graphifyy[openai]" >"$graphify_log" 2>&1 \
                 && log "  graphify: installed (${VENV_DIR}/bin/graphify)" \
                 || { warn "  graphify: pip install failed"; warn "  see: ${graphify_log}"; graphify_failed=true; }
         else

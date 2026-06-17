@@ -16,16 +16,8 @@ harness_setup_containment "$HARNESS_ROOT"
 # parse-config.py stays read-only so validation cannot mutate runtime config.
 eval "$("${HARNESS_ROOT}/scripts/load-config.sh")"
 
-# Seed harness-local OMP config/model registry so OMP starts without the setup
-# wizard and without touching the operator's real home directory.
-"${HARNESS_ROOT}/scripts/bootstrap-omp.sh" >/dev/null
-
-# Audit runtime must be fully prepared before OMP starts. Bootstrap commands
-# such as install-tools.sh, fetch-osv-db.sh, dependency setup, and clone-target.sh
-# stay outside this path.
-"${HARNESS_ROOT}/scripts/validate-config.sh" >/dev/null
-
-# Prefer bundled OMP, fall back to global install
+# Prefer bundled OMP, fall back to global install. Keep --version independent
+# from audit readiness so runtime drift can be diagnosed even if the LLM is down.
 OMP_BIN="${HARNESS_ROOT}/bins/omp"
 if [ ! -x "${OMP_BIN}" ]; then
     OMP_BIN="$(command -v omp 2>/dev/null || true)"
@@ -34,6 +26,18 @@ if [ -z "${OMP_BIN}" ]; then
     echo "[error] omp not found — run: bash scripts/install-tools.sh" >&2
     exit 1
 fi
+if [ "${1:-}" = "--version" ] || [ "${1:-}" = "-v" ]; then
+    exec "${OMP_BIN}" "$@"
+fi
+
+# Seed harness-local OMP config/model registry so OMP starts without the setup
+# wizard and without touching the operator's real home directory.
+"${HARNESS_ROOT}/scripts/bootstrap-omp.sh" >/dev/null
+
+# Audit runtime must be fully prepared before OMP starts. Bootstrap commands
+# such as install-tools.sh, fetch-osv-db.sh, dependency setup, and clone-target.sh
+# stay outside this path.
+"${HARNESS_ROOT}/scripts/validate-config.sh" >/dev/null
 
 "${OMP_BIN}" \
     --model "${ON_PREM_PROVIDER_NAME:-on-prem}/${ON_PREM_MODEL_NAME}" \

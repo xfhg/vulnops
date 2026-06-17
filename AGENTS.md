@@ -27,6 +27,7 @@ All settings live in `config.toml` at the harness root:
 
 Run `bash scripts/load-config.sh` to see exported env vars.
 Run `bash scripts/validate-config.sh` before audit runtime.
+Run `bash scripts/audit-status.sh` for read-only status checks. If it reports the scan complete, answer once and stop; do not re-run phases or keep re-stating the same status after compaction.
 
 Audit runtime is offline except for the configured LLM endpoint. Bootstrap commands such as dependency setup, tool install, OSV DB fetch, and target cloning are outside audit runtime.
 
@@ -44,6 +45,8 @@ Live feedback comes from OMP's native task/subagent cards and IRC. Main uses `ir
 
 Do not use Bash progress probes while a phase subagent is still running. Bash is for setup, short validation gates, and controlled wrapper tools, not for pretending to be OMP's scheduler.
 
+Do not inspect subagent transcripts with `agent://...` or `history://...` URIs. They can be mis-emitted as malformed tool calls (`function.name = ""`) against OpenAI-compatible gateways. Use OMP task yield, IRC progress, and filesystem validation artifacts.
+
 ### OMP Project Agents
 
 Project-local OMP agents live in `.omp/agents/`. Use named phase agents, not generic `task` roles:
@@ -56,6 +59,7 @@ Project-local OMP agents live in `.omp/agents/`. Use named phase agents, not gen
 - `vulnops-decompose`
 - `vulnops-deepdive-chunk`
 - `vulnops-verify-one`
+- `vulnops-intelligence`
 - `vulnops-triage`
 - `vulnops-intrusion`
 - `vulnops-reconcile`
@@ -135,11 +139,33 @@ bash scripts/validate-phase.sh <scan_base> sast
 
 Raw SAST findings are not final candidates until verified.
 
-### Step 3: Triage
+### Step 3: Intelligence Fusion
+
+Main runs `vulnops-intelligence` as task ID `Intelligence` after SCA, secrets, and SAST have all yielded and validated.
+
+Required outputs:
+- `<paths.intelligence_evidence_corpus>`
+- `<paths.intelligence_attack_surface_map>`
+- `<paths.intelligence_graphify_plan>`
+- `<paths.intelligence_cards>`
+- `<paths.intelligence_coverage_gaps>`
+- `<paths.intelligence_rule_gaps>`
+- `<paths.intelligence>/summary.md`
+- `<paths.intelligence>/phase-manifest.json`
+
+After intelligence yields, run:
+
+```bash
+bash scripts/validate-phase.sh <scan_base> intelligence
+```
+
+Intelligence Fusion preserves evidence across phase boundaries. It may create new hypotheses from tool evidence, graph inference, agent exploration, or coverage gaps, but those hypotheses cannot become final findings without triage or intrusion evidence-gate promotion. Graphify must be LLM-backed and scoped; AST-only and accidental whole-repo intelligence extraction are invalid.
+
+### Step 4: Triage
 
 Main runs `vulnops-triage` as task ID `Triage`.
 
-Triage reads SCA, secrets, and only `<paths.sast_verified_findings>` for SAST.
+Triage reads Intelligence Fusion outputs, SCA, secrets, and only `<paths.sast_verified_findings>` for SAST.
 
 Required outputs:
 - `<paths.triage>/consolidated.md`
@@ -154,13 +180,14 @@ bash scripts/validate-phase.sh <scan_base> triage
 
 Triage must not promote unverified, dropped, or deferred SAST findings.
 
-### Step 4: Intrusion Analysis
+### Step 5: Intrusion Analysis
 
 Main runs `vulnops-intrusion` as task ID `Intrusion` after triage.
 
 Required outputs:
 - `<paths.intrusion>/summary.md`
 - `<paths.intrusion_enrichment>`
+- `<paths.graphify_plan>`
 - `<paths.intrusion>/phase-manifest.json`
 
 After intrusion yields terminal status, run:
@@ -169,9 +196,9 @@ After intrusion yields terminal status, run:
 bash scripts/validate-phase.sh <scan_base> intrusion
 ```
 
-Intrusion is terminal only when `intrusion/phase-manifest.json` status is `ok`, `degraded`, `skipped`, or `failed`, and `intrusion/enrichment.json` exists. Reconciliation must not start before terminal intrusion state.
+Intrusion is terminal only when `intrusion/phase-manifest.json` status is `ok`, `intrusion/enrichment.json` exists, `intrusion/graphify-plan.json` exists, and required scoped Graphify runs under `intrusion/graphify-runs/` have valid LLM-backed graphs. Reconciliation must not start before terminal intrusion state. Graphify must use the configured LLM; AST-only intrusion output and accidental whole-repo mega extraction are invalid.
 
-### Step 5: Final Reconciliation
+### Step 6: Final Reconciliation
 
 Main runs `vulnops-reconcile` as task ID `Reconcile` only after intrusion is terminal.
 
@@ -188,7 +215,7 @@ bash scripts/validate-phase.sh <scan_base> final-reconciliation
 
 Final reconciliation applies intrusion upgrades/downgrades only when enrichment has evidence references. It must not promote unverified findings.
 
-### Step 6: Report
+### Step 7: Report
 
 Main runs `vulnops-reporter` as task ID `Reporter`.
 
@@ -207,7 +234,7 @@ bash scripts/validate-phase.sh <scan_base> report
 
 Markdown is presentation only. JSON controls metrics and finding status.
 
-### Step 7: Validate
+### Step 8: Validate
 
 Run:
 
@@ -216,6 +243,7 @@ bash scripts/validate-scan.sh <scan_base>
 ```
 
 If validation fails, present the validation errors instead of pretending the scan is complete.
+If validation succeeds, the audit request is terminal. Report the final paths/counts once, then stop issuing tool calls for that request.
 
 For phase-level checkpoints, use:
 
@@ -223,7 +251,7 @@ For phase-level checkpoints, use:
 bash scripts/validate-phase.sh <scan_base> <phase>
 ```
 
-Supported phases include `recon`, `sca`, `secrets`, `sast-threatmodel`, `sast-decompose`, `sast-deepdive`, `sast-verify`, `sast`, `triage`, `intrusion`, `final-reconciliation`, and `report`.
+Supported phases include `recon`, `sca`, `secrets`, `sast-threatmodel`, `sast-decompose`, `sast-deepdive`, `sast-verify`, `sast`, `intelligence`, `triage`, `intrusion`, `final-reconciliation`, and `report`.
 
 ---
 
@@ -244,6 +272,7 @@ Supported phases include `recon`, `sca`, `secrets`, `sast-threatmodel`, `sast-de
 - `irc` — OMP live subagent presence/progress channel available to Main and phase agents
 - `scripts/run-wraith.sh` — SCA scan wrapper
 - `scripts/run-poltergeist.sh` — secrets scan wrapper
+- `scripts/build-intelligence.py` — deterministic OODA intelligence artifact builder/finalizer
 - `scripts/run-graphify.sh` — intrusion analysis wrapper
 - `scripts/validate-config.sh` — audit runtime readiness gate
 - `scripts/bootstrap-omp.sh` — harness-local OMP onboarding/model bootstrap

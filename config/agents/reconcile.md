@@ -20,9 +20,10 @@ You reconcile triage findings with intrusion enrichment before the report is wri
 ## Workflow
 
 1. Read `<scan_base>/triage/findings.json`.
-2. Read `<scan_base>/intrusion/enrichment.json` if present.
-3. Apply intrusion upgrades/downgrades only when the enrichment has evidence references.
-4. Normalize every final finding with:
+2. Read `<scan_base>/intelligence/investigation-cards.json` and `<scan_base>/intelligence/coverage-gaps.json`.
+3. Read `<scan_base>/intrusion/enrichment.json` if present.
+4. Apply intrusion upgrades/downgrades only when the enrichment has evidence references.
+5. Normalize every final finding with:
    - `id`
    - `title`
    - `source`
@@ -31,11 +32,14 @@ You reconcile triage findings with intrusion enrichment before the report is wri
    - `confidence`
    - `evidence_refs`
    - `raw_refs`
+   - `intelligence_refs`
+   - `new_hypotheses`
    - `redaction_state`
    - `closure_reason`
-5. Write `<scan_base>/final-reconciliation/findings.json`.
-6. Write `<scan_base>/final-reconciliation/summary.md`.
-7. Write `<scan_base>/final-reconciliation/phase-manifest.json`.
+6. Preserve intelligence provenance in `raw_refs`; final critical/high findings must show whether Graphify answered reachability, blast radius, or dependency impact.
+7. Write `<scan_base>/final-reconciliation/findings.json`.
+8. Write `<scan_base>/final-reconciliation/summary.md`.
+9. Write `<scan_base>/final-reconciliation/phase-manifest.json`.
 
 ## Completion
 

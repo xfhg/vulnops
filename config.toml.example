@@ -39,20 +39,31 @@ discovery = "proxy"
 
 # ── Graphify (intrusion agent) ────────────────────────────────────────
 [graphify]
-# Backend: LLM backend for graphify's semantic extraction.
-#   "ollama"  — on-prem via OpenAI-compatible endpoint (uses llm.base_url)
-#   "openai"  — OpenAI API (requires api_key)
-#   "gemini"  — Google Gemini API (requires api_key)
-#   ""        — AST-only mode (no LLM needed, fully offline)
-backend = "ollama"
+# Backend for graphify's semantic extraction.
+#   ""        — default: harness-generated OpenAI-compatible provider using [llm]
+#   "ollama"  — real local Ollama only, not a generic /v1 gateway
+# Other Graphify built-ins are allowed only when their native env/config is valid.
+backend = ""
 
-# Override graphify's default model for this backend (empty = backend default)
-# Ignored when backend = "" (AST-only).
+# Optional Graphify LLM overrides. Empty values inherit [llm].
+base_url = ""
 model = ""
-
-# API key override — empty = use llm.api_key above
-# Only needed when graphify uses a different key than the main LLM provider.
 api_key = ""
+
+# Targeted OODA intrusion mode. Keep full-repo extraction off by default; Graphify
+# should answer scoped reachability/path questions derived from recon + triage.
+full_repo = false
+cluster_when = "cross_module_only"
+
+[graphify.max_scope_files]
+quick = 40
+balanced = 100
+full = 200
+
+[graphify.max_scopes]
+quick = 4
+balanced = 8
+full = 16
 
 # ── Harness scan settings ─────────────────────────────────────────────
 [harness]
@@ -103,10 +114,8 @@ binary = "bins/poltergeist"
 extra_flags = []
 
 [harness.scans.intrusion]
-# Whether intrusion analysis is optional (non-gate)
-#   true  — skip if graphify unavailable, continue pipeline
-#   false — halt pipeline if intrusion phase fails
-optional = true
+# Intrusion requires LLM-backed Graphify. No AST-only fallback.
+optional = false
 
 [harness.scans.reconciliation]
 # Reconcile triage findings with intrusion enrichment before report generation.

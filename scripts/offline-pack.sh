@@ -5,10 +5,10 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 HARNESS_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
-LOCK_FILE="${HARNESS_ROOT}/config/offline-pack.lock"
 OFFLINE_DIR="${HARNESS_ROOT}/offline"
 CHUNK_SIZE_BYTES=$((45 * 1024 * 1024))
 CHUNK_SIZE_LABEL="45MiB"
+DEFAULT_PLATFORM="linux_amd64"
 
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -24,22 +24,24 @@ usage() {
     cat <<EOF
 Usage: $0 [options]
 
-Build a self-contained offline bundle for airgapped Linux AMD64 deployment.
-Also writes 45MiB Git-friendly chunks under ./offline/.
+Build a self-contained offline bundle for airgapped deployment.
+Default platform is linux_amd64 for backward compatibility.
 
 Options:
+  --platform <name>      Target platform: linux_amd64 or darwin_arm64
   --output <path>        Output tar.gz path
   --force                Overwrite an existing output file
   --include-config       Include local config.toml with credentials
   --include-untracked    Include untracked critical harness files
   --version latest       Build with latest upstream tool/package versions
-  --refresh-lock         Build with latest versions and update config/offline-pack.lock
+  --refresh-lock         Build with latest versions and update the platform lock
   --help                 Show this help
 
 Default output:
-  ./vulnops-offline-<timestamp>.tar.gz
+  ./vulnops-offline-<platform>-<timestamp>.tar.gz
   ./offline/<tar-name>.part-aa, ./offline/<tar-name>.part-ab, ...
   ./offline/offline-pack-chunks.json
+  ./offline/offline-pack-chunks.sh
 
 Default security posture:
   config.toml.example is packaged as config.toml. Live config.toml is included
@@ -57,11 +59,48 @@ require_arg() {
 }
 
 sha256_file() {
-    sha256sum "$1" | awk '{print $1}'
+    if command -v sha256sum >/dev/null 2>&1; then
+        sha256sum "$1" | awk '{print $1}'
+    elif command -v shasum >/dev/null 2>&1; then
+        shasum -a 256 "$1" | awk '{print $1}'
+    else
+        die "Missing sha256 tool: install sha256sum or shasum"
+    fi
+}
+
+detect_host_platform() {
+    local os arch
+    os="$(uname -s | tr '[:upper:]' '[:lower:]')"
+    arch="$(uname -m)"
+    case "$os" in
+        linux) os="linux" ;;
+        darwin) os="darwin" ;;
+        *) die "Unsupported host OS: $os" ;;
+    esac
+    case "$arch" in
+        x86_64|amd64) arch="amd64" ;;
+        aarch64|arm64) arch="arm64" ;;
+        *) die "Unsupported host arch: $arch" ;;
+    esac
+    echo "${os}_${arch}"
+}
+
+lock_for_platform() {
+    local platform="$1"
+    local platform_lock="${HARNESS_ROOT}/config/offline-pack.${platform}.lock"
+    if [ -f "$platform_lock" ]; then
+        echo "$platform_lock"
+        return
+    fi
+    if [ "$platform" = "linux_amd64" ] && [ -f "${HARNESS_ROOT}/config/offline-pack.lock" ]; then
+        echo "${HARNESS_ROOT}/config/offline-pack.lock"
+        return
+    fi
+    die "Missing offline pack lock for ${platform}: ${platform_lock}"
 }
 
 load_lock() {
-    [ -f "$LOCK_FILE" ] || die "Missing offline pack lock file: $LOCK_FILE"
+    LOCK_FILE="$(lock_for_platform "$TARGET_PLATFORM")"
     # shellcheck source=/dev/null
     source "$LOCK_FILE"
 
@@ -77,6 +116,14 @@ load_lock() {
     : "${MIN_OSV_DB_FILES:?missing MIN_OSV_DB_FILES in lock}"
     : "${MIN_OSV_DB_SIZE_KB:?missing MIN_OSV_DB_SIZE_KB in lock}"
     : "${MIN_WHEEL_COUNT:?missing MIN_WHEEL_COUNT in lock}"
+
+    if [ "$OFFLINE_PACK_PLATFORM" != "$TARGET_PLATFORM" ]; then
+        die "Lock platform ${OFFLINE_PACK_PLATFORM} does not match requested ${TARGET_PLATFORM}: ${LOCK_FILE}"
+    fi
+    if [ "$TARGET_PLATFORM" = "darwin_arm64" ]; then
+        : "${CPYTHON_STANDALONE_RELEASE:?missing CPYTHON_STANDALONE_RELEASE in macOS lock}"
+        : "${CPYTHON_STANDALONE_ASSET:?missing CPYTHON_STANDALONE_ASSET in macOS lock}"
+    fi
 }
 
 copy_file_to_staging() {
@@ -97,13 +144,13 @@ copy_untracked_critical_source() {
         [ -n "$rel" ] || continue
         copy_file_to_staging "$rel"
     done < <(git -C "$HARNESS_ROOT" ls-files --others --exclude-standard -- \
-        .omp scripts schemas config AGENTS.md README.md run.sh config.toml.example)
+        .omp scripts schemas config AGENTS.md README.md run.sh config.toml.example offline-build.sh)
 }
 
 check_untracked_critical_source() {
     local report="${TMPDIR:-/tmp}/vulnops-offline-untracked.txt"
     git -C "$HARNESS_ROOT" ls-files --others --exclude-standard -- \
-        .omp scripts schemas config AGENTS.md README.md run.sh config.toml.example >"$report"
+        .omp scripts schemas config AGENTS.md README.md run.sh config.toml.example offline-build.sh >"$report"
     if [ -s "$report" ] && [ "$INCLUDE_UNTRACKED" != true ]; then
         err "Critical untracked files would be omitted from the offline pack:"
         sed 's/^/[pack]   /' "$report" >&2
@@ -131,18 +178,26 @@ write_lock_file() {
     local path="$1"
     cat >"$path" <<EOF
 # offline-pack.lock — exact versions used by scripts/offline-pack.sh
-# Refresh intentionally with: bash scripts/offline-pack.sh --refresh-lock
+# Refresh intentionally with: bash scripts/offline-pack.sh --platform ${TARGET_PLATFORM} --refresh-lock
 
-OFFLINE_PACK_PLATFORM=linux_amd64
-OFFLINE_PACK_PYTHON_VERSION=3.12
-OFFLINE_PACK_PYTHON_TAG=cp312
-OFFLINE_PACK_WHEEL_PLATFORM=manylinux2014_x86_64
+OFFLINE_PACK_PLATFORM=${TARGET_PLATFORM}
+OFFLINE_PACK_PYTHON_VERSION=${OFFLINE_PACK_PYTHON_VERSION}
+OFFLINE_PACK_PYTHON_TAG=${OFFLINE_PACK_PYTHON_TAG}
+OFFLINE_PACK_WHEEL_PLATFORM=${OFFLINE_PACK_WHEEL_PLATFORM}
 
 WRAITH_VERSION=${ACTUAL_WRAITH_VERSION}
 POLTERGEIST_VERSION=${ACTUAL_POLTERGEIST_VERSION}
 OMP_VERSION=${ACTUAL_OMP_VERSION}
 OSV_SCANNER_VERSION=${ACTUAL_OSV_SCANNER_VERSION}
 GRAPHIFYY_VERSION=${ACTUAL_GRAPHIFYY_VERSION}
+EOF
+    if [ "$TARGET_PLATFORM" = "darwin_arm64" ]; then
+        cat >>"$path" <<EOF
+CPYTHON_STANDALONE_RELEASE=${CPYTHON_STANDALONE_RELEASE}
+CPYTHON_STANDALONE_ASSET=${CPYTHON_STANDALONE_ASSET}
+EOF
+    fi
+    cat >>"$path" <<EOF
 
 MIN_OSV_DB_FILES=${MIN_OSV_DB_FILES}
 MIN_OSV_DB_SIZE_KB=${MIN_OSV_DB_SIZE_KB}
@@ -150,13 +205,36 @@ MIN_WHEEL_COUNT=${MIN_WHEEL_COUNT}
 EOF
 }
 
+download_cpython_runtime() {
+    [ "$TARGET_PLATFORM" = "darwin_arm64" ] || return 0
+
+    local url tmpdir archive
+    url="https://github.com/astral-sh/python-build-standalone/releases/download/${CPYTHON_STANDALONE_RELEASE}/${CPYTHON_STANDALONE_ASSET}"
+    tmpdir="$(mktemp -d)"
+    archive="${tmpdir}/${CPYTHON_STANDALONE_ASSET}"
+    log "Downloading bundled CPython ${CPYTHON_STANDALONE_ASSET}..."
+    curl -sfL -o "$archive" "$url" || die "Failed to download CPython runtime: $url"
+    mkdir -p "$STAGING/vendor"
+    tar -xzf "$archive" -C "$STAGING/vendor" || die "Failed to extract CPython runtime"
+    [ -x "$STAGING/vendor/python/bin/python3" ] || die "Bundled Python missing after extraction"
+    CPYTHON_ARCHIVE_SHA256="$(sha256_file "$archive")"
+    rm -rf "$tmpdir"
+}
+
 write_pack_manifest() {
     python3 - "$STAGING" \
+        "$TARGET_PLATFORM" \
+        "$OFFLINE_PACK_PYTHON_VERSION" \
+        "$OFFLINE_PACK_PYTHON_TAG" \
+        "$OFFLINE_PACK_WHEEL_PLATFORM" \
         "$ACTUAL_WRAITH_VERSION" \
         "$ACTUAL_POLTERGEIST_VERSION" \
         "$ACTUAL_OMP_VERSION" \
         "$ACTUAL_OSV_SCANNER_VERSION" \
         "$ACTUAL_GRAPHIFYY_VERSION" \
+        "${CPYTHON_STANDALONE_RELEASE:-}" \
+        "${CPYTHON_STANDALONE_ASSET:-}" \
+        "${CPYTHON_ARCHIVE_SHA256:-}" \
         "$db_file_count" \
         "$db_size_kb" \
         "$wheel_count" <<'PY'
@@ -167,16 +245,20 @@ from pathlib import Path
 
 root = Path(sys.argv[1])
 versions = {
-    "wraith": sys.argv[2],
-    "poltergeist": sys.argv[3],
-    "omp": sys.argv[4],
-    "osv_scanner": sys.argv[5],
-    "graphifyy": sys.argv[6],
-    "python": "3.12",
-    "python_tag": "cp312",
-    "platform": "linux_amd64",
-    "wheel_platform": "manylinux2014_x86_64",
+    "platform": sys.argv[2],
+    "python": sys.argv[3],
+    "python_tag": sys.argv[4],
+    "wheel_platform": sys.argv[5],
+    "wraith": sys.argv[6],
+    "poltergeist": sys.argv[7],
+    "omp": sys.argv[8],
+    "osv_scanner": sys.argv[9],
+    "graphifyy": sys.argv[10],
 }
+if sys.argv[11]:
+    versions["cpython_standalone_release"] = sys.argv[11]
+    versions["cpython_standalone_asset"] = sys.argv[12]
+    versions["cpython_standalone_archive_sha256"] = sys.argv[13]
 
 def sha(path: Path) -> str:
     h = hashlib.sha256()
@@ -193,6 +275,7 @@ for rel in [
     "bins/osv-scanner",
     "setup.sh",
     "config/offline-pack.lock",
+    "vendor/python/bin/python3",
 ]:
     path = root / rel
     if path.is_file():
@@ -206,9 +289,9 @@ manifest = {
     "schema": "vulnops.offline-pack-manifest.v1",
     "versions": versions,
     "counts": {
-        "osv_db_files": int(sys.argv[7]),
-        "osv_db_size_kb": int(sys.argv[8]),
-        "wheels": int(sys.argv[9]),
+        "osv_db_files": int(sys.argv[14]),
+        "osv_db_size_kb": int(sys.argv[15]),
+        "wheels": int(sys.argv[16]),
     },
     "hashes": {
         "files": files,
@@ -249,6 +332,10 @@ def suffix(index: int) -> str:
         raise SystemExit("too many chunks for two-letter suffixes")
     return alphabet[index // len(alphabet)] + alphabet[index % len(alphabet)]
 
+def q(value: object) -> str:
+    text = str(value)
+    return "'" + text.replace("'", "'\"'\"'") + "'"
+
 tar_name = tar_path.name
 chunks = []
 with tar_path.open("rb") as src:
@@ -281,28 +368,50 @@ manifest = {
 (offline_dir / "offline-pack-chunks.json").write_text(
     json.dumps(manifest, indent=2, sort_keys=True) + "\n"
 )
+
+lines = [
+    "# Generated by scripts/offline-pack.sh. Source with bash only.",
+    "OFFLINE_CHUNKS_SCHEMA='vulnops.offline-pack-chunks.v1'",
+    f"TAR_NAME={q(tar_name)}",
+    f"TAR_SIZE={tar_path.stat().st_size}",
+    f"TAR_SHA256={q(manifest['tar_sha256'])}",
+    f"CHUNK_COUNT={len(chunks)}",
+]
+for index, entry in enumerate(chunks):
+    lines.extend(
+        [
+            f"CHUNK_{index}_FILE={q(entry['file'])}",
+            f"CHUNK_{index}_SIZE={entry['size']}",
+            f"CHUNK_{index}_SHA256={q(entry['sha256'])}",
+        ]
+    )
+(offline_dir / "offline-pack-chunks.sh").write_text("\n".join(lines) + "\n")
 print(len(chunks))
 PY
 }
 
 # ── Parse arguments ──────────────────────────────────────────────────────
 
+TARGET_PLATFORM="$DEFAULT_PLATFORM"
 OUTPUT=""
 FORCE=false
 INCLUDE_CONFIG=false
 INCLUDE_UNTRACKED=false
 USE_LATEST=false
 REFRESH_LOCK=false
+LOCK_FILE=""
+CPYTHON_ARCHIVE_SHA256=""
 
 while [ $# -gt 0 ]; do
     case "$1" in
+        --platform) require_arg "$1" "${2:-}"; TARGET_PLATFORM="$2"; shift 2 ;;
         --output|-o) require_arg "$1" "${2:-}"; OUTPUT="$2"; shift 2 ;;
         --force) FORCE=true; shift ;;
         --include-config) INCLUDE_CONFIG=true; shift ;;
         --include-untracked) INCLUDE_UNTRACKED=true; shift ;;
         --version)
             require_arg "$1" "${2:-}"
-            [ "$2" = "latest" ] || die "Only --version latest is supported; default uses $LOCK_FILE"
+            [ "$2" = "latest" ] || die "Only --version latest is supported; default uses the platform lock"
             USE_LATEST=true
             shift 2
             ;;
@@ -312,8 +421,13 @@ while [ $# -gt 0 ]; do
     esac
 done
 
+case "$TARGET_PLATFORM" in
+    linux_amd64|darwin_arm64) ;;
+    *) die "Unsupported platform: $TARGET_PLATFORM" ;;
+esac
+
 if [ -z "$OUTPUT" ]; then
-    OUTPUT="${HARNESS_ROOT}/vulnops-offline-$(date +%Y%m%d-%H%M%S).tar.gz"
+    OUTPUT="${HARNESS_ROOT}/vulnops-offline-${TARGET_PLATFORM//_/-}-$(date +%Y%m%d-%H%M%S).tar.gz"
 fi
 
 mkdir -p "$(dirname "$OUTPUT")"
@@ -329,22 +443,19 @@ fi
 
 # ── Platform and prerequisite checks ──────────────────────────────────────
 
-os_name="$(uname -s | tr '[:upper:]' '[:lower:]')"
-arch_name="$(uname -m)"
-if [ "$os_name" != "linux" ] || [ "$arch_name" != "x86_64" ]; then
-    die "This script must run on Linux x86_64 (detected: ${os_name}/${arch_name}).
-The airgapped target is Linux AMD64 — bundling a different architecture would
-produce binaries that cannot run."
+HOST_PLATFORM="$(detect_host_platform)"
+if [ "$HOST_PLATFORM" != "$TARGET_PLATFORM" ]; then
+    die "Build host ${HOST_PLATFORM} cannot create ${TARGET_PLATFORM}; build on the matching platform."
 fi
 
-for cmd in git curl tar pip3 python3 sha256sum; do
+for cmd in git curl tar pip3 python3; do
     command -v "$cmd" >/dev/null 2>&1 || die "Missing required command: $cmd"
 done
+if ! command -v sha256sum >/dev/null 2>&1 && ! command -v shasum >/dev/null 2>&1; then
+    die "Missing required command: sha256sum or shasum"
+fi
 
 load_lock
-if [ "$OFFLINE_PACK_PLATFORM" != "linux_amd64" ]; then
-    die "Unsupported lock platform: $OFFLINE_PACK_PLATFORM"
-fi
 if [ "$USE_LATEST" = true ]; then
     WRAITH_VERSION=latest
     POLTERGEIST_VERSION=latest
@@ -360,6 +471,8 @@ check_untracked_critical_source
 STAGING="$(mktemp -d)"
 trap 'rm -rf "$STAGING"' EXIT
 log "Staging directory: $STAGING"
+log "Target platform: $TARGET_PLATFORM"
+log "Lock file: $LOCK_FILE"
 
 # ── Step 2: Copy source ──────────────────────────────────────────────────
 
@@ -379,7 +492,7 @@ else
 fi
 log "  Source copy complete."
 
-# ── Step 3: Download Linux AMD64 binaries ────────────────────────────────
+# ── Step 3: Download platform binaries ───────────────────────────────────
 
 log "Downloading locked binaries..."
 WRAITH_VERSION="$WRAITH_VERSION" \
@@ -399,7 +512,11 @@ ACTUAL_OMP_VERSION="$(read_version_file "$STAGING/bins/.omp.version")"
 ACTUAL_OSV_SCANNER_VERSION="$(read_version_file "$STAGING/bins/.osv-scanner.version")"
 log "  Binaries: wraith ${ACTUAL_WRAITH_VERSION}, poltergeist ${ACTUAL_POLTERGEIST_VERSION}, omp ${ACTUAL_OMP_VERSION}, osv-scanner ${ACTUAL_OSV_SCANNER_VERSION}"
 
-# ── Step 4: Download OSV database ────────────────────────────────────────
+# ── Step 4: Download bundled CPython when required ───────────────────────
+
+download_cpython_runtime
+
+# ── Step 5: Download OSV database ────────────────────────────────────────
 
 log "Downloading OSV vulnerability database..."
 bash "$STAGING/scripts/fetch-osv-db.sh" || die "fetch-osv-db.sh failed"
@@ -412,7 +529,7 @@ if [ "$db_file_count" -lt "$MIN_OSV_DB_FILES" ] || [ "${db_size_kb:-0}" -lt "$MI
 fi
 log "  OSV database: ${db_file_count} files, $((db_size_kb / 1024)) MB"
 
-# ── Step 5: Download Python wheels ───────────────────────────────────────
+# ── Step 6: Download Python wheels ───────────────────────────────────────
 
 log "Downloading Python wheels for ${OFFLINE_PACK_PYTHON_TAG} / ${OFFLINE_PACK_WHEEL_PLATFORM}..."
 mkdir -p "$STAGING/wheels"
@@ -447,7 +564,7 @@ if [ "$REFRESH_LOCK" = true ]; then
 fi
 write_lock_file "$STAGING/config/offline-pack.lock"
 
-# ── Step 6: Generate setup.sh ────────────────────────────────────────────
+# ── Step 7: Generate setup.sh ────────────────────────────────────────────
 
 log "Generating setup.sh..."
 cat > "$STAGING/setup.sh" <<'SETUP_EOF'
@@ -456,6 +573,7 @@ cat > "$STAGING/setup.sh" <<'SETUP_EOF'
 set -euo pipefail
 
 HARNESS_ROOT="$(cd "$(dirname "$0")" && pwd)"
+LOCK_FILE="${HARNESS_ROOT}/config/offline-pack.lock"
 
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -475,8 +593,28 @@ check_exec() {
     [ -x "$1" ] || die "$2 missing or not executable: $1"
 }
 
+fix_macos_runtime_bits() {
+    [ "$(uname -s)" = "Darwin" ] || return 0
+    if command -v xattr >/dev/null 2>&1; then
+        xattr -dr com.apple.quarantine "$HARNESS_ROOT" 2>/dev/null || true
+        xattr -dr com.apple.provenance "$HARNESS_ROOT" 2>/dev/null || true
+    fi
+    command -v codesign >/dev/null 2>&1 || return 0
+    while IFS= read -r -d '' file; do
+        codesign --force --sign - "$file" >/dev/null 2>&1 || true
+    done < <(find "${HARNESS_ROOT}/bins" "${HARNESS_ROOT}/vendor/python/bin" -type f -perm -111 -print0 2>/dev/null)
+}
+
+select_python() {
+    if [ -x "${HARNESS_ROOT}/vendor/python/bin/python3" ]; then
+        echo "${HARNESS_ROOT}/vendor/python/bin/python3"
+        return
+    fi
+    command -v python3 2>/dev/null || true
+}
+
 check_config_ready() {
-    python3 - "$HARNESS_ROOT/config.toml" <<'PY'
+    "$PYTHON" - "$HARNESS_ROOT/config.toml" <<'PY'
 import sys
 from pathlib import Path
 try:
@@ -493,32 +631,38 @@ if missing:
 PY
 }
 
-if ! command -v python3 >/dev/null 2>&1; then
-    die "python3 not found. Python 3.12 is required to install the bundled wheels."
-fi
+check_file "$LOCK_FILE" "offline pack lock"
+# shellcheck source=/dev/null
+source "$LOCK_FILE"
 
-py_ver="$(python3 -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}")')"
-if [ "$py_ver" != "3.12" ]; then
-    die "Python 3.12 required; bundled wheels are cp312-specific (found ${py_ver})."
+fix_macos_runtime_bits
+
+PYTHON="$(select_python)"
+[ -n "$PYTHON" ] || die "python3 not found. This pack requires Python ${OFFLINE_PACK_PYTHON_VERSION}."
+check_exec "$PYTHON" "Python runtime"
+
+py_ver="$("$PYTHON" -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}")')"
+if [ "$py_ver" != "$OFFLINE_PACK_PYTHON_VERSION" ]; then
+    die "Python ${OFFLINE_PACK_PYTHON_VERSION} required; bundled wheels are ${OFFLINE_PACK_PYTHON_TAG}-specific (found ${py_ver})."
 fi
-log "Python ${py_ver} detected."
+log "Python ${py_ver} detected: $PYTHON"
 
 for bin in omp wraith poltergeist osv-scanner; do
     check_exec "${HARNESS_ROOT}/bins/${bin}" "binary ${bin}"
 done
 check_file "${HARNESS_ROOT}/config.toml" "config.toml"
 check_file "${HARNESS_ROOT}/offline-pack-manifest.json" "offline-pack manifest"
-check_config_ready || die "Edit config.toml with the on-prem LLM endpoint/API key before running setup.sh."
+check_config_ready || die "Edit config.toml with the local/LAN LLM endpoint/API key before running setup.sh."
 
 db_files="$(find "${HARNESS_ROOT}/.harness/osv-db" -type f 2>/dev/null | wc -l | tr -d ' ')"
-[ "$db_files" -ge 3 ] || die "OSV database missing or incomplete: ${db_files} files"
+[ "$db_files" -ge "$MIN_OSV_DB_FILES" ] || die "OSV database missing or incomplete: ${db_files} files"
 
 wheel_count="$(find "${HARNESS_ROOT}/wheels" -name '*.whl' 2>/dev/null | wc -l | tr -d ' ')"
-[ "$wheel_count" -ge 31 ] || die "Wheel cache missing or incomplete: ${wheel_count} wheels"
+[ "$wheel_count" -ge "$MIN_WHEEL_COUNT" ] || die "Wheel cache missing or incomplete: ${wheel_count} wheels"
 
 log "Recreating Python venv from bundled wheels..."
 rm -rf "${HARNESS_ROOT}/.venv"
-python3 -m venv "${HARNESS_ROOT}/.venv"
+"$PYTHON" -m venv "${HARNESS_ROOT}/.venv"
 "${HARNESS_ROOT}/.venv/bin/pip" install \
     --no-index \
     --find-links "${HARNESS_ROOT}/wheels/" \
@@ -548,7 +692,7 @@ echo ""
 SETUP_EOF
 chmod +x "$STAGING/setup.sh"
 
-# ── Step 7: Manifest and package ─────────────────────────────────────────
+# ── Step 8: Manifest and package ─────────────────────────────────────────
 
 write_pack_manifest
 manifest_sha="$(sha256_file "$STAGING/offline-pack-manifest.json")"
@@ -559,17 +703,19 @@ tar -czf "$OUTPUT" -C "$STAGING" .
 pack_size="$(du -sh "$OUTPUT" | awk '{print $1}')"
 pack_sha="$(sha256_file "$OUTPUT")"
 
-# ── Step 8: Split pack for Git transport ─────────────────────────────────
+# ── Step 9: Split pack for Git transport ─────────────────────────────────
 
 log "Writing ${CHUNK_SIZE_LABEL} chunks to offline/..."
 rm -rf "$OFFLINE_DIR"
 mkdir -p "$OFFLINE_DIR"
 chunk_count="$(write_chunk_manifest)"
 chunks_manifest="${OFFLINE_DIR}/offline-pack-chunks.json"
+chunks_shell_manifest="${OFFLINE_DIR}/offline-pack-chunks.sh"
 chunks_manifest_sha="$(sha256_file "$chunks_manifest")"
+chunks_shell_manifest_sha="$(sha256_file "$chunks_shell_manifest")"
 log "  Chunks: ${chunk_count}"
-log "  Manifest: ${chunks_manifest}"
-log "  Manifest SHA256: ${chunks_manifest_sha}"
+log "  JSON manifest: ${chunks_manifest}"
+log "  Shell manifest: ${chunks_shell_manifest}"
 
 echo ""
 log "Created: $OUTPUT"
@@ -578,14 +724,20 @@ log "SHA256: $pack_sha"
 log "Chunks: $OFFLINE_DIR (${chunk_count} files, ${CHUNK_SIZE_LABEL} each except final)"
 echo ""
 echo "  Manifest:"
-echo "    File:          offline-pack-manifest.json"
-echo "    SHA256:        $manifest_sha"
-echo "    Chunks:        offline/offline-pack-chunks.json"
-echo "    Chunks SHA256: $chunks_manifest_sha"
-echo "    Binaries:      omp, wraith, poltergeist, osv-scanner (linux_amd64)"
-echo "    OSV database:  ${db_file_count} files, $((db_size_kb / 1024)) MB"
-echo "    Python wheels: ${wheel_count} packages (graphifyy ${ACTUAL_GRAPHIFYY_VERSION})"
-echo "    Config:        $([ "$INCLUDE_CONFIG" = true ] && echo 'live config.toml included' || echo 'redacted config.toml template')"
+echo "    File:             offline-pack-manifest.json"
+echo "    SHA256:           $manifest_sha"
+echo "    Chunks JSON:      offline/offline-pack-chunks.json"
+echo "    Chunks JSON SHA:  $chunks_manifest_sha"
+echo "    Chunks shell:     offline/offline-pack-chunks.sh"
+echo "    Chunks shell SHA: $chunks_shell_manifest_sha"
+echo "    Platform:         ${TARGET_PLATFORM}"
+echo "    Binaries:         omp, wraith, poltergeist, osv-scanner"
+echo "    OSV database:     ${db_file_count} files, $((db_size_kb / 1024)) MB"
+echo "    Python wheels:    ${wheel_count} packages (graphifyy ${ACTUAL_GRAPHIFYY_VERSION})"
+if [ "$TARGET_PLATFORM" = "darwin_arm64" ]; then
+    echo "    Bundled Python:   ${CPYTHON_STANDALONE_ASSET}"
+fi
+echo "    Config:           $([ "$INCLUDE_CONFIG" = true ] && echo 'live config.toml included' || echo 'redacted config.toml template')"
 echo ""
 echo "  Git transport:"
 echo "    git add offline/ offline-build.sh"

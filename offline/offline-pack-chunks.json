@@ -3,43 +3,78 @@
   "chunk_size_label": "45MiB",
   "chunks": [
     {
-      "file": "vulnops-offline-20260617-073015.tar.gz.part-aa",
-      "sha256": "9e7f4cde62e26a49eacba94464c651ba4fa43d287176a0b23acefa312d39d568",
+      "file": "vulnops-offline-darwin-arm64-20260630-171823.tar.gz.part-aa",
+      "sha256": "ac20f940ac5200a3eb493aa46948117c4768f8accddc32e0b6b8f07d32c47990",
       "size": 47185920
     },
     {
-      "file": "vulnops-offline-20260617-073015.tar.gz.part-ab",
-      "sha256": "c9d11c99de95efc701e9610424e70fb82b225597768cbd8f34ad29f3fb63ddcb",
+      "file": "vulnops-offline-darwin-arm64-20260630-171823.tar.gz.part-ab",
+      "sha256": "84a656bac306317c73a7a3397f96548cc80c05f0b1d157af02e587ea76b95cbf",
       "size": 47185920
     },
     {
-      "file": "vulnops-offline-20260617-073015.tar.gz.part-ac",
-      "sha256": "51ff45c670b43219e8288fbec32e1b3018827f15a9d730c1e5bc912fc0847b1c",
+      "file": "vulnops-offline-darwin-arm64-20260630-171823.tar.gz.part-ac",
+      "sha256": "e12f8eef6551b3cdb3d90cce8c52b1045066969281d1a3b7cefce748f7bc4bb6",
       "size": 47185920
     },
     {
-      "file": "vulnops-offline-20260617-073015.tar.gz.part-ad",
-      "sha256": "ec4856f1e4c789881240f83850732f0ee1f52e28d02e6895af2b14b9e1aa0071",
+      "file": "vulnops-offline-darwin-arm64-20260630-171823.tar.gz.part-ad",
+      "sha256": "4cb76a84e73278fe30242e1b1994f195ff6bb7a5da2f9b9f3c6d32f8003a287a",
       "size": 47185920
     },
     {
-      "file": "vulnops-offline-20260617-073015.tar.gz.part-ae",
-      "sha256": "3dff5aab967965dbb9eb28a0aaf69f1c901e711307e823c64b3149d66aedb585",
+      "file": "vulnops-offline-darwin-arm64-20260630-171823.tar.gz.part-ae",
+      "sha256": "cc2dffe3bc0cf81bdb83ae560685f5bdd5fac42e3c6cafdaabe552eec7e31407",
       "size": 47185920
     },
     {
-      "file": "vulnops-offline-20260617-073015.tar.gz.part-af",
-      "sha256": "f2920aa7834647d7a755c7b199505313d1366804c2503f158032f5f18b149df1",
+      "file": "vulnops-offline-darwin-arm64-20260630-171823.tar.gz.part-af",
+      "sha256": "a7142612bfe47bcddce54e442705fc37dc876a7549b79220eedc458b400dfb6b",
       "size": 47185920
     },
     {
-      "file": "vulnops-offline-20260617-073015.tar.gz.part-ag",
-      "sha256": "00b5f98e50aaee7dbee7a7bda94d3871186f5b98b624d7027ee899d2e115779c",
-      "size": 37576777
+      "file": "vulnops-offline-darwin-arm64-20260630-171823.tar.gz.part-ag",
+      "sha256": "70e22bad2b38b9ff8b8133c52656a35d114643580f7fcfcf34b96d0cc724703f",
+      "size": 47185920
+    },
+    {
+      "file": "vulnops-offline-darwin-arm64-20260630-171823.tar.gz.part-ah",
+      "sha256": "8a5227bd0bba5c2a2cdd1d636c679d68845f0c00648bdf594de01dd13189f073",
+      "size": 47185920
+    },
+    {
+      "file": "vulnops-offline-darwin-arm64-20260630-171823.tar.gz.part-ai",
+      "sha256": "6cf397020228da88c11742f522ee80a3d2d5efa94609b54a6845bbd21383d017",
+      "size": 47185920
+    },
+    {
+      "file": "vulnops-offline-darwin-arm64-20260630-171823.tar.gz.part-aj",
+      "sha256": "3abae62ca112d5b501dddcf5e0e28f62dc0f764508649c22848747e32263515c",
+      "size": 47185920
+    },
+    {
+      "file": "vulnops-offline-darwin-arm64-20260630-171823.tar.gz.part-ak",
+      "sha256": "42b45bb2f8d9f90ece1895a7e3a6bc5cebfac9f1fe1343072ad3423990ebb7fc",
+      "size": 47185920
+    },
+    {
+      "file": "vulnops-offline-darwin-arm64-20260630-171823.tar.gz.part-al",
+      "sha256": "0c2d49248d699ce41f222b20e5cc73a08f56f8661ebe0158f4c695fec052dc66",
+      "size": 47185920
+    },
+    {
+      "file": "vulnops-offline-darwin-arm64-20260630-171823.tar.gz.part-am",
+      "sha256": "43f5b114f68f8537a3aaae54b8268cc59992fe001b37176348b4080fb0fde270",
+      "size": 47185920
+    },
+    {
+      "file": "vulnops-offline-darwin-arm64-20260630-171823.tar.gz.part-an",
+      "sha256": "eabc8466912cbab726e5ec11528de9297e1988af3bb77f82a11fcf6a846f51a7",
+      "size": 24110425
     }
   ],
   "schema": "vulnops.offline-pack-chunks.v1",
-  "tar_name": "vulnops-offline-20260617-073015.tar.gz",
-  "tar_sha256": "367c912b91c772f433980f4d04d94218c251261e69581eb91922a74ca2da64d0",
-  "tar_size": 320692297
+  "tar_name": "vulnops-offline-darwin-arm64-20260630-171823.tar.gz",
+  "tar_sha256": "34fa1c45a1ad79f8631e4082502add4df3ae26d5835702655c0ff6e96d7b4b46",
+  "tar_size": 637527385
 }

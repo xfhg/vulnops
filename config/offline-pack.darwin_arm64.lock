@@ -1,0 +1,19 @@
+# offline-pack.lock — exact versions used by scripts/offline-pack.sh
+# Refresh intentionally with: bash scripts/offline-pack.sh --platform darwin_arm64 --refresh-lock
+
+OFFLINE_PACK_PLATFORM=darwin_arm64
+OFFLINE_PACK_PYTHON_VERSION=3.12
+OFFLINE_PACK_PYTHON_TAG=cp312
+OFFLINE_PACK_WHEEL_PLATFORM=macosx_11_0_arm64
+
+WRAITH_VERSION=v2.0.2
+POLTERGEIST_VERSION=v2.0.5
+OMP_VERSION=v16.2.7
+OSV_SCANNER_VERSION=v2.4.0
+GRAPHIFYY_VERSION=0.8.39
+CPYTHON_STANDALONE_RELEASE=20260623
+CPYTHON_STANDALONE_ASSET=cpython-3.12.13+20260623-aarch64-apple-darwin-install_only_stripped.tar.gz
+
+MIN_OSV_DB_FILES=3
+MIN_OSV_DB_SIZE_KB=51200
+MIN_WHEEL_COUNT=51

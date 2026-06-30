@@ -17,6 +17,8 @@ bins/*
 # OSV database — downloaded by fetch-osv-db.sh, never committed
 .harness/osv-db/
 
+.harness/
+
 # Harness internal state and logs
 .harness/logs/*
 .harness/cache/*

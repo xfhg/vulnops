@@ -5,7 +5,8 @@ set -euo pipefail
 
 HARNESS_ROOT="$(cd "$(dirname "$0")" && pwd)"
 OFFLINE_DIR="${HARNESS_ROOT}/offline"
-MANIFEST="${OFFLINE_DIR}/offline-pack-chunks.json"
+SHELL_MANIFEST="${OFFLINE_DIR}/offline-pack-chunks.sh"
+JSON_MANIFEST="${OFFLINE_DIR}/offline-pack-chunks.json"
 FORCE=false
 
 RED='\033[0;31m'
@@ -30,6 +31,21 @@ Options:
 EOF
 }
 
+sha256_file() {
+    if command -v sha256sum >/dev/null 2>&1; then
+        sha256sum "$1" | awk '{print $1}'
+    elif command -v shasum >/dev/null 2>&1; then
+        shasum -a 256 "$1" | awk '{print $1}'
+    else
+        die "Missing sha256 tool: install sha256sum or shasum"
+    fi
+}
+
+chunk_var() {
+    local name="$1"
+    printf '%s' "${!name:-}"
+}
+
 while [ $# -gt 0 ]; do
     case "$1" in
         --force) FORCE=true; shift ;;
@@ -38,26 +54,29 @@ while [ $# -gt 0 ]; do
     esac
 done
 
-[ -f "$MANIFEST" ] || die "Missing chunk manifest: $MANIFEST"
-command -v python3 >/dev/null 2>&1 || die "Missing required command: python3"
+if [ ! -f "$SHELL_MANIFEST" ]; then
+    die "Missing shell chunk manifest: $SHELL_MANIFEST. Rebuild the offline pack with the current scripts/offline-pack.sh."
+fi
+[ -f "$JSON_MANIFEST" ] || warn "JSON chunk manifest missing: $JSON_MANIFEST"
 
-log "Reading manifest: $MANIFEST"
-tar_name="$(python3 - "$MANIFEST" <<'PY'
-import json
-import sys
-from pathlib import Path
+log "Reading manifest: $SHELL_MANIFEST"
+# shellcheck source=/dev/null
+source "$SHELL_MANIFEST"
 
-manifest = json.loads(Path(sys.argv[1]).read_text())
-print(manifest.get("tar_name", ""))
-PY
-)"
-[ -n "$tar_name" ] || die "Manifest missing tar_name"
+[ "${OFFLINE_CHUNKS_SCHEMA:-}" = "vulnops.offline-pack-chunks.v1" ] || die "Unsupported chunk manifest schema: ${OFFLINE_CHUNKS_SCHEMA:-missing}"
+[ -n "${TAR_NAME:-}" ] || die "Manifest missing TAR_NAME"
+[ -n "${TAR_SIZE:-}" ] || die "Manifest missing TAR_SIZE"
+[ -n "${TAR_SHA256:-}" ] || die "Manifest missing TAR_SHA256"
+[ -n "${CHUNK_COUNT:-}" ] || die "Manifest missing CHUNK_COUNT"
 
-case "$tar_name" in
-    */*|""|.*) die "Unsafe tar_name in manifest: $tar_name" ;;
+case "$TAR_NAME" in
+    */*|""|.*) die "Unsafe TAR_NAME in manifest: $TAR_NAME" ;;
+esac
+case "$CHUNK_COUNT" in
+    ''|*[!0-9]*) die "Invalid CHUNK_COUNT in manifest: $CHUNK_COUNT" ;;
 esac
 
-output="${HARNESS_ROOT}/${tar_name}"
+output="${HARNESS_ROOT}/${TAR_NAME}"
 if [ -e "$output" ] && [ "$FORCE" != true ]; then
     die "Output already exists: $output (use --force to overwrite)"
 fi
@@ -66,82 +85,47 @@ tmp_output="${output}.tmp.$$"
 trap 'rm -f "$tmp_output"' EXIT
 
 log "Rebuilding: $output"
-python3 - "$MANIFEST" "$OFFLINE_DIR" "$tmp_output" <<'PY'
-import hashlib
-import json
-import sys
-from pathlib import Path
+: >"$tmp_output"
+index=0
+while [ "$index" -lt "$CHUNK_COUNT" ]; do
+    file_var="CHUNK_${index}_FILE"
+    size_var="CHUNK_${index}_SIZE"
+    sha_var="CHUNK_${index}_SHA256"
+    chunk_file="$(chunk_var "$file_var")"
+    expected_size="$(chunk_var "$size_var")"
+    expected_sha="$(chunk_var "$sha_var")"
 
-manifest_path = Path(sys.argv[1])
-offline_dir = Path(sys.argv[2])
-output = Path(sys.argv[3])
+    [ -n "$chunk_file" ] || die "Manifest missing ${file_var}"
+    [ -n "$expected_size" ] || die "Manifest missing ${size_var}"
+    [ -n "$expected_sha" ] || die "Manifest missing ${sha_var}"
+    case "$chunk_file" in
+        */*|""|.*) die "Unsafe chunk file name: $chunk_file" ;;
+    esac
 
-manifest = json.loads(manifest_path.read_text())
-if manifest.get("schema") != "vulnops.offline-pack-chunks.v1":
-    raise SystemExit("unsupported chunk manifest schema")
+    chunk_path="${OFFLINE_DIR}/${chunk_file}"
+    [ -f "$chunk_path" ] || die "Missing chunk: $chunk_path"
+    actual_sha="$(sha256_file "$chunk_path")"
+    [ "$actual_sha" = "$expected_sha" ] || die "sha256 mismatch for $chunk_path"
+    actual_size="$(wc -c <"$chunk_path" | tr -d ' ')"
+    [ "$actual_size" = "$expected_size" ] || die "size mismatch for $chunk_path"
+    cat "$chunk_path" >>"$tmp_output"
+    index=$((index + 1))
+done
 
-chunks = manifest.get("chunks")
-if not isinstance(chunks, list) or not chunks:
-    raise SystemExit("chunk manifest has no chunks")
-
-def sha_bytes(data: bytes) -> str:
-    return hashlib.sha256(data).hexdigest()
-
-tar_hash = hashlib.sha256()
-total = 0
-with output.open("wb") as dst:
-    for entry in chunks:
-        if not isinstance(entry, dict):
-            raise SystemExit("invalid chunk entry")
-        name = entry.get("file")
-        expected_size = entry.get("size")
-        expected_sha = entry.get("sha256")
-        if not isinstance(name, str) or "/" in name or name.startswith("."):
-            raise SystemExit(f"unsafe chunk file name: {name!r}")
-        chunk_path = offline_dir / name
-        if not chunk_path.is_file():
-            raise SystemExit(f"missing chunk: {chunk_path}")
-        data = chunk_path.read_bytes()
-        actual_sha = sha_bytes(data)
-        if actual_sha != expected_sha:
-            raise SystemExit(f"sha256 mismatch for {chunk_path}")
-        if len(data) != expected_size:
-            raise SystemExit(f"size mismatch for {chunk_path}")
-        dst.write(data)
-        tar_hash.update(data)
-        total += len(data)
-
-expected_total = manifest.get("tar_size")
-if total != expected_total:
-    raise SystemExit(f"rebuilt size mismatch: {total} != {expected_total}")
-
-actual_tar_sha = tar_hash.hexdigest()
-if actual_tar_sha != manifest.get("tar_sha256"):
-    raise SystemExit("rebuilt tarball sha256 mismatch")
-PY
+actual_size="$(wc -c <"$tmp_output" | tr -d ' ')"
+[ "$actual_size" = "$TAR_SIZE" ] || die "rebuilt size mismatch: ${actual_size} != ${TAR_SIZE}"
+rebuilt_sha="$(sha256_file "$tmp_output")"
+[ "$rebuilt_sha" = "$TAR_SHA256" ] || die "rebuilt tarball sha256 mismatch"
 
 mv "$tmp_output" "$output"
 trap - EXIT
-
-rebuilt_sha="$(python3 - "$output" <<'PY'
-import hashlib
-import sys
-from pathlib import Path
-
-h = hashlib.sha256()
-with Path(sys.argv[1]).open("rb") as f:
-    for chunk in iter(lambda: f.read(1024 * 1024), b""):
-        h.update(chunk)
-print(h.hexdigest())
-PY
-)"
 
 log "Created: $output"
 log "SHA256: $rebuilt_sha"
 echo ""
 echo "  Next steps:"
 echo "    mkdir -p /opt/vulnops"
-echo "    tar -xzf ${tar_name} -C /opt/vulnops"
+echo "    tar -xzf ${TAR_NAME} -C /opt/vulnops"
 echo "    cd /opt/vulnops"
 echo "    vi config.toml"
 echo "    bash setup.sh"

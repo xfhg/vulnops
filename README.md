@@ -133,19 +133,24 @@ bash scripts/validate-scan.sh scans/<repo-id>
 
 ## Offline / Airgapped Deployment
 
-Build the offline pack on a Linux AMD64 machine with network access:
+Build the offline pack on the same platform as the offline desktop:
 
 ```bash
-bash scripts/offline-pack.sh
+# Linux AMD64
+bash scripts/offline-pack.sh --platform linux_amd64
+
+# Apple Silicon macOS
+bash scripts/offline-pack.sh --platform darwin_arm64
 ```
 
 The build produces:
 
 | Artifact | Git policy |
 |---|---|
-| `vulnops-offline-<timestamp>.tar.gz` | Ignored; do not commit |
-| `offline/vulnops-offline-<timestamp>.tar.gz.part-*` | Commit for Git transport |
-| `offline/offline-pack-chunks.json` | Commit with the chunks |
+| `vulnops-offline-<platform>-<timestamp>.tar.gz` | Ignored; do not commit |
+| `offline/vulnops-offline-<platform>-<timestamp>.tar.gz.part-*` | Commit for Git transport |
+| `offline/offline-pack-chunks.json` | Commit with the chunks for auditability |
+| `offline/offline-pack-chunks.sh` | Commit with the chunks; `offline-build.sh` uses this without Python |
 
 Commit the chunk set:
 
@@ -166,7 +171,9 @@ vi config.toml
 bash setup.sh
 ```
 
-`offline-build.sh` verifies every chunk and the reconstructed tarball SHA256 before writing the final archive. `scripts/offline-pack.sh` excludes live `config.toml` by default and packages `config.toml.example` as `config.toml`; use `--include-config` only when intentionally packaging live credentials.
+`offline-build.sh` verifies every chunk and the reconstructed tarball SHA256 before writing the final archive. It does not require Python for current chunk sets. `scripts/offline-pack.sh` excludes live `config.toml` by default and packages `config.toml.example` as `config.toml`; use `--include-config` only when intentionally packaging live credentials.
+
+The macOS pack bundles standalone CPython for Apple Silicon and macOS Graphify wheels. It does not bundle a local model runtime; `config.toml` must point to a local or LAN OpenAI-compatible LLM endpoint before `bash setup.sh` succeeds.
 
 Each offline pack build replaces the previous `offline/` chunk set.
 

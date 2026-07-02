@@ -4,10 +4,10 @@ from __future__ import annotations
 
 import argparse
 import fnmatch
-import json
-import os
-import re
 from datetime import datetime, timezone
+import json
+import re
+import subprocess
 from pathlib import Path
 from typing import Any
 
@@ -386,7 +386,7 @@ def build_coverage_gaps(repo: Path, scan: Path, surfaces: dict[str, Any], observ
                     "kind": "dependency_usage_unknown",
                     "status": "open",
                     "severity": obs["severity"],
-                    "reason": f"Dependency advisory {obs['title']} lacks resolved usage files before Graphify intelligence.",
+                    "reason": f"Dependency advisory {obs['title']} lacks resolved usage files before codegraph intelligence.",
                     "observation_id": obs["id"],
                     "evidence_refs": obs.get("raw_refs", []),
                 }
@@ -413,7 +413,7 @@ def build_rule_gaps(observations: list[dict[str, Any]]) -> dict[str, Any]:
                 "rule_type": rule_type,
                 "observation_id": obs["id"],
                 "reason": "High-impact evidence should become a reusable detection or regression guardrail if current tools did not catch the full chain.",
-                "evidence_refs": obs.get("evidence_refs", []) or obs.get("raw_refs", []),
+                "evidence_refs": obs.get("evidence_refs", []) or obs.get("raw_refs", []) or [f"intelligence/evidence-corpus.json:{obs.get("id", "unknown")}"],
             }
         )
     return {"schema_version": "1.0", "generated_at": now(), "rule_gaps": gaps}
@@ -451,18 +451,77 @@ def graph_commands(obs: dict[str, Any], qtype: str) -> list[dict[str, Any]]:
     return commands
 
 
-def env_depth_int(name: str, depth: str, default: int) -> int:
-    value = os.environ.get(f"{name}_{depth.upper()}", str(default))
-    try:
-        parsed = int(value)
-    except ValueError:
-        return default
-    return parsed if parsed > 0 else default
+def _emit_codegraph_context(repo: Path, run_dir: Path, scope: dict[str, Any], depth: int = 2) -> None:
+    """Best-effort codegraph context emit.
++
+    Runs the codegraph-context.sh helper for the first few files in a
+    scope and writes the union to <run_dir>/codegraph-out/context.json.
+    This is the sole graph backend. Failures are non-fatal: we always
+    write a stub so validators see a context.json for every scope.
+    """
+    run_dir.mkdir(parents=True, exist_ok=True)
+    out_dir = run_dir / "codegraph-out"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    context_path = out_dir / "context.json"
+    helper = Path(__file__).resolve().parent / "codegraph-context.sh"
+    nodes: list[dict[str, Any]] = []
+    edges: list[dict[str, Any]] = []
+    notes: list[str] = []
+    source = "codegraph"
+    for rel in list(scope.get("files", []))[:3]:
+        if not helper.is_file():
+            notes.append("helper missing")
+            break
+        try:
+            proc = subprocess.run(
+                ["bash", str(helper), "blast-radius", rel, str(depth)],
+                cwd=str(repo),
+                capture_output=True,
+                text=True,
+                timeout=30,
+                check=False,
+            )
+        except (FileNotFoundError, subprocess.TimeoutExpired) as exc:
+            notes.append(f"exec: {type(exc).__name__}")
+            continue
+        if proc.returncode != 0:
+            notes.append(f"rc={proc.returncode}")
+            continue
+        try:
+            payload = json.loads(proc.stdout)
+        except json.JSONDecodeError:
+            notes.append("non-json")
+            continue
+        if not isinstance(payload, dict):
+            continue
+        if payload.get("source") and payload["source"] != "codegraph":
+            source = payload["source"]
+        for node in payload.get("nodes", []) or []:
+            if isinstance(node, dict):
+                node.setdefault("origin", rel)
+                nodes.append(node)
+        for edge in payload.get("edges", []) or []:
+            if isinstance(edge, dict):
+                edge.setdefault("origin", rel)
+                edges.append(edge)
+    if not nodes and not edges:
+        note = "; ".join(notes) or "no results"
+    else:
+        note = ""
+    payload = {
+        "schema_version": "1.0",
+        "scope_id": scope.get("id", ""),
+        "source": source,
+        "nodes": nodes,
+        "edges": edges,
+        "note": note,
+    }
+    context_path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
 
 
-def build_graphify_plan(repo: Path, scan: Path, depth: str, surfaces: dict[str, Any], observations: list[dict[str, Any]], coverage_gaps: dict[str, Any]) -> dict[str, Any]:
-    max_scope_files = env_depth_int("GRAPHIFY_MAX_SCOPE_FILES", depth, {"quick": 40, "balanced": 100, "full": 200}[depth])
-    max_scopes = env_depth_int("GRAPHIFY_MAX_SCOPES", depth, {"quick": 4, "balanced": 8, "full": 16}[depth])
+def build_intel_plan(repo: Path, scan: Path, depth: str, surfaces: dict[str, Any], observations: list[dict[str, Any]], coverage_gaps: dict[str, Any]) -> dict[str, Any]:
+    max_scope_files = {"quick": 40, "balanced": 100, "full": 200}[depth]
+    max_scopes = {"quick": 4, "balanced": 8, "full": 16}[depth]
     ignore_patterns, by_category = extract_surfaces(repo, surfaces)
     groups: dict[str, list[dict[str, Any]]] = {}
     for obs in observations:
@@ -513,7 +572,7 @@ def build_graphify_plan(repo: Path, scan: Path, depth: str, surfaces: dict[str, 
             "expected_evidence": ["graph query output", "source file evidence", "observation linkage"],
         }
         scopes.append(scope)
-        write_json(scan / "intelligence" / "graphify-runs" / sid / "scope.json", scope)
+        _emit_codegraph_context(repo, scan / "intelligence" / "codegraph-runs" / sid, scope, depth=2)
     return {
         "schema_version": "1.0",
         "mode": "intelligence-ooda",
@@ -521,7 +580,7 @@ def build_graphify_plan(repo: Path, scan: Path, depth: str, surfaces: dict[str, 
         "full_repo": False,
         "max_scope_files": max_scope_files,
         "max_scopes": max_scopes,
-        "cluster_when": os.environ.get("GRAPHIFY_CLUSTER_WHEN", "cross_module_only"),
+        "cluster_when": "cross_module_only",
         "scopes": scopes,
         "coverage": {
             "observation_count": len(observations),
@@ -532,13 +591,19 @@ def build_graphify_plan(repo: Path, scan: Path, depth: str, surfaces: dict[str, 
 
 
 def scope_completed(scan: Path, sid: str) -> bool:
-    base = scan / "intelligence" / "graphify-runs" / sid
-    graph_path = base / "graphify-out" / "graph.json"
-    quality_path = base / "graphify-quality.json"
-    if not graph_path.is_file() or not quality_path.is_file():
-        return False
-    graph = load_json(graph_path, {})
-    return isinstance(graph, dict) and bool(graph.get("nodes"))
+    # codegraph is the sole graph backend; empty results do not count.
+    cg_context = (scan / "intelligence" / "codegraph-runs" / sid / "codegraph-out" / "context.json")
+    if cg_context.is_file():
+        try:
+            ctx = load_json(cg_context, {})
+        except Exception:
+            ctx = {}
+        if isinstance(ctx, dict):
+            n = len(ctx.get("nodes", []) or [])
+            e = len(ctx.get("edges", []) or [])
+            if n + e > 0:
+                return True
+    return False
 
 
 def build_investigation_cards(scan: Path, observations: list[dict[str, Any]], plan: dict[str, Any], coverage_gaps: dict[str, Any]) -> dict[str, Any]:
@@ -571,7 +636,7 @@ def build_investigation_cards(scan: Path, observations: list[dict[str, Any]], pl
                 "priority": SEVERITY_RANK.get(obs["severity"], 9) + 1,
                 "observation_ids": [obs["id"]],
                 "files": obs.get("files", []),
-                "evidence_refs": list(dict.fromkeys(obs.get("evidence_refs", []) + [f"intelligence/graphify-runs/{sid}/graphify-out/graph.json" for sid in completed_scopes])),
+                "evidence_refs": list(dict.fromkeys(obs.get("evidence_refs", []) + [f"intelligence/codegraph-runs/{sid}/codegraph-out/context.json" for sid in completed_scopes])),
                 "raw_refs": obs.get("raw_refs", []) + [f"intelligence/evidence-corpus.json:{obs['id']}"],
                 "hypotheses": [
                     {
@@ -581,7 +646,7 @@ def build_investigation_cards(scan: Path, observations: list[dict[str, Any]], pl
                     }
                 ],
                 "graph_scope_ids": scope_by_obs.get(obs["id"], []),
-                "graphify_answered": bool(completed_scopes),
+                "codegraph_answered": bool(completed_scopes),
                 "downstream_recommendation": recommendation,
                 "evidence_gate": {
                     "has_file_evidence": bool(obs.get("files") or obs.get("evidence_refs")),
@@ -607,7 +672,7 @@ def build_investigation_cards(scan: Path, observations: list[dict[str, Any]], pl
                 "raw_refs": [f"intelligence/coverage-gaps.json:{gap.get('id')}"],
                 "hypotheses": [{"source": "coverage_gap", "statement": gap.get("reason"), "must_prove_before_final": True}],
                 "graph_scope_ids": [],
-                "graphify_answered": False,
+                "codegraph_answered": False,
                 "downstream_recommendation": "needs_review",
                 "evidence_gate": {"has_file_evidence": bool(gap.get("evidence_refs")), "has_graph_evidence": False, "has_raw_provenance": True},
             }
@@ -623,7 +688,7 @@ def write_summary(scan: Path, corpus: dict[str, Any], plan: dict[str, Any], card
         f"- Observations: {corpus['counts']['observations']}",
         f"- Critical/high observations: {corpus['counts']['critical_high']}",
         "",
-        "## Graphify Intelligence",
+        "## Graph Intelligence",
         f"- Scopes planned: {len(plan.get('scopes', []))}",
         f"- Required scopes missing: {len(required_missing)}",
         "",
@@ -654,7 +719,7 @@ def main() -> None:
     parser.add_argument("repo_path")
     parser.add_argument("scan_base")
     parser.add_argument("--depth", choices=["quick", "balanced", "full"], default=None)
-    parser.add_argument("--finalize", action="store_true", help="write summary and terminal phase manifest after Graphify scopes run")
+    parser.add_argument("--finalize", action="store_true", help="write summary and terminal phase manifest after codegraph scopes run")
     args = parser.parse_args()
 
     repo = Path(args.repo_path).resolve()
@@ -671,14 +736,14 @@ def main() -> None:
     attack_surface = build_attack_surface_map(repo, scan, surfaces, observations)
     coverage_gaps = build_coverage_gaps(repo, scan, surfaces, observations)
     rule_gaps = build_rule_gaps(observations)
-    plan = build_graphify_plan(repo, scan, depth, surfaces, observations, coverage_gaps)
+    plan = build_intel_plan(repo, scan, depth, surfaces, observations, coverage_gaps)
     cards = build_investigation_cards(scan, observations, plan, coverage_gaps)
 
     write_json(intelligence / "evidence-corpus.json", corpus)
     write_json(intelligence / "attack-surface-map.json", attack_surface)
     write_json(intelligence / "coverage-gaps.json", coverage_gaps)
     write_json(intelligence / "rule-gaps.json", rule_gaps)
-    write_json(intelligence / "graphify-intel-plan.json", plan)
+    write_json(intelligence / "intel-plan.json", plan)
     write_json(intelligence / "investigation-cards.json", cards)
 
     required_missing = [
@@ -703,7 +768,7 @@ def main() -> None:
             "outputs": [
                 "intelligence/evidence-corpus.json",
                 "intelligence/attack-surface-map.json",
-                "intelligence/graphify-intel-plan.json",
+                "intelligence/intel-plan.json",
                 "intelligence/investigation-cards.json",
                 "intelligence/coverage-gaps.json",
                 "intelligence/rule-gaps.json",
@@ -712,10 +777,10 @@ def main() -> None:
             "coverage": {
                 "observations": corpus["counts"]["observations"],
                 "cards": len(cards.get("cards", [])),
-                "graphify_scopes": len(plan.get("scopes", [])),
+                "codegraph_scopes": len(plan.get("scopes", [])),
                 "required_missing": required_missing,
             },
-            "tool_versions": {"graphify": "via scripts/run-graphify.sh"},
+            "tool_versions": {"codegraph": "via scripts/run-codegraph.sh"},
             "warnings": [f"required intelligence scope missing: {sid}" for sid in required_missing],
             "errors": [f"required intelligence scope missing: {sid}" for sid in required_missing],
         }

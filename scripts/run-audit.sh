@@ -125,11 +125,22 @@ main() {
     mkdir -p "${scan_base}/sast/deepdive"
     mkdir -p "${scan_base}/sast/verify"
     mkdir -p "${scan_base}/secrets/findings"
-    mkdir -p "${scan_base}/intelligence/graphify-runs"
+    mkdir -p "${scan_base}/intelligence/codegraph-runs"
     mkdir -p "${scan_base}/triage"
     mkdir -p "${scan_base}/report"
     mkdir -p "${scan_base}/intrusion/findings"
+    mkdir -p "${scan_base}/intrusion/codegraph-runs"
     mkdir -p "${scan_base}/final-reconciliation"
+
+    # ── codegraph: optional AST toolkit. Index lives under ${scan_base}/.codegraph
+    # so two audits against different repos don't clobber each other's index.
+    # ${clone_dir} is the actual checked-out target; the per-scan index is
+    # the parallel branch the agents consult.
+    if [ -x "${HARNESS_ROOT}/bins/codegraph" ]; then
+        CODEGRAPH_TARGET_DIR="${clone_dir}" \
+        CODEGRAPH_INDEX_DIR="${scan_base}/.codegraph" \
+            bash "${HARNESS_ROOT}/scripts/setup-codegraph.sh" || true
+    fi
 
     # ── Write audit context ──
     local ctx="${HARNESS_ROOT}/.harness/audit-context.json"
@@ -166,32 +177,31 @@ main() {
 	    "intelligence": "${scan_base}/intelligence",
 	    "intelligence_evidence_corpus": "${scan_base}/intelligence/evidence-corpus.json",
 	    "intelligence_attack_surface_map": "${scan_base}/intelligence/attack-surface-map.json",
-	    "intelligence_graphify_plan": "${scan_base}/intelligence/graphify-intel-plan.json",
-	    "intelligence_cards": "${scan_base}/intelligence/investigation-cards.json",
-	    "intelligence_coverage_gaps": "${scan_base}/intelligence/coverage-gaps.json",
-	    "intelligence_rule_gaps": "${scan_base}/intelligence/rule-gaps.json",
-	    "intelligence_graphify_runs": "${scan_base}/intelligence/graphify-runs",
-	    "triage": "${scan_base}/triage",
-	    "intrusion_seeds": "${scan_base}/triage/intrusion-seeds.json",
-	    "report": "${scan_base}/report",
-	    "intrusion": "${scan_base}/intrusion",
-	    "intrusion_findings": "${scan_base}/intrusion/findings",
-	    "intrusion_enrichment": "${scan_base}/intrusion/enrichment.json",
-	    "graphify_plan": "${scan_base}/intrusion/graphify-plan.json",
-	    "graphify_runs": "${scan_base}/intrusion/graphify-runs",
-	    "final_reconciliation": "${scan_base}/final-reconciliation",
-	    "final_reconciliation_findings": "${scan_base}/final-reconciliation/findings.json",
-	    "final_report_md": "${scan_base}/report/security-report.md",
-	    "final_report_json": "${scan_base}/report/security-report.json"
+	    "intelligence_intel_plan": "${scan_base}/intelligence/intel-plan.json",
+    "intelligence_codegraph_runs": "${scan_base}/intelligence/codegraph-runs",
+    "triage": "${scan_base}/triage",
+    "intrusion_seeds": "${scan_base}/triage/intrusion-seeds.json",
+    "report": "${scan_base}/report",
+    "intrusion": "${scan_base}/intrusion",
+    "intrusion_findings": "${scan_base}/intrusion/findings",
+    "intrusion_enrichment": "${scan_base}/intrusion/enrichment.json",
+    "intrusion_plan": "${scan_base}/intrusion/intrusion-plan.json",
+    "intrusion_codegraph_runs": "${scan_base}/intrusion/codegraph-runs",
+    "final_reconciliation": "${scan_base}/final-reconciliation",
+    "final_reconciliation_findings": "${scan_base}/final-reconciliation/findings.json",
+    "final_report_md": "${scan_base}/report/security-report.md",
+    "final_report_json": "${scan_base}/report/security-report.json",
+    "codegraph_index_dir": "${scan_base}/.codegraph"
   },
   "tools": {
     "wraith": "${HARNESS_ROOT}/bins/wraith",
     "poltergeist": "${HARNESS_ROOT}/bins/poltergeist",
     "omp": "${HARNESS_ROOT}/bins/omp",
     "osv_scanner": "${HARNESS_ROOT}/bins/osv-scanner",
+    "codegraph": "${HARNESS_ROOT}/bins/codegraph",
     "run_wraith": "${HARNESS_ROOT}/scripts/run-wraith.sh",
     "run_poltergeist": "${HARNESS_ROOT}/scripts/run-poltergeist.sh",
-    "run_graphify": "${HARNESS_ROOT}/scripts/run-graphify.sh",
+    "run_codegraph": "${HARNESS_ROOT}/scripts/run-codegraph.sh",
     "build_intelligence": "${HARNESS_ROOT}/scripts/build-intelligence.py"
   },
   "created_at": "$(date -u +%Y-%m-%dT%H:%M:%SZ)"

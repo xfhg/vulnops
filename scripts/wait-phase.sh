@@ -20,10 +20,7 @@ INTERVAL_SECONDS="${WAIT_PHASE_INTERVAL_SECONDS:-5}"
 harness_setup_containment "$HARNESS_ROOT"
 harness_require_allowed_output "$HARNESS_ROOT" "$SCAN_BASE"
 
-PYTHON="${HARNESS_ROOT}/.venv/bin/python"
-if [ ! -x "$PYTHON" ]; then
-    PYTHON="$(command -v python3 2>/dev/null || true)"
-fi
+PYTHON="$(command -v python3 2>/dev/null || true)"
 if [ -z "$PYTHON" ]; then
     echo "[wait-phase] ERROR: python3 not found" >&2
     exit 1
@@ -82,7 +79,7 @@ required_paths() {
             printf '%s\n' \
                 "${SCAN_BASE}/intelligence/evidence-corpus.json" \
                 "${SCAN_BASE}/intelligence/attack-surface-map.json" \
-                "${SCAN_BASE}/intelligence/graphify-intel-plan.json" \
+                "${SCAN_BASE}/intelligence/intel-plan.json" \
                 "${SCAN_BASE}/intelligence/investigation-cards.json" \
                 "${SCAN_BASE}/intelligence/coverage-gaps.json" \
                 "${SCAN_BASE}/intelligence/rule-gaps.json" \
@@ -100,7 +97,7 @@ required_paths() {
             printf '%s\n' \
                 "${SCAN_BASE}/intrusion/summary.md" \
                 "${SCAN_BASE}/intrusion/enrichment.json" \
-                "${SCAN_BASE}/intrusion/graphify-plan.json" \
+                "${SCAN_BASE}/intrusion/intrusion-plan.json" \
                 "${SCAN_BASE}/intrusion/phase-manifest.json"
             ;;
         final-reconciliation)
@@ -138,7 +135,7 @@ from pathlib import Path
 scan = Path(sys.argv[1])
 manifest_path = scan / "intrusion" / "phase-manifest.json"
 enrichment_path = scan / "intrusion" / "enrichment.json"
-plan_path = scan / "intrusion" / "graphify-plan.json"
+plan_path = scan / "intrusion" / "intrusion-plan.json"
 if not manifest_path.is_file() or not enrichment_path.is_file() or not plan_path.is_file():
     sys.exit(1)
 try:

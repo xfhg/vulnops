@@ -14,10 +14,7 @@ if [ -z "$SCAN_BASE" ]; then
         echo "[audit-status] no audit context found" >&2
         exit 2
     fi
-    PYTHON="${HARNESS_ROOT}/.venv/bin/python"
-    if [ ! -x "$PYTHON" ]; then
-        PYTHON="$(command -v python3 2>/dev/null || true)"
-    fi
+    PYTHON="$(command -v python3 2>/dev/null || true)"
     if [ -z "$PYTHON" ]; then
         echo "[audit-status] python3 not found" >&2
         exit 1
@@ -33,10 +30,7 @@ fi
 
 harness_require_allowed_output "$HARNESS_ROOT" "$SCAN_BASE"
 
-PYTHON="${HARNESS_ROOT}/.venv/bin/python"
-if [ ! -x "$PYTHON" ]; then
-    PYTHON="$(command -v python3 2>/dev/null || true)"
-fi
+PYTHON="$(command -v python3 2>/dev/null || true)"
 if [ -z "$PYTHON" ]; then
     echo "[audit-status] python3 not found" >&2
     exit 1

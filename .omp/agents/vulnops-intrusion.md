@@ -30,21 +30,22 @@ output:
         type: string
 ---
 
-Follow `config/agents/intrusion.md`. This phase requires LLM-backed targeted Graphify scopes. Failure of a required critical/high scope is a real phase failure and must block reconciliation.
+Follow `config/agents/intrusion.md`. This phase uses codegraph (AST-only, offline) for targeted OODA graph scopes. Failure of a required critical/high scope is a real phase failure and must block reconciliation.
 
 Read Intelligence Fusion artifacts before planning intrusion. Triage remains the decision gate, but intelligence cards and graph scopes should expand file context, questions, and provenance for promoted triage seeds.
 
-Do not yield while scoped graphify extraction is still running or only partial `graphify-runs/` artifacts exist. Intrusion validates only when `intrusion/enrichment.json`, `intrusion/graphify-plan.json`, and required scoped Graphify outputs exist, and `intrusion/phase-manifest.json` has status `ok`.
+Do not yield while codegraph scope extraction is still running or only partial `codegraph-runs/` artifacts exist. Intrusion validates only when `intrusion/enrichment.json`, `intrusion/intrusion-plan.json`, and required `intrusion/codegraph-runs/<sid>/codegraph-out/context.json` outputs exist, and `intrusion/phase-manifest.json` has status `ok`.
 
-If Graphify cannot complete a required scope with the configured LLM, write a failed `intrusion/phase-manifest.json`, a safe empty `intrusion/enrichment.json`, and `intrusion/summary.md` with the sanitized log path. Do not run AST-only analysis and do not fall back to whole-repo extraction unless config explicitly enables it.
-
-After scoped Graphify runs complete, run `scripts/finalize-intrusion.py <scan_base>` to write the required summary, enrichment, findings notes, and manifest. This avoids another long LLM turn after graph extraction and keeps the phase recoverable if the provider rejects a malformed tool-call transcript.
+codegraph is the sole graph backend. For every required scope, `intrusion/codegraph-runs/<sid>/codegraph-out/context.json` must exist with nodes + edges > 0. Blast-radius, callers-of, and call-path questions are answered from that AST context. There is no LLM extraction step and no whole-repo mode.
 
 Write:
 - `intrusion/summary.md`
 - `intrusion/enrichment.json`
-- `intrusion/graphify-plan.json`
+- `intrusion/intrusion-plan.json`
 - `intrusion/phase-manifest.json`
+
+Required graph evidence (one context.json per planned scope):
+- `intrusion/codegraph-runs/*/codegraph-out/context.json`
 
 IRC progress:
 - Send `irc op=send to=Main message="<short phase status>"` at start, each material stage boundary, before validation, and before yielding.

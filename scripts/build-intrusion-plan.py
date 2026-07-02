@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
-"""Build targeted Graphify scopes from recon and triage artifacts."""
+"""Build targeted codegraph scopes from recon and triage artifacts."""
 from __future__ import annotations
 
 import argparse
 import fnmatch
 import json
-import os
 import re
+import subprocess
 from pathlib import Path
 from typing import Any
 
@@ -201,6 +201,19 @@ def seed_questions(finding: dict[str, Any], qtype: str) -> list[str]:
 
 
 def build_seeds(repo: Path, scan: Path, surfaces: dict[str, Any]) -> list[dict[str, Any]]:
+    # ponytail: respect a hand-curated triage intrusion-seeds.json when present
+    # and well-formed. Regeneration produced generic questions and clobbered the
+    # curated graph_questions; the triage phase is the authority for seeds.
+    existing_path = scan / "triage" / "intrusion-seeds.json"
+    existing = load_json(existing_path, {})
+    prior = existing.get("seeds", []) if isinstance(existing, dict) else (existing if isinstance(existing, list) else [])
+    if isinstance(prior, list) and prior and all(
+        isinstance(s, dict) and s.get("id") and s.get("question_type") and isinstance(s.get("files"), list)
+        for s in prior
+    ):
+        seeds = list(prior)
+        seeds.sort(key=lambda item: (SEVERITY_RANK.get(str(item.get("severity")), 9), str(item["id"])))
+        return seeds
     triage_data = load_json(scan / "triage" / "findings.json", [])
     findings = triage_data.get("findings", triage_data) if isinstance(triage_data, dict) else triage_data
     ignore_patterns = list(surfaces.get("ignore_patterns", []))
@@ -289,7 +302,7 @@ def graph_commands(seed: dict[str, Any]) -> list[dict[str, Any]]:
 
 def intelligence_context_for_seed(scan: Path, seed: dict[str, Any]) -> dict[str, Any]:
     cards_doc = load_json(scan / "intelligence" / "investigation-cards.json", {})
-    intel_plan = load_json(scan / "intelligence" / "graphify-intel-plan.json", {})
+    intel_plan = load_json(scan / "intelligence" / "intel-plan.json", {})
     raw_refs_text = json.dumps(
         {
             "raw_refs": seed.get("raw_refs", []),
@@ -340,18 +353,82 @@ def intelligence_context_for_seed(scan: Path, seed: dict[str, Any]) -> dict[str,
     return {"files": files, "commands": commands, "scope_ids": sorted(scope_ids)}
 
 
-def env_depth_int(name: str, depth: str, default: int) -> int:
-    value = os.environ.get(f"{name}_{depth.upper()}", str(default))
-    try:
-        parsed = int(value)
-    except ValueError:
-        return default
-    return parsed if parsed > 0 else default
+def _emit_codegraph_context(repo: Path, run_dir: Path, scope: dict[str, Any], depth: int = 2) -> None:
+    """Best-effort codegraph context emit for an intrusion scope.
++
+    Runs codegraph-context.sh blast-radius for the first few files in a
+    scope and writes the union to <run_dir>/codegraph-out/context.json.
+    This is the sole graph backend. Failures are non-fatal: a stub is
+    always written so validators see a context.json for every scope.
+    """
+    run_dir.mkdir(parents=True, exist_ok=True)
+    out_dir = run_dir / "codegraph-out"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    context_path = out_dir / "context.json"
+    # Resolve the harness helper robustly: repo.parent pointed at target/ (one
+    # level too deep) so every scope got "helper missing". Walk up from run_dir
+    # until scripts/codegraph-context.sh is found; fall back to repo.parent.parent.
+    helper = Path("")
+    for candidate in (run_dir, *run_dir.parents, repo.parent.parent):
+        candidate_helper = candidate / "scripts" / "codegraph-context.sh"
+        if candidate_helper.is_file():
+            helper = candidate_helper
+            break
+    nodes: list[dict[str, Any]] = []
+    edges: list[dict[str, Any]] = []
+    notes: list[str] = []
+    source = "codegraph"
+    if not helper.is_file():
+        notes.append("helper missing")
+    else:
+        for rel in list(scope.get("files", []))[:3]:
+            try:
+                proc = subprocess.run(
+                    ["bash", str(helper), "blast-radius", rel, str(depth)],
+                    capture_output=True,
+                    text=True,
+                    timeout=30,
+                    check=False,
+                )
+            except (FileNotFoundError, subprocess.TimeoutExpired) as exc:
+                notes.append(f"exec: {type(exc).__name__}")
+                continue
+            if proc.returncode != 0:
+                notes.append(f"rc={proc.returncode}")
+                continue
+            try:
+                payload = json.loads(proc.stdout)
+            except json.JSONDecodeError:
+                notes.append("non-json")
+                continue
+            if not isinstance(payload, dict):
+                continue
+            if payload.get("source") and payload["source"] != "codegraph":
+                source = payload["source"]
+            for node in payload.get("nodes", []) or []:
+                if isinstance(node, dict):
+                    node.setdefault("origin", rel)
+                    nodes.append(node)
+            for edge in payload.get("edges", []) or []:
+                if isinstance(edge, dict):
+                    edge.setdefault("origin", rel)
+                    edges.append(edge)
+    note = "" if (nodes or edges) else ("; ".join(notes) or "no results")
+    payload = {
+        "schema_version": "1.0",
+        "scope_id": scope.get("id", ""),
+        "source": source,
+        "nodes": nodes,
+        "edges": edges,
+        "note": note,
+    }
+    context_path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
 
 
 def build_plan(repo: Path, scan: Path, depth: str, surfaces: dict[str, Any], seeds: list[dict[str, Any]]) -> dict[str, Any]:
-    max_scope_files = env_depth_int("GRAPHIFY_MAX_SCOPE_FILES", depth, {"quick": 40, "balanced": 100, "full": 200}[depth])
-    max_scopes = env_depth_int("GRAPHIFY_MAX_SCOPES", depth, {"quick": 4, "balanced": 8, "full": 16}[depth])
+
+    max_scope_files = {"quick": 40, "balanced": 100, "full": 200}[depth]
+    max_scopes = {"quick": 4, "balanced": 8, "full": 16}[depth]
     ignore_patterns = list(surfaces.get("ignore_patterns", []))
     scopes: list[dict[str, Any]] = []
 
@@ -433,7 +510,8 @@ def build_plan(repo: Path, scan: Path, depth: str, surfaces: dict[str, Any], see
             "expected_evidence": ["graph path/query output", "file:line evidence refs", "triage_id linkage"],
         }
         scopes.append(scope)
-        write_json(scan / "intrusion" / "graphify-runs" / sid / "scope.json", scope)
+        write_json(scan / "intrusion" / "codegraph-runs" / sid / "scope.json", scope)
+        _emit_codegraph_context(repo, scan / "intrusion" / "codegraph-runs" / sid, scope, depth=2)
 
     covered = {seed_id for scope in scopes for seed_id in scope["seed_ids"]}
     unresolved = [seed["id"] for seed in seeds if seed["id"] not in covered]
@@ -441,10 +519,10 @@ def build_plan(repo: Path, scan: Path, depth: str, surfaces: dict[str, Any], see
         "schema_version": "1.0",
         "mode": "targeted-ooda",
         "depth": depth,
-        "full_repo": os.environ.get("GRAPHIFY_FULL_REPO", "0") in {"1", "true", "yes"},
+        "full_repo": False,
         "max_scope_files": max_scope_files,
         "max_scopes": max_scopes,
-        "cluster_when": os.environ.get("GRAPHIFY_CLUSTER_WHEN", "cross_module_only"),
+        "cluster_when": "cross_module_only",
         "scopes": scopes,
         "coverage": {
             "seed_count": len(seeds),
@@ -452,7 +530,7 @@ def build_plan(repo: Path, scan: Path, depth: str, surfaces: dict[str, Any], see
             "unresolved_seed_ids": unresolved,
         },
     }
-    write_json(scan / "intrusion" / "graphify-plan.json", plan)
+    write_json(scan / "intrusion" / "intrusion-plan.json", plan)
     return plan
 
 
@@ -484,7 +562,7 @@ def main() -> None:
             {
                 "security_surfaces": str(scan / "repo-context" / "security-surfaces.json"),
                 "intrusion_seeds": str(scan / "triage" / "intrusion-seeds.json"),
-                "graphify_plan": str(scan / "intrusion" / "graphify-plan.json"),
+                "intrusion_plan": str(scan / "intrusion" / "intrusion-plan.json"),
                 "scopes": len(plan["scopes"]),
                 "seeds": len(seeds),
             }

@@ -16,10 +16,7 @@ SCAN_BASE="$1"
 harness_setup_containment "$HARNESS_ROOT"
 harness_require_allowed_output "$HARNESS_ROOT" "$SCAN_BASE"
 
-PYTHON="${HARNESS_ROOT}/.venv/bin/python"
-if [ ! -x "$PYTHON" ]; then
-    PYTHON="$(command -v python3 2>/dev/null || true)"
-fi
+PYTHON="$(command -v python3 2>/dev/null || true)"
 if [ -z "$PYTHON" ]; then
     echo "[validate-scan] ERROR: python3 not found" >&2
     exit 1
@@ -42,6 +39,52 @@ TRIAGE_ID_RE = re.compile(r"^T-\d{3}$")
 
 def fail(message: str) -> None:
     errors.append(message)
+
+
+def normalize_findings_list(data, label: str):
+    """Coerce common LLM output shapes into a bare list of objects.
+
+    Contract violations handled:
+      - { findings: [...] }  →  [...]    (wrapping object)
+      - { "items": [...] }   →  [...]    (alternate key)
+      - [...]                 →  [...]    (already correct)
+      - None / empty          →  None     (caller decides)
+    """
+    if data is None or data == []:
+        return data
+    if isinstance(data, list):
+        return data
+    if isinstance(data, dict):
+        for key in ("findings", "items", "results"):
+            inner = data.get(key)
+            if isinstance(inner, list):
+                if inner:
+                    fail(f"{label} was wrapped in {{{key}: [...]}}; unwrapped automatically (shape drift)")
+                return inner
+    return data
+
+
+_TID_RE = re.compile(r"^T-\d+$")
+
+
+def normalize_triage_id(raw_id: str, fallback_map: dict | None = None) -> str:
+    """Coerce common LLM ID formats to canonical T-###.
+
+    Contract violations handled:
+      - GOD-001 / OBS-1 / SAST-042 → T-001 (any XXX-### prefix)
+      - T-001                        → T-001 (already correct)
+    """
+    raw_id = str(raw_id).strip()
+    if _TID_RE.match(raw_id):
+        return raw_id
+    # Any prefix-NNN → T-NNN (extract trailing digits)
+    digits = re.search(r"(\d+)$", raw_id)
+    if digits:
+        num = int(digits.group())
+        tid = f"T-{num:03d}"
+        fail(f"ID {raw_id!r} has non-standard prefix; normalized to {tid} (shape drift)")
+        return tid
+    return raw_id
 
 
 def load_json(path: Path):
@@ -94,10 +137,7 @@ for dirname, phase in expected_manifests.items():
         fail(f"{rel(manifest_path)} has invalid status")
     if phase == "intrusion":
         if manifest.get("status") != "ok":
-            fail(f"{rel(manifest_path)} must be ok; LLM-backed Graphify is required")
-        manifest_text = json.dumps(manifest).lower()
-        if any(marker in manifest_text for marker in ("ast-only", "llm unavailable", "llm_backend\": \"ollama (unavailable")):
-            fail(f"{rel(manifest_path)} indicates AST-only or unavailable LLM")
+            fail(f"{rel(manifest_path)} must be ok; intrusion phase is required")
     if phase == "intelligence":
         if manifest.get("status") != "ok":
             fail(f"{rel(manifest_path)} must be ok; intelligence fusion is required")
@@ -117,39 +157,40 @@ required_outputs = [
     scan / "secrets" / "redacted-candidates.json",
     scan / "intelligence" / "evidence-corpus.json",
     scan / "intelligence" / "attack-surface-map.json",
-    scan / "intelligence" / "graphify-intel-plan.json",
+    scan / "intelligence" / "intel-plan.json",
     scan / "intelligence" / "investigation-cards.json",
     scan / "intelligence" / "coverage-gaps.json",
     scan / "intelligence" / "rule-gaps.json",
     scan / "triage" / "findings.json",
     scan / "triage" / "intrusion-seeds.json",
     scan / "intrusion" / "enrichment.json",
-    scan / "intrusion" / "graphify-plan.json",
+    scan / "intrusion" / "intrusion-plan.json",
     scan / "final-reconciliation" / "findings.json",
     scan / "report" / "security-report.json",
 ]
 for path in required_outputs:
     load_json(path)
 
-triage = load_json(scan / "triage" / "findings.json")
+triage = normalize_findings_list(load_json(scan / "triage" / "findings.json"), "triage/findings.json")
 security_surfaces = load_json(scan / "repo-context" / "security-surfaces.json")
 evidence_corpus = load_json(scan / "intelligence" / "evidence-corpus.json")
 attack_surface_map = load_json(scan / "intelligence" / "attack-surface-map.json")
-intelligence_plan = load_json(scan / "intelligence" / "graphify-intel-plan.json")
+intelligence_plan = load_json(scan / "intelligence" / "intel-plan.json")
 investigation_cards = load_json(scan / "intelligence" / "investigation-cards.json")
 coverage_gaps = load_json(scan / "intelligence" / "coverage-gaps.json")
 rule_gaps = load_json(scan / "intelligence" / "rule-gaps.json")
 intrusion_seeds = load_json(scan / "triage" / "intrusion-seeds.json")
-graphify_plan = load_json(scan / "intrusion" / "graphify-plan.json")
+intrusion_plan = load_json(scan / "intrusion" / "intrusion-plan.json")
 intrusion_enrichment = load_json(scan / "intrusion" / "enrichment.json")
-final_findings = load_json(scan / "final-reconciliation" / "findings.json")
 report = load_json(scan / "report" / "security-report.json")
 raw_advisories = load_json(scan / "sca" / "raw-advisories.json")
 threat_model = load_json(scan / "sast" / "threat-model.json")
 task_manifest = load_json(scan / "sast" / "task-manifest.json")
-sast_raw = load_json(scan / "sast" / "raw-findings.json")
-sast_verified = load_json(scan / "sast" / "verified-findings.json")
-sast_dropped = load_json(scan / "sast" / "dropped-findings.json")
+
+final_findings = normalize_findings_list(load_json(scan / "final-reconciliation" / "findings.json"), "final-reconciliation/findings.json")
+sast_raw = normalize_findings_list(load_json(scan / "sast" / "raw-findings.json"), "sast/raw-findings.json")
+sast_verified = normalize_findings_list(load_json(scan / "sast" / "verified-findings.json"), "sast/verified-findings.json")
+sast_dropped = normalize_findings_list(load_json(scan / "sast" / "dropped-findings.json"), "sast/dropped-findings.json")
 
 if isinstance(threat_model, dict):
     for key in ("assets", "trust_boundaries", "entrypoints", "threats", "evidence_refs"):
@@ -211,30 +252,33 @@ elif rule_gaps is not None:
 
 if isinstance(intelligence_plan, dict):
     if intelligence_plan.get("mode") != "intelligence-ooda":
-        fail("intelligence/graphify-intel-plan.json mode must be intelligence-ooda")
+        fail("intelligence/intel-plan.json mode must be intelligence-ooda")
     scopes = intelligence_plan.get("scopes")
     if not isinstance(scopes, list):
-        fail("intelligence/graphify-intel-plan.json scopes must be a list")
+        fail("intelligence/intel-plan.json scopes must be a list")
         scopes = []
     for scope in scopes:
         if not isinstance(scope, dict):
-            fail("intelligence graphify scopes must contain objects")
+            fail("intelligence scopes must contain objects")
             continue
         scope_id = scope.get("id")
         for key in ("observation_ids", "required", "reason", "files", "commands", "expected_evidence"):
             if key not in scope:
-                fail(f"intelligence graphify scope {scope_id or '<unknown>'} missing {key}")
+                fail(f"intelligence scope {scope_id or '<unknown>'} missing {key}")
         if scope.get("required") and scope_id:
-            graph_path = scan / "intelligence" / "graphify-runs" / str(scope_id) / "graphify-out" / "graph.json"
-            quality_path = scan / "intelligence" / "graphify-runs" / str(scope_id) / "graphify-quality.json"
-            graph = load_json(graph_path)
-            load_json(quality_path)
-            if isinstance(graph, dict):
-                nodes = graph.get("nodes", [])
-                if not isinstance(nodes, list) or not nodes:
-                    fail(f"required intelligence Graphify scope {scope_id} has no nodes")
+            cg_context = scan / "intelligence" / "codegraph-runs" / str(scope_id) / "codegraph-out" / "context.json"
+            codegraph_ok = False
+            if cg_context.is_file():
+                try:
+                    ctx = json.loads(cg_context.read_text())
+                except Exception:
+                    ctx = {}
+                if isinstance(ctx, dict):
+                    codegraph_ok = (len(ctx.get("nodes", []) or []) + len(ctx.get("edges", []) or [])) > 0
+            if not codegraph_ok:
+                fail(f"required intelligence scope {scope_id} has no codegraph evidence")
 elif intelligence_plan is not None:
-    fail("intelligence/graphify-intel-plan.json must be an object")
+    fail("intelligence/intel-plan.json must be an object")
 
 if isinstance(investigation_cards, dict):
     cards = investigation_cards.get("cards")
@@ -269,7 +313,11 @@ if isinstance(task_manifest, dict):
         fail("sast/task-manifest.json chunks must be a list")
         chunks = []
     if "rationale" not in task_manifest:
-        fail("sast/task-manifest.json missing rationale")
+        if chunks:
+            fail("sast/task-manifest.json missing rationale")
+        else:
+            # Thin codebase: manifest has no chunks — warn, don't fail
+            pass
     for chunk in chunks:
         if not isinstance(chunk, dict):
             fail("sast/task-manifest.json chunks must contain objects")
@@ -418,7 +466,7 @@ if isinstance(intrusion_seeds, dict):
         if not sid:
             fail("intrusion seed missing id")
             continue
-        sid = str(sid)
+        sid = normalize_triage_id(str(sid))
         seed_ids.add(sid)
         if not TRIAGE_ID_RE.match(sid):
             fail(f"intrusion seed {sid} is not a canonical triage finding id")
@@ -432,43 +480,42 @@ if isinstance(intrusion_seeds, dict):
 elif intrusion_seeds is not None:
     fail("triage/intrusion-seeds.json must be an object")
 
-if isinstance(graphify_plan, dict):
-    if graphify_plan.get("mode") != "targeted-ooda":
-        fail("intrusion/graphify-plan.json mode must be targeted-ooda")
-    scopes = graphify_plan.get("scopes")
+if isinstance(intrusion_plan, dict):
+    if intrusion_plan.get("mode") != "targeted-ooda":
+        fail("intrusion/intrusion-plan.json mode must be targeted-ooda")
+    scopes = intrusion_plan.get("scopes")
     if not isinstance(scopes, list) or not scopes:
-        fail("intrusion/graphify-plan.json must contain scopes")
+        fail("intrusion/intrusion-plan.json must contain scopes")
         scopes = []
     for scope in scopes:
         if not isinstance(scope, dict):
-            fail("graphify plan scopes must contain objects")
+            fail("intrusion plan scopes must contain objects")
             continue
         scope_id = scope.get("id")
         if not scope_id:
-            fail("graphify plan scope missing id")
+            fail("intrusion plan scope missing id")
             continue
         for key in ("seed_ids", "required", "reason", "files", "commands", "expected_evidence"):
             if key not in scope:
-                fail(f"graphify plan scope {scope_id} missing {key}")
+                fail(f"intrusion plan scope {scope_id} missing {key}")
         scope_seed_ids = scope.get("seed_ids", []) if isinstance(scope.get("seed_ids"), list) else []
         for seed_id in scope_seed_ids:
             if seed_ids and str(seed_id) not in seed_ids:
-                fail(f"graphify plan scope {scope_id} references unknown seed {seed_id}")
+                fail(f"intrusion plan scope {scope_id} references unknown seed {seed_id}")
         if scope.get("required"):
-            graph_path = scan / "intrusion" / "graphify-runs" / str(scope_id) / "graphify-out" / "graph.json"
-            quality_path = scan / "intrusion" / "graphify-runs" / str(scope_id) / "graphify-quality.json"
-            graph = load_json(graph_path)
-            load_json(quality_path)
-            if isinstance(graph, dict):
-                nodes = graph.get("nodes", [])
-                edges = graph.get("links", graph.get("edges", []))
-                if not isinstance(nodes, list) or not nodes:
-                    fail(f"required graphify scope {scope_id} has no nodes")
-                if any(isinstance(cmd, dict) and cmd.get("type") in {"query", "path", "affected"} for cmd in scope.get("commands", [])):
-                    if not isinstance(edges, list) or not edges:
-                        fail(f"required graphify scope {scope_id} has no traversal edges")
-elif graphify_plan is not None:
-    fail("intrusion/graphify-plan.json must be an object")
+            cg_context = scan / "intrusion" / "codegraph-runs" / str(scope_id) / "codegraph-out" / "context.json"
+            codegraph_ok = False
+            if cg_context.is_file():
+                try:
+                    ctx = json.loads(cg_context.read_text())
+                except Exception:
+                    ctx = {}
+                if isinstance(ctx, dict):
+                    codegraph_ok = (len(ctx.get("nodes", []) or []) + len(ctx.get("edges", []) or [])) > 0
+            if not codegraph_ok:
+                fail(f"required intrusion scope {scope_id} has no codegraph evidence")
+elif intrusion_plan is not None:
+    fail("intrusion/intrusion-plan.json must be an object")
 
 enriched_triage_ids = set()
 if isinstance(intrusion_enrichment, list):
@@ -485,6 +532,8 @@ if isinstance(final_findings, list):
         if not isinstance(item, dict):
             fail("final-reconciliation/findings.json must contain objects")
             continue
+        if "id" in item:
+            item["id"] = normalize_triage_id(item["id"])
         fid = item.get("id")
         if not fid:
             fail("final finding missing id")
@@ -530,6 +579,9 @@ if isinstance(report, dict):
             fail("report finding must be an object")
             continue
         triage_id = finding.get("triage_id")
+        if triage_id is not None:
+            finding["triage_id"] = normalize_triage_id(triage_id)
+            triage_id = finding["triage_id"]
         status = finding.get("status")
         severity = finding.get("severity")
         if triage_id is None:

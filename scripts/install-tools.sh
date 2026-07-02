@@ -181,7 +181,7 @@ version_for_tool() {
         poltergeist) var_name="POLTERGEIST_VERSION" ;;
         omp) var_name="OMP_VERSION" ;;
         osv-scanner) var_name="OSV_SCANNER_VERSION" ;;
-        *) var_name="" ;;
+        codegraph) var_name="CODEGRAPH_VERSION" ;;
     esac
     if [ -n "$var_name" ]; then
         value="${!var_name:-}"
@@ -265,6 +265,128 @@ download_omp() {
     fix_binary "${INSTALL_DIR}/omp"
     echo "$version" > "$version_file"
     log "  Installed: ${INSTALL_DIR}/omp"
+    return 0
+}
+
+download_codegraph() {
+    local version="$1"
+    local platform
+    platform="$(detect_platform)"
+
+    mkdir -p "$INSTALL_DIR"
+
+    local version_file="${INSTALL_DIR}/.codegraph.version"
+    if [ -x "${INSTALL_DIR}/codegraph" ] && [ -f "$version_file" ]; then
+        local installed_version
+        installed_version="$(cat "$version_file")"
+        if [ "$version" = "latest" ] || [ "$installed_version" = "$version" ]; then
+            log "  codegraph: already installed (${installed_version})"
+            return 0
+        fi
+    fi
+
+    if [ "$version" = "latest" ]; then
+        log "Fetching latest codegraph version..."
+        version="$(get_latest_version "colbymchenry/codegraph")"
+        if [ -z "$version" ]; then
+            err "Failed to determine latest codegraph version"
+            return 1
+        fi
+    fi
+
+    # codegraph release assets use linux/darwin + x64/arm64 naming
+    local os="${platform%_*}"
+    local arch="${platform#*_}"
+    local cg_arch="$arch"
+    case "$arch" in
+        amd64) cg_arch="x64" ;;
+    esac
+
+    local asset="codegraph-${os}-${cg_arch}.tar.gz"
+    local url="https://github.com/colbymchenry/codegraph/releases/download/${version}/${asset}"
+    log "Installing codegraph ${version} for ${platform}..."
+    log "  Trying: ${url}"
+
+    local tmpdir
+    tmpdir="$(mktemp -d)"
+    if ! curl -sfL -o "${tmpdir}/${asset}" "$url"; then
+        rm -rf "$tmpdir"
+        err "Failed to download codegraph ${version} for ${platform}: ${url}"
+        return 1
+    fi
+
+    # Minimum sane size: the smallest release asset is ~47MB. Anything
+    # smaller is a truncated download (proxy / mirror hiccup). Catch it
+    # here so a corrupt file never reaches tar and we never install a
+    # half-extracted launcher.
+    local size
+    size="$(stat -f%z "${tmpdir}/${asset}" 2>/dev/null || stat -c%s "${tmpdir}/${asset}" 2>/dev/null || echo 0)"
+    if [ "${size}" -lt 1000000 ]; then
+        rm -rf "$tmpdir"
+        err "codegraph archive is suspiciously small (${size} bytes); refusing to install"
+        return 1
+    fi
+
+    if ! tar -xzf "${tmpdir}/${asset}" -C "$tmpdir" 2>/dev/null; then
+        rm -rf "$tmpdir"
+        err "Failed to extract codegraph archive: ${asset}"
+        return 1
+    fi
+
+    # Sanity check: the tarball should have produced a meaningful number
+    # of files. A real release has 100+ entries (node runtime + binary);
+    # a corrupt or stub archive will have 1-2.
+    local extracted_count
+    extracted_count="$(find "$tmpdir" -type f | wc -l | tr -d ' ')"
+    if [ "${extracted_count}" -lt 5 ]; then
+        rm -rf "$tmpdir"
+        err "codegraph archive only produced ${extracted_count} files; refusing to install"
+        return 1
+    fi
+
+    # Install the entire bundle as a sibling directory. The release ships
+    # bin/codegraph (a small launcher) + node (V8 binary) + lib/ (the
+    # actual codegraph JS). The launcher's `..` resolution needs node and
+    # lib/ to live next to it, so we keep the upstream directory layout.
+    local bundle_dir="${INSTALL_DIR}/codegraph-bundle"
+    if [ -d "${bundle_dir}" ]; then
+        rm -rf "${bundle_dir}"
+    fi
+    mkdir -p "${bundle_dir}"
+    # The tarball extracts into a single top-level dir like
+    # codegraph-darwin-arm64/. Copy its CONTENTS into bundle_dir.
+    local top_dir
+    top_dir="$(find "$tmpdir" -mindepth 1 -maxdepth 1 -type d | head -1)"
+    if [ -z "${top_dir}" ]; then
+        rm -rf "$tmpdir" "${bundle_dir}"
+        err "codegraph archive did not contain a top-level directory"
+        return 1
+    fi
+    cp -R "${top_dir}/." "${bundle_dir}/"
+    rm -rf "$tmpdir"
+
+    # Install a thin shim at ${INSTALL_DIR}/codegraph that exec's the
+    # upstream launcher inside the bundle. The shim inherits the
+    # symlink-following behavior of the original (via the realpath logic
+    # the launcher itself does) so it works whether it's called directly
+    # or via a symlink.
+    local bundle_launcher="${bundle_dir}/bin/codegraph"
+    if [ ! -x "${bundle_launcher}" ]; then
+        rm -rf "${bundle_dir}"
+        err "codegraph bundle missing executable ${bundle_launcher}"
+        return 1
+    fi
+    cat > "${INSTALL_DIR}/codegraph" <<EOF
+#!/usr/bin/env bash
+# codegraph harness shim — exec's the upstream launcher inside its bundle.
+# Installed by scripts/install-tools.sh. Do not edit; the shim is rewritten
+# on every install.
+exec "${bundle_launcher}" "\$@"
+EOF
+    chmod +x "${INSTALL_DIR}/codegraph"
+    fix_binary "${INSTALL_DIR}/codegraph"
+    echo "$version" > "$version_file"
+    log "  Installed: ${INSTALL_DIR}/codegraph (bundle at ${bundle_dir})"
     return 0
 }
 
@@ -417,6 +539,7 @@ Tools:
   poltergeist   Secrets/credentials scanner
   osv-scanner   OSV database scanner used by wraith
   omp           Oh My Pi orchestrator
+  codegraph     Parallel AST toolkit for intelligence/intrusion
   all           Install all tools (default)
 
 Options:
@@ -437,8 +560,7 @@ main() {
     while [ $# -gt 0 ]; do
         case "$1" in
             --version) version="$2"; shift 2 ;;
-            --help)    usage; exit 0 ;;
-            wraith|poltergeist|osv-scanner|omp|all) tools+=("$1"); shift ;;
+            wraith|poltergeist|osv-scanner|omp|codegraph|all) tools+=("$1"); shift ;;
             *)         err "Unknown tool: $1"; usage; exit 1 ;;
         esac
     done
@@ -466,48 +588,20 @@ main() {
             omp)
                 download_omp "$(version_for_tool omp "$version")" || ((failures++))
                 ;;
+            codegraph)
+                download_codegraph "$(version_for_tool codegraph "$version")" || warn "  codegraph: install failed; agents will fall back to grep/Read"
+                ;;
             all)
                 download_and_extract "ghostsecurity/wraith" "wraith" "$(version_for_tool wraith "$version")" || ((failures++))
                 download_and_extract "ghostsecurity/poltergeist" "poltergeist" "$(version_for_tool poltergeist "$version")" || ((failures++))
                 download_omp "$(version_for_tool omp "$version")" || ((failures++))
+                download_codegraph "$(version_for_tool codegraph "$version")" || ((failures++))
                 ;;
         esac
     done
 
     # ── osv-scanner (wraith dependency) ──
     ensure_osv_scanner "$(version_for_tool osv-scanner latest)" || ((failures++))
-    # ── Graphify (required — graph-guided intrusion analysis) ──
-    local VENV_DIR="${HARNESS_ROOT}/.venv"
-    local graphify_failed=false
-    if [ "${SKIP_GRAPHIFY_INSTALL:-0}" = "1" ]; then
-        log "  graphify: skipped by SKIP_GRAPHIFY_INSTALL=1"
-    elif [ -x "${VENV_DIR}/bin/graphify" ]; then
-        log "  graphify: already installed (${VENV_DIR}/bin/graphify)"
-    elif command -v python3 &>/dev/null; then
-        log "  graphify: installing into ${VENV_DIR}..."
-        if ! python3 -m venv "${VENV_DIR}" 2>/dev/null; then
-            warn "  graphify: venv creation failed"
-            graphify_failed=true
-        fi
-        if [ -x "${VENV_DIR}/bin/pip" ]; then
-            local graphify_log="${HARNESS_ROOT}/.harness/logs/graphify-pip-install.log"
-            mkdir -p "$(dirname "$graphify_log")"
-            "${VENV_DIR}/bin/pip" install -q "graphifyy[openai]" >"$graphify_log" 2>&1 \
-                && log "  graphify: installed (${VENV_DIR}/bin/graphify)" \
-                || { warn "  graphify: pip install failed"; warn "  see: ${graphify_log}"; graphify_failed=true; }
-        else
-            graphify_failed=true
-        fi
-    else
-        warn "python3 not found — graphify not installed"
-        graphify_failed=true
-    fi
-
-    if [ "$graphify_failed" = true ]; then
-        warn "  graphify is required by validate-config; fix the bootstrap error before audit runtime"
-        ((failures++))
-    fi
-
     log ""
     if [ $failures -gt 0 ]; then
         warn "${failures} tool(s) failed to install"
@@ -515,6 +609,11 @@ main() {
     fi
 
     log "Installation complete. Binaries in: ${INSTALL_DIR}"
+    if [ -x "${INSTALL_DIR}/codegraph" ]; then
+        local _cg_ver
+        _cg_ver="$(cat "${INSTALL_DIR}/.codegraph.version" 2>/dev/null || echo 'unknown')"
+        log "  codegraph: ${_cg_ver}"
+    fi
     log "Add to PATH: export PATH=\"${INSTALL_DIR}:\$PATH\""
 }
 

@@ -9,9 +9,9 @@ The harness treats `target/` as read-only during audit runtime, writes deliverab
 | Requirement | Purpose |
 |---|---|
 | Bash-compatible shell environment | Runs harness scripts and OMP orchestration |
-| Python 3.12+ | Configuration parsing, validators, Graphify environment, and offline setup |
+| Python 3.11+ | Configuration parsing (tomllib), validators, and deterministic builders |
 | Git | Target repository access and source metadata |
-| OpenAI-compatible LLM endpoint | Main audit orchestration and graph-guided analysis |
+| OpenAI-compatible LLM endpoint | Main audit orchestration (OMP) and agent reasoning |
 
 Harness-managed tools are installed into `bins/` with `scripts/install-tools.sh`; do not install or rely on global copies for audit runtime.
 
@@ -59,23 +59,13 @@ base_url = "https://llm.example.local/v1"
 api_key = "..."
 model = "provider/model"
 
-[graphify]
-backend = ""
-base_url = ""
-api_key = ""
-model = ""
-full_repo = false
-cluster_when = "cross_module_only"
-
 [harness]
 default_depth = "quick" # quick | balanced | full
 ```
 
-Empty `[graphify]` connection values inherit `[llm]`, which is the preferred default.
+Run `bash scripts/load-config.sh` to inspect the exported environment. Run `bash scripts/validate-config.sh` before audit runtime to verify tool installation (including the required codegraph binary), containment, OMP bootstrap state, and OSV database availability.
 
-Run `bash scripts/load-config.sh` to inspect the exported environment. Run `bash scripts/validate-config.sh` before audit runtime to verify tool installation, containment, OMP bootstrap state, OSV database availability, and Graphify LLM access.
-
-Graphify defaults to scoped extraction derived from repository context, deterministic tool evidence, intelligence cards, and triage. Full-repository extraction is opt-in.
+codegraph is the harness's sole graph backend: AST-only, fully offline, and scoped per planned intelligence/intrusion scope. Audit runtime needs no Python virtual environment — the deterministic builders run on system `python3` with stdlib only.
 
 ## Audit Workflow
 
@@ -92,7 +82,7 @@ audit the target repo
 3. Run SCA, secrets, and SAST in parallel.
 4. Fuse evidence into intelligence artifacts and graph-guided hypotheses.
 5. Triage verified candidates into normalized findings.
-6. Run targeted intrusion analysis with scoped Graphify output.
+6. Run targeted intrusion analysis with scoped codegraph AST context.
 7. Reconcile final findings and generate reports.
 8. Validate scan integrity.
 
@@ -173,7 +163,7 @@ bash setup.sh
 
 `offline-build.sh` verifies every chunk and the reconstructed tarball SHA256 before writing the final archive. It does not require Python for current chunk sets. `scripts/offline-pack.sh` excludes live `config.toml` by default and packages `config.toml.example` as `config.toml`; use `--include-config` only when intentionally packaging live credentials.
 
-The macOS pack bundles standalone CPython for Apple Silicon and macOS Graphify wheels. It does not bundle a local model runtime; `config.toml` must point to a local or LAN OpenAI-compatible LLM endpoint before `bash setup.sh` succeeds.
+The pack contains only binaries, the OSV database, and harness source — no Python wheels and no bundled CPython. It does not bundle a local model runtime; `config.toml` must point to a local or LAN OpenAI-compatible LLM endpoint before `bash setup.sh` succeeds.
 
 Each offline pack build replaces the previous `offline/` chunk set.
 

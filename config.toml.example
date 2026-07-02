@@ -4,14 +4,14 @@
 
 # ── LLM Provider ──────────────────────────────────────────────────────
 [llm]
-# OpenAI-compatible gateway endpoint (used by OMP, graphify, agent prompts)
+# OpenAI-compatible gateway endpoint (used by OMP and agent prompts)
 # Any URL reachable by the harness — local (http://localhost:8080/v1) or remote.
 base_url = ""
 
 # API key — empty string if no auth required
 api_key = ""
 
-# Default model name (used by graphify, OMP model discovery)
+# Default model name (used by OMP model discovery)
 # Must match a model ID served by the endpoint, or a [[llm.provider.models]] entry.
 model = "mimo-v2.5"
 
@@ -30,40 +30,12 @@ auth = "api-key"
 #   "explicit" — uses [[llm.provider.models]] entries only (no /v1/models call)
 discovery = "proxy"
 
-# Uncomment when endpoint lacks /v1/models (discovery = "explicit")
+# When the endpoint lacks /v1/models (discovery = "explicit"), you can pin
+# individual models here. context_window / max_tokens are optional and not
+# enforced by the harness; pin them only when the endpoint requires it.
 # [[llm.provider.models]]
 # id = "your-model-name"
 # name = "On-Prem Model"
-# context_window = 32768
-# max_tokens = 4096
-
-# ── Graphify (intrusion agent) ────────────────────────────────────────
-[graphify]
-# Backend for graphify's semantic extraction.
-#   ""        — default: harness-generated OpenAI-compatible provider using [llm]
-#   "ollama"  — real local Ollama only, not a generic /v1 gateway
-# Other Graphify built-ins are allowed only when their native env/config is valid.
-backend = ""
-
-# Optional Graphify LLM overrides. Empty values inherit [llm].
-base_url = ""
-model = ""
-api_key = ""
-
-# Targeted OODA intrusion mode. Keep full-repo extraction off by default; Graphify
-# should answer scoped reachability/path questions derived from recon + triage.
-full_repo = false
-cluster_when = "cross_module_only"
-
-[graphify.max_scope_files]
-quick = 40
-balanced = 100
-full = 200
-
-[graphify.max_scopes]
-quick = 4
-balanced = 8
-full = 16
 
 # ── Harness scan settings ─────────────────────────────────────────────
 [harness]
@@ -80,7 +52,7 @@ audit_offline = true
 allow_configured_llm_endpoint = true
 # Keep tool homes, temp files, caches, logs, and agent outputs inside this repo.
 contained = true
-approved_write_roots = ["scans", ".harness", "work", "bins", ".venv"]
+approved_write_roots = ["scans", ".harness", "work", "bins"]
 
 [harness.scans.sca]
 # Path to wraith binary (relative to harness root)
@@ -113,9 +85,17 @@ binary = "bins/poltergeist"
 # Extra CLI flags passed to poltergeist
 extra_flags = []
 
+[harness.scans.intelligence]
+# Intelligence uses codegraph AST analysis. Optional because the audit can
+# fall back to triage + intrusion + report when the intelligence phase
+# cannot run.
+optional = true
+
 [harness.scans.intrusion]
-# Intrusion requires LLM-backed Graphify. No AST-only fallback.
-optional = false
+# Intrusion uses codegraph AST analysis (no LLM extraction step). Optional
+# because the audit can still terminate with status ok when the target has
+# no parseable code for codegraph.
+optional = true
 
 [harness.scans.reconciliation]
 # Reconcile triage findings with intrusion enrichment before report generation.

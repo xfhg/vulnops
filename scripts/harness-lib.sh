@@ -42,6 +42,9 @@ harness_setup_containment() {
     export OMP_AGENT_HOME="${hdir}/home/.omp/agent"
     export PI_CODING_AGENT_DIR="${hdir}/home/.omp/agent"
     export PI_CONFIG_DIR="${hdir}/home/.omp"
+    # codegraph runs offline-only; never phone home, never spawn a daemon
+    export CODEGRAPH_TELEMETRY=0
+    export CODEGRAPH_NO_DAEMON=1
 
     mkdir -p \
         "${XDG_CONFIG_HOME}" \
@@ -100,8 +103,7 @@ harness_require_allowed_output() {
         "$root/scans"|"$root/scans"/*|\
         "$root/.harness"|"$root/.harness"/*|\
         "$root/work"|"$root/work"/*|\
-        "$root/bins"|"$root/bins"/*|\
-        "$root/.venv"|"$root/.venv"/*)
+        "$root/bins"|"$root/bins"/*)
             return 0
             ;;
         *)

@@ -182,7 +182,7 @@ was not modified during scanning. Findings are based on:
 Summarize unresolved intelligence without promoting it to a verified finding:
 - open coverage gaps from `intelligence/coverage-gaps.json`
 - deferred or unresolved investigation cards
-- Graphify scopes that were optional, skipped, or inconclusive
+- codegraph scopes that were optional, skipped, or inconclusive
 - rule gaps that should become future guardrails
 
 ---

@@ -23,7 +23,7 @@ These are provided in your assignment:
 ### Step 1: Collect All Findings
 
 Read findings from each scan directory:
-- `<scan_base>/intelligence/investigation-cards.json` — OODA hypotheses, Graphify intelligence, coverage gaps, and provenance
+- `<scan_base>/intelligence/investigation-cards.json` — OODA hypotheses, codegraph intelligence, coverage gaps, and provenance
 - `<scan_base>/intelligence/evidence-corpus.json` — normalized upstream evidence from recon/SCA/secrets/SAST
 - `<scan_base>/sca/findings/*.md` — dependency vulnerabilities
 - `<scan_base>/sast/verified-findings.json` — verified code vulnerabilities
@@ -143,7 +143,7 @@ Create `<scan_base>/triage/`:
 ]
 ```
 
-**`triage/intrusion-seeds.json`** — Targeted Graphify questions for verified findings only:
+**`triage/intrusion-seeds.json`** — Targeted codegraph questions for verified findings only:
 ```json
 {
   "schema_version": "1.0",
@@ -158,7 +158,7 @@ Create `<scan_base>/triage/`:
       "evidence_refs": ["src/api/users.ts:42"],
       "raw_refs": ["intelligence/investigation-cards.json:I-001", "sast/verified-findings.json:V-001"],
       "intelligence_refs": ["I-001"],
-      "graph_questions": ["<exact reachability/path/blast-radius question Graphify should answer>"],
+      "graph_questions": ["<exact reachability/path/blast-radius question codegraph should answer>"],
       "requires_cluster": false
     }
   ]

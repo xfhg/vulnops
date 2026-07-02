@@ -32,12 +32,10 @@ if [ $# -eq 0 ]; then
             echo "  ${tool}: NOT INSTALLED"
         fi
     done
-    if [ -x "${HARNESS_ROOT}/.venv/bin/graphify" ]; then
-        echo "  graphify: ${HARNESS_ROOT}/.venv/bin/graphify"
-    elif command -v graphify &>/dev/null; then
-        echo "  graphify: $(command -v graphify)"
+    if [ -x "${HARNESS_ROOT}/bins/codegraph" ]; then
+        echo "  codegraph: ${HARNESS_ROOT}/bins/codegraph"
     else
-        echo "  graphify: NOT INSTALLED (required — run: bash scripts/install-tools.sh)"
+        echo "  codegraph: NOT INSTALLED (required — run: bash scripts/install-tools.sh)"
     fi
     exit 0
 fi

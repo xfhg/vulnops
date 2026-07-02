@@ -21,7 +21,7 @@ TARGET_DIR="$1"
 harness_require_inside_root "$HARNESS_ROOT" "$TARGET_DIR" "target directory"
 
 if [ -x "${POLTERGEIST}" ]; then
-    exec "${POLTERGEIST}" scan --format json "${TARGET_DIR}"
+    exec "${POLTERGEIST}" --format json "${TARGET_DIR}"
 fi
 
 # Grep-based fallback: scan for common secret patterns

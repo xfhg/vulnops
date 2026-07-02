@@ -18,10 +18,7 @@ PHASE="$2"
 harness_setup_containment "$HARNESS_ROOT"
 harness_require_allowed_output "$HARNESS_ROOT" "$SCAN_BASE"
 
-PYTHON="${HARNESS_ROOT}/.venv/bin/python"
-if [ ! -x "$PYTHON" ]; then
-    PYTHON="$(command -v python3 2>/dev/null || true)"
-fi
+PYTHON="$(command -v python3 2>/dev/null || true)"
 if [ -z "$PYTHON" ]; then
     echo "[validate-phase] ERROR: python3 not found" >&2
     exit 1
@@ -163,15 +160,15 @@ case "$PHASE" in
     intelligence)
         check_json "${SCAN_BASE}/intelligence/evidence-corpus.json"
         check_json "${SCAN_BASE}/intelligence/attack-surface-map.json"
-        check_json "${SCAN_BASE}/intelligence/graphify-intel-plan.json"
+        check_json "${SCAN_BASE}/intelligence/intel-plan.json"
         check_json "${SCAN_BASE}/intelligence/investigation-cards.json"
         check_json "${SCAN_BASE}/intelligence/coverage-gaps.json"
         check_json "${SCAN_BASE}/intelligence/rule-gaps.json"
         check_file "${SCAN_BASE}/intelligence/summary.md"
         check_json "${SCAN_BASE}/intelligence/phase-manifest.json"
         check_manifest_status "${SCAN_BASE}/intelligence/phase-manifest.json" ok
-        if [ -f "${SCAN_BASE}/intelligence/phase-manifest.json" ] && [ -f "${SCAN_BASE}/intelligence/graphify-intel-plan.json" ] && [ -f "${SCAN_BASE}/intelligence/investigation-cards.json" ]; then
-            "$PYTHON" - "${SCAN_BASE}/intelligence/phase-manifest.json" "${SCAN_BASE}/intelligence/graphify-intel-plan.json" "${SCAN_BASE}/intelligence/investigation-cards.json" "${SCAN_BASE}/intelligence" <<'PY' || err "intelligence OODA validation failed"
+        if [ -f "${SCAN_BASE}/intelligence/phase-manifest.json" ] && [ -f "${SCAN_BASE}/intelligence/intel-plan.json" ] && [ -f "${SCAN_BASE}/intelligence/investigation-cards.json" ]; then
+            "$PYTHON" - "${SCAN_BASE}/intelligence/phase-manifest.json" "${SCAN_BASE}/intelligence/intel-plan.json" "${SCAN_BASE}/intelligence/investigation-cards.json" "${SCAN_BASE}/intelligence" <<'PY' || err "intelligence OODA validation failed"
 import json
 import sys
 from pathlib import Path
@@ -203,12 +200,16 @@ for scope in scopes:
         raise SystemExit(1)
     if scope.get("required"):
         sid = str(scope["id"])
-        graph_path = intelligence_dir / "graphify-runs" / sid / "graphify-out" / "graph.json"
-        quality_path = intelligence_dir / "graphify-runs" / sid / "graphify-quality.json"
-        if not graph_path.is_file() or not quality_path.is_file():
-            raise SystemExit(1)
-        graph = json.loads(graph_path.read_text())
-        if not isinstance(graph.get("nodes"), list) or not graph.get("nodes"):
+        cg_context = intelligence_dir / "codegraph-runs" / sid / "codegraph-out" / "context.json"
+        codegraph_ok = False
+        if cg_context.is_file():
+            try:
+                ctx = json.loads(cg_context.read_text())
+            except Exception:
+                ctx = {}
+            if isinstance(ctx, dict):
+                codegraph_ok = (len(ctx.get("nodes", []) or []) + len(ctx.get("edges", []) or [])) > 0
+        if not codegraph_ok:
             raise SystemExit(1)
 PY
         fi
@@ -222,11 +223,11 @@ PY
     intrusion)
         check_file "${SCAN_BASE}/intrusion/summary.md"
         check_json "${SCAN_BASE}/intrusion/enrichment.json"
-        check_json "${SCAN_BASE}/intrusion/graphify-plan.json"
+        check_json "${SCAN_BASE}/intrusion/intrusion-plan.json"
         check_json "${SCAN_BASE}/intrusion/phase-manifest.json"
         check_manifest_status "${SCAN_BASE}/intrusion/phase-manifest.json" ok
-        if [ -f "${SCAN_BASE}/intrusion/phase-manifest.json" ] && [ -f "${SCAN_BASE}/intrusion/graphify-plan.json" ]; then
-            "$PYTHON" - "${SCAN_BASE}/intrusion/phase-manifest.json" "${SCAN_BASE}/intrusion/graphify-plan.json" "${SCAN_BASE}/intrusion" <<'PY' || err "intrusion scoped Graphify validation failed"
+        if [ -f "${SCAN_BASE}/intrusion/phase-manifest.json" ] && [ -f "${SCAN_BASE}/intrusion/intrusion-plan.json" ]; then
+            "$PYTHON" - "${SCAN_BASE}/intrusion/phase-manifest.json" "${SCAN_BASE}/intrusion/intrusion-plan.json" "${SCAN_BASE}/intrusion" <<'PY' || err "intrusion scoped codegraph validation failed"
 import json
 import sys
 from pathlib import Path
@@ -234,10 +235,6 @@ from pathlib import Path
 manifest = json.loads(Path(sys.argv[1]).read_text())
 plan = json.loads(Path(sys.argv[2]).read_text())
 intrusion_dir = Path(sys.argv[3])
-text = json.dumps(manifest).lower()
-bad = ("ast-only", "llm unavailable", "llm_backend\": \"ollama (unavailable", "degraded")
-if any(item in text for item in bad):
-    raise SystemExit(1)
 if plan.get("mode") != "targeted-ooda":
     raise SystemExit(1)
 scopes = plan.get("scopes")
@@ -250,18 +247,17 @@ for scope in required_scopes:
     sid = scope.get("id")
     if not sid:
         raise SystemExit(1)
-    graph_path = intrusion_dir / "graphify-runs" / str(sid) / "graphify-out" / "graph.json"
-    quality_path = intrusion_dir / "graphify-runs" / str(sid) / "graphify-quality.json"
-    if not graph_path.is_file() or not quality_path.is_file():
+    cg_context = intrusion_dir / "codegraph-runs" / str(sid) / "codegraph-out" / "context.json"
+    codegraph_ok = False
+    if cg_context.is_file():
+        try:
+            ctx = json.loads(cg_context.read_text())
+        except Exception:
+            ctx = {}
+        if isinstance(ctx, dict):
+            codegraph_ok = (len(ctx.get("nodes", []) or []) + len(ctx.get("edges", []) or [])) > 0
+    if not codegraph_ok:
         raise SystemExit(1)
-    graph = json.loads(graph_path.read_text())
-    nodes = graph.get("nodes", [])
-    edges = graph.get("links", graph.get("edges", []))
-    if not isinstance(nodes, list) or not nodes:
-        raise SystemExit(1)
-    if any(cmd.get("type") in {"query", "path", "affected"} for cmd in scope.get("commands", []) if isinstance(cmd, dict)):
-        if not isinstance(edges, list) or not edges:
-            raise SystemExit(1)
 PY
         fi
         ;;

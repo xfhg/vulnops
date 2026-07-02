@@ -52,9 +52,9 @@ Live feedback rules:
 - Never inspect child transcripts through URI-style pseudo paths. Some OpenAI-compatible gateways reject the malformed tool-call transcript that can result when the model treats those pseudo paths as function names. Use OMP task yield, IRC, and validation artifacts instead.
 - Maintain todos for the major pipeline phases. Mark a todo complete only after the phase task has yielded and `validate-phase.sh` has passed.
 - `scripts/wait-phase.sh` is only for manual recovery, CI, or non-OMP automation.
-- Intrusion is terminal only when `intrusion/phase-manifest.json` exists with status `ok`, `intrusion/enrichment.json` exists, `intrusion/graphify-plan.json` exists, and required scoped Graphify runs under `intrusion/graphify-runs/` validate.
-- Reconciliation must not start while intrusion is still running, graphify is still producing partial scoped output, or the intrusion manifest is absent/non-terminal.
-- If intrusion cannot complete with LLM-backed Graphify, the intrusion phase must write a failed manifest, a safe `intrusion/enrichment.json`, and `intrusion/summary.md`, then validation must fail. Do not continue to reconciliation.
+- Intrusion is terminal only when `intrusion/phase-manifest.json` exists with status `ok`, `intrusion/enrichment.json` exists, `intrusion/intrusion-plan.json` exists, and required `intrusion/codegraph-runs/<sid>/codegraph-out/context.json` validate.
+- Reconciliation must not start while intrusion is still running, codegraph is still producing partial scoped output, or the intrusion manifest is absent/non-terminal.
+- If intrusion cannot complete, the intrusion phase must write a failed manifest, a safe `intrusion/enrichment.json`, and `intrusion/summary.md`, then validation must fail. Do not continue to reconciliation.
 
 Constraints:
 

@@ -32,26 +32,6 @@ def _dquote(val: str) -> str:
     return val.replace("\\", "\\\\").replace('"', '\\"')
 
 
-def _boolish(val: object, default: bool = False) -> bool:
-    if val is None:
-        return default
-    if isinstance(val, bool):
-        return val
-    return str(val).strip().lower() in {"1", "true", "yes", "on"}
-
-
-def _depth_value(section: object, depth: str, default: int) -> int:
-    if isinstance(section, dict):
-        raw = section.get(depth, default)
-    else:
-        raw = default
-    try:
-        parsed = int(raw)
-    except (TypeError, ValueError):
-        return default
-    return parsed if parsed > 0 else default
-
-
 def main() -> None:
     root = _find_root(sys.argv)
     config_path = root / "config.toml"
@@ -62,7 +42,6 @@ def main() -> None:
         cfg = tomllib.load(f)
 
     llm = cfg.get("llm", {})
-    graphify = cfg.get("graphify", {})
 
     # ── Core LLM vars ─────────────────────────────────────────────────
     base_url = str(llm.get("base_url", "") or "")
@@ -81,52 +60,6 @@ def main() -> None:
         ("ON_PREM_PROVIDER_API", provider_api),
         ("ON_PREM_PROVIDER_AUTH", provider_auth),
     ]
-
-    # ── Graphify resolved LLM vars ────────────────────────────────────
-    # Empty graphify fields inherit the same endpoint/key/model used by OMP.
-    g_backend_raw = str(graphify.get("backend", "") or "").strip()
-    g_base_url = str(graphify.get("base_url", "") or "").strip() or base_url
-    g_api_key = str(graphify.get("api_key", "") or "")
-    g_model = str(graphify.get("model", "") or "").strip() or model
-    g_provider_name = "vulnops-onprem"
-    g_backend = g_backend_raw or g_provider_name
-    g_auth = str(graphify.get("auth", "") or "").strip() or provider_auth
-
-    # The OpenAI SDK used by Graphify requires a non-empty key string even for
-    # no-auth local gateways. Keep real keys intact; use a placeholder only when
-    # the configured auth mode says no Authorization header is needed.
-    g_resolved_key = g_api_key if g_api_key else api_key
-    if not g_resolved_key and g_auth == "none":
-        g_resolved_key = "local"
-
-    exports.extend(
-        [
-            ("GRAPHIFY_BACKEND", g_backend),
-            ("GRAPHIFY_BASE_URL", g_base_url),
-            ("GRAPHIFY_MODEL", g_model),
-            ("GRAPHIFY_PROVIDER_NAME", g_provider_name),
-            ("GRAPHIFY_PROVIDER_AUTH", g_auth),
-            ("GRAPHIFY_GENERATED_PROVIDER", "1" if g_backend == g_provider_name else "0"),
-            ("VULNOPS_GRAPHIFY_API_KEY", g_resolved_key),
-            ("GRAPHIFY_FULL_REPO", "1" if _boolish(graphify.get("full_repo"), False) else "0"),
-            ("GRAPHIFY_CLUSTER_WHEN", str(graphify.get("cluster_when", "cross_module_only") or "cross_module_only")),
-            ("GRAPHIFY_MAX_SCOPE_FILES_QUICK", str(_depth_value(graphify.get("max_scope_files"), "quick", 40))),
-            ("GRAPHIFY_MAX_SCOPE_FILES_BALANCED", str(_depth_value(graphify.get("max_scope_files"), "balanced", 100))),
-            ("GRAPHIFY_MAX_SCOPE_FILES_FULL", str(_depth_value(graphify.get("max_scope_files"), "full", 200))),
-            ("GRAPHIFY_MAX_SCOPES_QUICK", str(_depth_value(graphify.get("max_scopes"), "quick", 4))),
-            ("GRAPHIFY_MAX_SCOPES_BALANCED", str(_depth_value(graphify.get("max_scopes"), "balanced", 8))),
-            ("GRAPHIFY_MAX_SCOPES_FULL", str(_depth_value(graphify.get("max_scopes"), "full", 16))),
-        ]
-    )
-
-    if g_backend == "ollama":
-        exports.append(("OLLAMA_BASE_URL", g_base_url))
-        if g_resolved_key:
-            exports.append(("OLLAMA_API_KEY", g_resolved_key))
-        exports.append(("OLLAMA_MODEL", g_model))
-
-    if g_backend == "openai" and g_resolved_key:
-        exports.append(("OPENAI_API_KEY", g_resolved_key))
 
     # ── Emit ──────────────────────────────────────────────────────────
     for key, val in exports:

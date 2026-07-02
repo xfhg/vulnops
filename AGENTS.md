@@ -21,8 +21,7 @@ Depth is `quick` (default), `balanced`, or `full`.
 
 All settings live in `config.toml` at the harness root:
 - **[llm]** — gateway URL, API key, model name
-- **[graphify]** — backend and model for intrusion analysis
-- **[harness]** — scan settings, tool paths
+- **[harness]** — scan settings, tool paths (codegraph index, scan fanout)
 - **[output]** / **[logging]** — output format and log retention
 
 Run `bash scripts/load-config.sh` to see exported env vars.
@@ -30,6 +29,8 @@ Run `bash scripts/validate-config.sh` before audit runtime.
 Run `bash scripts/audit-status.sh` for read-only status checks. If it reports the scan complete, answer once and stop; do not re-run phases or keep re-stating the same status after compaction.
 
 Audit runtime is offline except for the configured LLM endpoint. Bootstrap commands such as dependency setup, tool install, OSV DB fetch, and target cloning are outside audit runtime.
+
+codegraph is the sole graph backend and a required binary (`bins/codegraph`, validated by `validate-config.sh`). Audit runtime needs no Python virtual environment — the deterministic builders (`build-intelligence.py`, `build-intrusion-plan.py`, `finalize-intrusion.py`) run on system `python3` with stdlib only. Graph evidence is AST-only, offline, and scoped per planned intelligence/intrusion scope (`codegraph-runs/<sid>/codegraph-out/context.json`).
 
 ### Main Process Controller
 
@@ -146,7 +147,7 @@ Main runs `vulnops-intelligence` as task ID `Intelligence` after SCA, secrets, a
 Required outputs:
 - `<paths.intelligence_evidence_corpus>`
 - `<paths.intelligence_attack_surface_map>`
-- `<paths.intelligence_graphify_plan>`
+- `<paths.intelligence_intel_plan>`
 - `<paths.intelligence_cards>`
 - `<paths.intelligence_coverage_gaps>`
 - `<paths.intelligence_rule_gaps>`
@@ -159,7 +160,7 @@ After intelligence yields, run:
 bash scripts/validate-phase.sh <scan_base> intelligence
 ```
 
-Intelligence Fusion preserves evidence across phase boundaries. It may create new hypotheses from tool evidence, graph inference, agent exploration, or coverage gaps, but those hypotheses cannot become final findings without triage or intrusion evidence-gate promotion. Graphify must be LLM-backed and scoped; AST-only and accidental whole-repo intelligence extraction are invalid.
+Intelligence Fusion preserves evidence across phase boundaries. It may create new hypotheses from tool evidence, graph inference, agent exploration, or coverage gaps, but those hypotheses cannot become final findings without triage or intrusion evidence-gate promotion. codegraph is the sole graph backend (AST-only, offline); it runs scoped per planned intelligence scope.
 
 ### Step 4: Triage
 
@@ -187,7 +188,7 @@ Main runs `vulnops-intrusion` as task ID `Intrusion` after triage.
 Required outputs:
 - `<paths.intrusion>/summary.md`
 - `<paths.intrusion_enrichment>`
-- `<paths.graphify_plan>`
+- `<paths.intrusion_plan>`
 - `<paths.intrusion>/phase-manifest.json`
 
 After intrusion yields terminal status, run:
@@ -196,7 +197,7 @@ After intrusion yields terminal status, run:
 bash scripts/validate-phase.sh <scan_base> intrusion
 ```
 
-Intrusion is terminal only when `intrusion/phase-manifest.json` status is `ok`, `intrusion/enrichment.json` exists, `intrusion/graphify-plan.json` exists, and required scoped Graphify runs under `intrusion/graphify-runs/` have valid LLM-backed graphs. Reconciliation must not start before terminal intrusion state. Graphify must use the configured LLM; AST-only intrusion output and accidental whole-repo mega extraction are invalid.
+Intrusion is terminal only when `intrusion/phase-manifest.json` status is `ok`, `intrusion/enrichment.json` exists, `intrusion/intrusion-plan.json` exists, and required `intrusion/codegraph-runs/<sid>/codegraph-out/context.json` are non-empty (nodes + edges > 0). Reconciliation must not start before terminal intrusion state. codegraph is AST-only by design.
 
 ### Step 6: Final Reconciliation
 
@@ -273,7 +274,8 @@ Supported phases include `recon`, `sca`, `secrets`, `sast-threatmodel`, `sast-de
 - `scripts/run-wraith.sh` — SCA scan wrapper
 - `scripts/run-poltergeist.sh` — secrets scan wrapper
 - `scripts/build-intelligence.py` — deterministic OODA intelligence artifact builder/finalizer
-- `scripts/run-graphify.sh` — intrusion analysis wrapper
+- `scripts/run-codegraph.sh` — codegraph CLI wrapper (required, sole graph backend)
+- `scripts/codegraph-context.sh` — codegraph blast-radius context helper (emits per-scope `context.json`)
 - `scripts/validate-config.sh` — audit runtime readiness gate
 - `scripts/bootstrap-omp.sh` — harness-local OMP onboarding/model bootstrap
 - `scripts/validate-phase.sh` — phase artifact checkpoint gate

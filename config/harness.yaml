@@ -66,27 +66,19 @@ scans:
 
   # Intelligence Fusion runs after deterministic scans and before triage.
   intelligence:
-    # Uses the same Graphify controls as intrusion: scoped, LLM-backed, no AST-only fallback.
-    optional: false
+    # Uses codegraph AST analysis (no LLM extraction). Optional because the
+    # audit can fall back to triage + intrusion + report when the
+    # intelligence phase cannot run.
+    optional: true
 
-  # Intrusion-specific settings (graph-guided deep analysis after triage)
+  # Intrusion-specific settings (AST graph analysis after triage)
   intrusion:
-    # Empty backend means harness-generated OpenAI-compatible provider using [llm].
-    # Use ollama only for a real local Ollama endpoint.
-    backend: ""
-    # Targeted OODA mode is the default. Full-repo graph extraction is opt-in.
-    full_repo: false
-    max_scope_files:
-      quick: 40
-      balanced: 100
-      full: 200
-    max_scopes:
-      quick: 4
-      balanced: 8
-      full: 16
-    cluster_when: cross_module_only
-    # LLM-backed graphify is required; AST-only intrusion output is invalid.
-    optional: false
+    codegraph:
+      index_dir: .codegraph
+    # codegraph is the sole graph backend (AST-only, offline). Intrusion is
+    # optional: the audit can still terminate with status ok when the target
+    # has no parseable code.
+    optional: true
 
 # Output configuration
 output:

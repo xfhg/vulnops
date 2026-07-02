@@ -36,7 +36,7 @@ You reconcile triage findings with intrusion enrichment before the report is wri
    - `new_hypotheses`
    - `redaction_state`
    - `closure_reason`
-6. Preserve intelligence provenance in `raw_refs`; final critical/high findings must show whether Graphify answered reachability, blast radius, or dependency impact.
+6. Preserve intelligence provenance in `raw_refs`; final critical/high findings must show whether codegraph answered reachability, blast radius, or dependency impact.
 7. Write `<scan_base>/final-reconciliation/findings.json`.
 8. Write `<scan_base>/final-reconciliation/summary.md`.
 9. Write `<scan_base>/final-reconciliation/phase-manifest.json`.

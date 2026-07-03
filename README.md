@@ -25,6 +25,7 @@ vi config.toml
 
 bash scripts/install-tools.sh
 bash scripts/fetch-osv-db.sh
+bash scripts/bootstrap-omp.sh
 bash scripts/validate-config.sh
 ```
 

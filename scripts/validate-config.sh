@@ -37,11 +37,12 @@ check_exec_or_warn() {
 }
 
 check_codegraph_init() {
-    local marker="${HARNESS_ROOT}/.codegraph/.codegraph-init-marker"
+    local cg_index="${CODEGRAPH_INDEX_DIR:-${VULNOPSV3_SCANS:-${HARNESS_ROOT}/scans}/.codegraph}"
+    local marker="${cg_index}/.codegraph-init-marker"
     if [ ! -x "${HARNESS_ROOT}/bins/codegraph" ]; then
         err "codegraph binary missing or not executable: ${HARNESS_ROOT}/bins/codegraph"
     elif [ ! -f "$marker" ]; then
-        err "codegraph init marker absent: $marker (run scripts/setup-codegraph.sh)"
+        warn "codegraph not yet initialized (marker absent: $marker). It is indexed on the next audit run via scripts/setup-codegraph.sh; the binary check above is the hard gate, and phase gates enforce real codegraph output."
     fi
 }
 

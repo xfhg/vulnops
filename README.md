@@ -176,8 +176,10 @@ Each offline pack build replaces the previous `offline/` chunk set.
 | `scripts/install-tools.sh` | Install harness tools into `bins/` |
 | `scripts/fetch-osv-db.sh` | Fetch the OSV database for offline SCA |
 | `scripts/clone-target.sh <url> [branch] [dir]` | Optional pre-runtime target clone helper |
+| `scripts/bootstrap-omp.sh` | Generate harness-local OMP config/models from `config.toml` (run automatically by `run.sh`/`setup.sh`) |
 | `scripts/run-audit.sh [depth]` | Detect target and create audit context |
 | `scripts/audit-status.sh [scan_base]` | Read-only scan status |
+| `scripts/setup-codegraph.sh` | Initialize the codegraph index for the target (runs automatically during audit via `run-audit.sh`) |
 | `scripts/validate-config.sh` | Validate prepared runtime |
 | `scripts/validate-phase.sh <scan_base> <phase>` | Validate a phase checkpoint |
 | `scripts/validate-scan.sh <scan_base>` | Validate final scan artifacts |

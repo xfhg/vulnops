@@ -233,8 +233,9 @@ for rel in [
     "setup.sh",
     "config/offline-pack.lock",
 ]:
-    if path.is_file():
-        files[rel] = sha(path)
+    full = root / rel
+    if full.is_file():
+        files[rel] = sha(full)
 
 manifest = {
     "schema": "vulnops.offline-pack-manifest.v1",

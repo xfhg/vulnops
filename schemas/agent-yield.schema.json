@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://vulnops.local/schemas/agent-yield.schema.json",
+  "title": "VulnOps OMP Agent Yield Summary",
+  "type": "object",
+  "required": ["status", "artifacts", "warnings", "errors"],
+  "additionalProperties": true,
+  "properties": {
+    "status": {"type": "string"},
+    "artifacts": {"type": "array", "items": {"type": "string"}},
+    "warnings": {"type": "array", "items": {"type": "string"}},
+    "errors": {"type": "array", "items": {"type": "string"}}
+  }
+}

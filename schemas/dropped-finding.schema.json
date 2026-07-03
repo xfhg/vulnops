@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://vulnops.local/schemas/dropped-finding.schema.json",
+  "title": "VulnOps Dropped Finding",
+  "type": "object",
+  "required": ["id", "raw_id", "status", "reason", "evidence_refs", "raw_refs"],
+  "additionalProperties": true,
+  "properties": {
+    "id": {"type": "string"},
+    "raw_id": {"type": "string"},
+    "status": {"type": "string", "enum": ["false-positive", "deferred", "suppressed", "not_applicable"]},
+    "reason": {"type": "string"},
+    "evidence_refs": {"type": "array", "items": {"type": "string"}},
+    "raw_refs": {"type": "array", "items": {"type": "string"}}
+  }
+}

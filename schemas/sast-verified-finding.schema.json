@@ -1,0 +1,22 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://vulnops.local/schemas/sast-verified-finding.schema.json",
+  "title": "VulnOps SAST Verified Finding",
+  "type": "object",
+  "required": ["id", "raw_id", "title", "status", "severity", "confidence", "source_ref", "sink_ref", "entrypoint_ref", "evidence_refs", "raw_refs", "closure_reason"],
+  "additionalProperties": true,
+  "properties": {
+    "id": {"type": "string"},
+    "raw_id": {"type": "string"},
+    "title": {"type": "string"},
+    "status": {"type": "string", "enum": ["verified"]},
+    "severity": {"type": "string", "enum": ["critical", "high", "medium", "low", "info"]},
+    "confidence": {"type": "string", "enum": ["high", "medium", "low"]},
+    "source_ref": {"type": "string"},
+    "sink_ref": {"type": "string"},
+    "entrypoint_ref": {"type": "string"},
+    "evidence_refs": {"type": "array", "items": {"type": "string"}, "minItems": 1},
+    "raw_refs": {"type": "array", "items": {"type": "string"}, "minItems": 1},
+    "closure_reason": {"type": "string"}
+  }
+}

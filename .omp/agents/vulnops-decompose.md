@@ -46,7 +46,7 @@ Write:
 - `paths.sast_task_manifest`
 - `paths.sast_decompose_md`
 
-Each chunk must include id, risk_rank, size, files, focus_entry_points, hypothesis, threat_id, lenses, related_advisories, and evidence_refs.
+The top-level manifest must include `chunks`; include a top-level `rationale` whenever `chunks` is non-empty. Each chunk must include id, risk_rank, size, files, focus_entry_points, hypothesis, threat_id, lenses, related_advisories, and evidence_refs.
 
 Use specialist lenses where appropriate (declared in Skills below).
 

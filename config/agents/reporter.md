@@ -249,6 +249,6 @@ Create `<output_dir>/security-report.json`:
 
 ## Completion
 
-Write `<output_dir>/phase-manifest.json` with `phase: "report"`, `status`, `inputs`, `outputs`, `coverage`, `tool_versions`, `warnings`, and `errors`.
+Write `<output_dir>/phase-manifest.json` with `phase: "report"`, `status`, `started_at`, `completed_at`, `inputs`, `outputs`, `coverage`, object `tool_versions`, `warnings`, and `errors`, matching `schemas/phase-manifest.schema.json`.
 
 Report the final finding counts and confirm report location.

@@ -32,7 +32,7 @@ output:
 
 Run secrets detection for the target described by `.harness/audit-context.json`.
 
-Follow `config/agents/secrets.md`. Use `scripts/run-poltergeist.sh` first and the documented grep fallback only if needed.
+Follow `config/agents/secrets.md`. Use `scripts/run-poltergeist.sh`; it hard-fails when Poltergeist is unavailable unless `VULNOPS_ALLOW_POLTERGEIST_GREP_FALLBACK=1`, in which case the phase must yield `degraded` and include a warning naming `grep-fallback`.
 
 Required artifacts:
 - `secrets/summary.md`

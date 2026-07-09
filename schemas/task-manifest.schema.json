@@ -3,15 +3,21 @@
   "$id": "https://vulnops.local/schemas/task-manifest.schema.json",
   "title": "VulnOps SAST Task Manifest",
   "type": "object",
-  "required": ["rationale", "chunks"],
+  "required": ["chunks"],
   "additionalProperties": true,
+  "allOf": [
+    {
+      "if": {"properties": {"chunks": {"minItems": 1}}},
+      "then": {"required": ["rationale"]}
+    }
+  ],
   "properties": {
     "rationale": {"type": "string"},
     "chunks": {
       "type": "array",
       "items": {
         "type": "object",
-        "required": ["id", "risk_rank", "size", "files", "hypothesis", "threat_id", "lenses", "evidence_refs"],
+        "required": ["id", "risk_rank", "size", "files", "focus_entry_points", "hypothesis", "threat_id", "lenses", "related_advisories", "evidence_refs"],
         "additionalProperties": true,
         "properties": {
           "id": {"type": "string"},

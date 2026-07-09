@@ -504,10 +504,8 @@ def _emit_codegraph_context(repo: Path, run_dir: Path, scope: dict[str, Any], de
             if isinstance(edge, dict):
                 edge.setdefault("origin", rel)
                 edges.append(edge)
-    if not nodes and not edges:
-        note = "; ".join(notes) or "no results"
-    else:
-        note = ""
+    has_evidence = bool(edges) or any(isinstance(node, dict) and node.get("role") not in {"source", "target"} for node in nodes)
+    note = "" if has_evidence else ("; ".join(notes) or "no graph edges or evidence-bearing nodes")
     payload = {
         "schema_version": "1.0",
         "scope_id": scope.get("id", ""),
@@ -590,6 +588,17 @@ def build_intel_plan(repo: Path, scan: Path, depth: str, surfaces: dict[str, Any
     }
 
 
+
+def has_codegraph_evidence(ctx: dict[str, Any]) -> bool:
+    edges = ctx.get("edges")
+    if isinstance(edges, list) and edges:
+        return True
+    nodes = ctx.get("nodes")
+    if not isinstance(nodes, list):
+        return False
+    return any(isinstance(node, dict) and node.get("role") not in {"source", "target"} for node in nodes)
+
+
 def scope_completed(scan: Path, sid: str) -> bool:
     # codegraph is the sole graph backend; empty results do not count.
     cg_context = (scan / "intelligence" / "codegraph-runs" / sid / "codegraph-out" / "context.json")
@@ -598,11 +607,8 @@ def scope_completed(scan: Path, sid: str) -> bool:
             ctx = load_json(cg_context, {})
         except Exception:
             ctx = {}
-        if isinstance(ctx, dict):
-            n = len(ctx.get("nodes", []) or [])
-            e = len(ctx.get("edges", []) or [])
-            if n + e > 0:
-                return True
+        if isinstance(ctx, dict) and has_codegraph_evidence(ctx):
+            return True
     return False
 
 

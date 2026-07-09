@@ -173,7 +173,7 @@ Do not mark a finding `verified` unless the evidence was re-read during triage. 
 
 Never promote a SAST finding unless it exists in `<scan_base>/sast/verified-findings.json`. Dropped SAST findings may be mentioned only in the false-positive appendix.
 
-Write `<scan_base>/triage/phase-manifest.json` with `phase: "triage"`, `status`, `inputs`, `outputs`, `coverage`, `tool_versions`, `warnings`, and `errors`.
+Write `<scan_base>/triage/phase-manifest.json` with `phase: "triage"`, `status`, `started_at`, `completed_at`, `inputs`, `outputs`, `coverage`, object `tool_versions`, `warnings`, and `errors`, matching `schemas/phase-manifest.schema.json`.
 
 ## Completion
 

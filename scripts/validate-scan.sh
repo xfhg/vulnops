@@ -109,6 +109,82 @@ def rel(path: Path) -> str:
         return str(path)
 
 
+def validate_sca_raw_advisories(data, label: str) -> None:
+    if not isinstance(data, list):
+        fail(f"{label} must be a list")
+        return
+    required = ("advisory_id", "package", "version", "ecosystem", "severity", "source_lockfile", "raw_ref", "summary")
+    allowed_severity = {"critical", "high", "medium", "low", "info"}
+    for index, item in enumerate(data, start=1):
+        if not isinstance(item, dict):
+            fail(f"{label} item {index} must be an object")
+            continue
+        for key in required:
+            if not isinstance(item.get(key), str):
+                fail(f"{label} item {index} missing string field {key}")
+        if item.get("severity") not in allowed_severity:
+            fail(f"{label} item {index} has invalid severity")
+
+
+def has_codegraph_evidence(ctx) -> bool:
+    if not isinstance(ctx, dict):
+        return False
+    edges = ctx.get("edges")
+    if isinstance(edges, list) and edges:
+        return True
+    nodes = ctx.get("nodes")
+    if not isinstance(nodes, list):
+        return False
+    return any(isinstance(node, dict) and node.get("role") not in {"source", "target"} for node in nodes)
+
+
+def validate_secrets_redacted_candidates(data, label: str) -> None:
+    if not isinstance(data, dict):
+        fail(f"{label} must be an object")
+        return
+    if not isinstance(data.get("schema_version"), str):
+        fail(f"{label} missing schema_version")
+    if not isinstance(data.get("tool"), str):
+        fail(f"{label} missing tool")
+    candidates = data.get("candidates")
+    if not isinstance(candidates, list):
+        fail(f"{label} candidates must be a list")
+        return
+    required = ("id", "type", "classification", "severity", "file", "line", "redacted_value", "evidence_refs", "raw_ref", "source")
+    allowed_classification = {"confirmed", "likely", "false-positive", "deprecated", "candidate"}
+    allowed_severity = {"critical", "high", "medium", "low", "info"}
+    secret_patterns = [
+        re.compile(r"-----BEGIN [A-Z ]*PRIVATE KEY-----"),
+        re.compile(r"ghp_[A-Za-z0-9]{30,}"),
+        re.compile(r"AKIA[0-9A-Z]{16}"),
+        re.compile(r"sk-[A-Za-z0-9]{32,}"),
+    ]
+    for index, item in enumerate(candidates, start=1):
+        if not isinstance(item, dict):
+            fail(f"{label} candidate {index} must be an object")
+            continue
+        for key in required:
+            if key not in item:
+                fail(f"{label} candidate {index} missing {key}")
+        for key in ("id", "type", "classification", "severity", "file", "redacted_value", "raw_ref", "source"):
+            if key in item and not isinstance(item.get(key), str):
+                fail(f"{label} candidate {index} field {key} must be a string")
+        if item.get("classification") not in allowed_classification:
+            fail(f"{label} candidate {index} has invalid classification")
+        if item.get("severity") not in allowed_severity:
+            fail(f"{label} candidate {index} has invalid severity")
+        if not isinstance(item.get("line"), int) or item.get("line", 0) < 1:
+            fail(f"{label} candidate {index} line must be an integer >= 1")
+        refs = item.get("evidence_refs")
+        if not isinstance(refs, list) or not refs or not all(isinstance(ref, str) for ref in refs):
+            fail(f"{label} candidate {index} evidence_refs must be a non-empty string list")
+        for value in item.values():
+            values = value if isinstance(value, list) else [value]
+            for text in values:
+                if isinstance(text, str) and any(pattern.search(text) for pattern in secret_patterns):
+                    fail(f"{label} candidate {index} appears to contain an unredacted secret")
+
+
 if root not in scan.parents and scan != root:
     fail(f"scan path escapes harness root: {scan}")
 if not scan.exists():
@@ -133,21 +209,30 @@ for dirname, phase in expected_manifests.items():
         continue
     if manifest.get("phase") != phase:
         fail(f"{rel(manifest_path)} phase must be {phase!r}")
-    if manifest.get("status") not in {"ok", "degraded", "failed", "skipped"}:
+    status = manifest.get("status")
+    if status not in {"ok", "degraded", "failed", "skipped"}:
         fail(f"{rel(manifest_path)} has invalid status")
-    if phase == "intrusion":
-        if manifest.get("status") != "ok":
-            fail(f"{rel(manifest_path)} must be ok; intrusion phase is required")
-    if phase == "intelligence":
-        if manifest.get("status") != "ok":
-            fail(f"{rel(manifest_path)} must be ok; intelligence fusion is required")
+    if status == "failed":
+        fail(f"{rel(manifest_path)} is failed")
+    if status == "skipped" and phase not in {"sca", "secrets"}:
+        fail(f"{rel(manifest_path)} may not be skipped")
+    if phase == "intrusion" and status != "ok":
+        fail(f"{rel(manifest_path)} must be ok; intrusion phase is required")
+    if phase == "intelligence" and status != "ok":
+        fail(f"{rel(manifest_path)} must be ok; intelligence fusion is required")
+    for key in ("started_at", "completed_at"):
+        if not isinstance(manifest.get(key), str) or not manifest.get(key).strip():
+            fail(f"{rel(manifest_path)} missing string field {key}")
     for key in ("inputs", "outputs", "warnings", "errors"):
         if not isinstance(manifest.get(key), list):
             fail(f"{rel(manifest_path)} missing list field {key}")
+    if manifest.get("tool_versions") is not None and not isinstance(manifest.get("tool_versions"), dict):
+        fail(f"{rel(manifest_path)} tool_versions must be an object")
 
 required_outputs = [
     scan / "repo-context" / "repo-context.json",
     scan / "repo-context" / "security-surfaces.json",
+    scan / "sca" / "raw-advisories.json",
     scan / "sast" / "threat-model.json",
     scan / "sast" / "task-manifest.json",
     scan / "sast" / "raw-findings.json",
@@ -184,6 +269,7 @@ intrusion_plan = load_json(scan / "intrusion" / "intrusion-plan.json")
 intrusion_enrichment = load_json(scan / "intrusion" / "enrichment.json")
 report = load_json(scan / "report" / "security-report.json")
 raw_advisories = load_json(scan / "sca" / "raw-advisories.json")
+secrets_redacted = load_json(scan / "secrets" / "redacted-candidates.json")
 threat_model = load_json(scan / "sast" / "threat-model.json")
 task_manifest = load_json(scan / "sast" / "task-manifest.json")
 
@@ -192,6 +278,11 @@ sast_raw = normalize_findings_list(load_json(scan / "sast" / "raw-findings.json"
 sast_verified = normalize_findings_list(load_json(scan / "sast" / "verified-findings.json"), "sast/verified-findings.json")
 sast_dropped = normalize_findings_list(load_json(scan / "sast" / "dropped-findings.json"), "sast/dropped-findings.json")
 
+if raw_advisories is not None:
+    validate_sca_raw_advisories(raw_advisories, "sca/raw-advisories.json")
+if secrets_redacted is not None:
+    validate_secrets_redacted_candidates(secrets_redacted, "secrets/redacted-candidates.json")
+
 if isinstance(threat_model, dict):
     for key in ("assets", "trust_boundaries", "entrypoints", "threats", "evidence_refs"):
         if key not in threat_model:
@@ -199,6 +290,33 @@ if isinstance(threat_model, dict):
     if not isinstance(threat_model.get("evidence_refs"), list) or not threat_model.get("evidence_refs"):
         fail("sast/threat-model.json missing evidence_refs")
 
+
+if isinstance(task_manifest, dict):
+    chunks = task_manifest.get("chunks")
+    if not isinstance(chunks, list):
+        fail("sast/task-manifest.json chunks must be a list")
+        chunks = []
+    if chunks and "rationale" not in task_manifest:
+        fail("sast/task-manifest.json missing top-level rationale")
+    required_chunk_fields = ("id", "risk_rank", "size", "files", "focus_entry_points", "hypothesis", "threat_id", "lenses", "related_advisories", "evidence_refs")
+    for chunk in chunks:
+        if not isinstance(chunk, dict):
+            fail("sast/task-manifest.json chunks must contain objects")
+            continue
+        chunk_id = chunk.get("id", "<unknown>")
+        for key in required_chunk_fields:
+            if key not in chunk:
+                fail(f"sast task chunk {chunk_id} missing {key}")
+        if not isinstance(chunk.get("files"), list) or not chunk.get("files"):
+            fail(f"sast task chunk {chunk_id} files must be a non-empty list")
+        if not isinstance(chunk.get("focus_entry_points"), list):
+            fail(f"sast task chunk {chunk_id} focus_entry_points must be a list")
+        if not isinstance(chunk.get("related_advisories"), list):
+            fail(f"sast task chunk {chunk_id} related_advisories must be a list")
+        if not isinstance(chunk.get("evidence_refs"), list) or not chunk.get("evidence_refs"):
+            fail(f"sast task chunk {chunk_id} evidence_refs must be a non-empty list")
+elif task_manifest is not None:
+    fail("sast/task-manifest.json must be an object")
 if isinstance(security_surfaces, dict):
     if not isinstance(security_surfaces.get("entry_points"), list) or not security_surfaces.get("entry_points"):
         fail("repo-context/security-surfaces.json missing entry_points")
@@ -274,7 +392,7 @@ if isinstance(intelligence_plan, dict):
                 except Exception:
                     ctx = {}
                 if isinstance(ctx, dict):
-                    codegraph_ok = (len(ctx.get("nodes", []) or []) + len(ctx.get("edges", []) or [])) > 0
+                    codegraph_ok = has_codegraph_evidence(ctx)
             if not codegraph_ok:
                 fail(f"required intelligence scope {scope_id} has no codegraph evidence")
 elif intelligence_plan is not None:
@@ -511,7 +629,7 @@ if isinstance(intrusion_plan, dict):
                 except Exception:
                     ctx = {}
                 if isinstance(ctx, dict):
-                    codegraph_ok = (len(ctx.get("nodes", []) or []) + len(ctx.get("edges", []) or [])) > 0
+                    codegraph_ok = has_codegraph_evidence(ctx)
             if not codegraph_ok:
                 fail(f"required intrusion scope {scope_id} has no codegraph evidence")
 elif intrusion_plan is not None:

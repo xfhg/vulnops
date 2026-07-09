@@ -39,7 +39,7 @@ You reconcile triage findings with intrusion enrichment before the report is wri
 6. Preserve intelligence provenance in `raw_refs`; final critical/high findings must show whether codegraph answered reachability, blast radius, or dependency impact.
 7. Write `<scan_base>/final-reconciliation/findings.json`.
 8. Write `<scan_base>/final-reconciliation/summary.md`.
-9. Write `<scan_base>/final-reconciliation/phase-manifest.json`.
+9. Write `<scan_base>/final-reconciliation/phase-manifest.json` with `phase: "final-reconciliation"`, `status`, `started_at`, `completed_at`, `inputs`, `outputs`, `coverage`, object `tool_versions`, `warnings`, and `errors`, matching `schemas/phase-manifest.schema.json`.
 
 ## Completion
 

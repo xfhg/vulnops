@@ -46,20 +46,140 @@ check_json() {
     fi
 }
 
-check_manifest_status() {
+check_manifest_shape() {
     local path="$1"
-    shift
+    local phase="$2"
+    shift 2
+    check_json "$path"
     if [ ! -f "$path" ]; then
         return
     fi
-    "$PYTHON" - "$path" "$@" <<'PY' || err "invalid terminal status in $path"
+    "$PYTHON" - "$path" "$phase" "$@" <<'PY' || err "invalid phase manifest: $path"
 import json
 import sys
 from pathlib import Path
 
 manifest = json.loads(Path(sys.argv[1]).read_text())
-allowed = set(sys.argv[2:])
-sys.exit(0 if manifest.get("status") in allowed else 1)
+phase = sys.argv[2]
+allowed = set(sys.argv[3:])
+if not isinstance(manifest, dict):
+    raise SystemExit(1)
+if manifest.get("phase") != phase:
+    raise SystemExit(1)
+if manifest.get("status") not in allowed:
+    raise SystemExit(1)
+for key in ("started_at", "completed_at"):
+    if not isinstance(manifest.get(key), str) or not manifest.get(key).strip():
+        raise SystemExit(1)
+for key in ("inputs", "outputs", "warnings", "errors"):
+    if not isinstance(manifest.get(key), list):
+        raise SystemExit(1)
+tool_versions = manifest.get("tool_versions")
+if tool_versions is not None and not isinstance(tool_versions, dict):
+    raise SystemExit(1)
+PY
+}
+
+validate_sca_raw_advisories() {
+    local path="$1"
+    "$PYTHON" - "$path" <<'PY' || err "invalid SCA raw advisories: $path"
+import json
+import sys
+from pathlib import Path
+
+data = json.loads(Path(sys.argv[1]).read_text())
+if not isinstance(data, list):
+    raise SystemExit(1)
+allowed_severity = {"critical", "high", "medium", "low", "info"}
+required = ("advisory_id", "package", "version", "ecosystem", "severity", "source_lockfile", "raw_ref", "summary")
+for item in data:
+    if not isinstance(item, dict):
+        raise SystemExit(1)
+    for key in required:
+        if not isinstance(item.get(key), str):
+            raise SystemExit(1)
+    if item.get("severity") not in allowed_severity:
+        raise SystemExit(1)
+PY
+}
+
+validate_secrets_redacted_candidates() {
+    local path="$1"
+    "$PYTHON" - "$path" <<'PY' || err "invalid redacted secrets candidates: $path"
+import json
+import re
+import sys
+from pathlib import Path
+
+doc = json.loads(Path(sys.argv[1]).read_text())
+if not isinstance(doc, dict):
+    raise SystemExit(1)
+if not isinstance(doc.get("schema_version"), str) or not isinstance(doc.get("tool"), str):
+    raise SystemExit(1)
+candidates = doc.get("candidates")
+if not isinstance(candidates, list):
+    raise SystemExit(1)
+allowed_classification = {"confirmed", "likely", "false-positive", "deprecated", "candidate"}
+allowed_severity = {"critical", "high", "medium", "low", "info"}
+secret_patterns = [
+    re.compile(r"-----BEGIN [A-Z ]*PRIVATE KEY-----"),
+    re.compile(r"ghp_[A-Za-z0-9]{30,}"),
+    re.compile(r"AKIA[0-9A-Z]{16}"),
+    re.compile(r"sk-[A-Za-z0-9]{32,}"),
+]
+required = ("id", "type", "classification", "severity", "file", "line", "redacted_value", "evidence_refs", "raw_ref", "source")
+for item in candidates:
+    if not isinstance(item, dict):
+        raise SystemExit(1)
+    for key in required:
+        if key not in item:
+            raise SystemExit(1)
+    for key in ("id", "type", "classification", "severity", "file", "redacted_value", "raw_ref", "source"):
+        if not isinstance(item.get(key), str):
+            raise SystemExit(1)
+    if item.get("classification") not in allowed_classification or item.get("severity") not in allowed_severity:
+        raise SystemExit(1)
+    if not isinstance(item.get("line"), int) or item["line"] < 1:
+        raise SystemExit(1)
+    refs = item.get("evidence_refs")
+    if not isinstance(refs, list) or not refs or not all(isinstance(ref, str) for ref in refs):
+        raise SystemExit(1)
+    for value in item.values():
+        strings = value if isinstance(value, list) else [value]
+        for text in strings:
+            if isinstance(text, str) and any(pattern.search(text) for pattern in secret_patterns):
+                raise SystemExit(1)
+PY
+}
+
+validate_sast_task_manifest() {
+    local path="$1"
+    "$PYTHON" - "$path" <<'PY' || err "invalid SAST task manifest: $path"
+import json
+import sys
+from pathlib import Path
+
+doc = json.loads(Path(sys.argv[1]).read_text())
+chunks = doc.get("chunks")
+if not isinstance(chunks, list):
+    raise SystemExit(1)
+if "rationale" not in doc and chunks:
+    raise SystemExit(1)
+required = ("id", "risk_rank", "size", "files", "focus_entry_points", "hypothesis", "threat_id", "lenses", "related_advisories", "evidence_refs")
+for chunk in chunks:
+    if not isinstance(chunk, dict):
+        raise SystemExit(1)
+    for key in required:
+        if key not in chunk:
+            raise SystemExit(1)
+    if not isinstance(chunk.get("files"), list) or not chunk["files"]:
+        raise SystemExit(1)
+    if not isinstance(chunk.get("focus_entry_points"), list):
+        raise SystemExit(1)
+    if not isinstance(chunk.get("related_advisories"), list):
+        raise SystemExit(1)
+    if not isinstance(chunk.get("evidence_refs"), list) or not chunk["evidence_refs"]:
+        raise SystemExit(1)
 PY
 }
 
@@ -118,17 +238,19 @@ case "$PHASE" in
         check_file "${SCAN_BASE}/repo-context/repo.md"
         check_json "${SCAN_BASE}/repo-context/repo-context.json"
         check_json "${SCAN_BASE}/repo-context/security-surfaces.json"
-        check_json "${SCAN_BASE}/repo-context/phase-manifest.json"
+        check_manifest_shape "${SCAN_BASE}/repo-context/phase-manifest.json" recon ok degraded
         ;;
     sca)
         check_file "${SCAN_BASE}/sca/summary.md"
         check_json "${SCAN_BASE}/sca/raw-advisories.json"
-        check_json "${SCAN_BASE}/sca/phase-manifest.json"
+        validate_sca_raw_advisories "${SCAN_BASE}/sca/raw-advisories.json"
+        check_manifest_shape "${SCAN_BASE}/sca/phase-manifest.json" sca ok degraded skipped
         ;;
     secrets)
         check_file "${SCAN_BASE}/secrets/summary.md"
         check_json "${SCAN_BASE}/secrets/redacted-candidates.json"
-        check_json "${SCAN_BASE}/secrets/phase-manifest.json"
+        validate_secrets_redacted_candidates "${SCAN_BASE}/secrets/redacted-candidates.json"
+        check_manifest_shape "${SCAN_BASE}/secrets/phase-manifest.json" secrets ok degraded skipped
         ;;
     sast-threatmodel)
         check_file "${SCAN_BASE}/sast/threat-model.md"
@@ -138,17 +260,7 @@ case "$PHASE" in
         check_file "${SCAN_BASE}/sast/decompose.md"
         check_json "${SCAN_BASE}/sast/task-manifest.json"
         if [ -f "${SCAN_BASE}/sast/task-manifest.json" ]; then
-            "$PYTHON" - "${SCAN_BASE}/sast/task-manifest.json" <<'PY' || err "sast-decompose: task-manifest.json missing top-level rationale"
-import json
-import sys
-from pathlib import Path
-
-doc = json.loads(Path(sys.argv[1]).read_text())
-chunks = doc.get("chunks")
-# rationale is required when the manifest has chunks; a thin codebase (no chunks) may omit it
-if "rationale" not in doc and isinstance(chunks, list) and chunks:
-    raise SystemExit(1)
-PY
+            validate_sast_task_manifest "${SCAN_BASE}/sast/task-manifest.json"
         fi
         ;;
     sast-deepdive)
@@ -162,13 +274,16 @@ PY
     sast)
         check_json "${SCAN_BASE}/sast/threat-model.json"
         check_json "${SCAN_BASE}/sast/task-manifest.json"
+        if [ -f "${SCAN_BASE}/sast/task-manifest.json" ]; then
+            validate_sast_task_manifest "${SCAN_BASE}/sast/task-manifest.json"
+        fi
         check_sast_deepdive_chunks
         check_json "${SCAN_BASE}/sast/raw-findings.json"
         check_json "${SCAN_BASE}/sast/verified-findings.json"
         check_json "${SCAN_BASE}/sast/dropped-findings.json"
         check_json "${SCAN_BASE}/sast/coverage-ledger.json"
         check_file "${SCAN_BASE}/sast/summary.md"
-        check_json "${SCAN_BASE}/sast/phase-manifest.json"
+        check_manifest_shape "${SCAN_BASE}/sast/phase-manifest.json" sast ok degraded
         ;;
     intelligence)
         check_json "${SCAN_BASE}/intelligence/evidence-corpus.json"
@@ -178,8 +293,7 @@ PY
         check_json "${SCAN_BASE}/intelligence/coverage-gaps.json"
         check_json "${SCAN_BASE}/intelligence/rule-gaps.json"
         check_file "${SCAN_BASE}/intelligence/summary.md"
-        check_json "${SCAN_BASE}/intelligence/phase-manifest.json"
-        check_manifest_status "${SCAN_BASE}/intelligence/phase-manifest.json" ok
+        check_manifest_shape "${SCAN_BASE}/intelligence/phase-manifest.json" intelligence ok
         if [ -f "${SCAN_BASE}/intelligence/phase-manifest.json" ] && [ -f "${SCAN_BASE}/intelligence/intel-plan.json" ] && [ -f "${SCAN_BASE}/intelligence/investigation-cards.json" ]; then
             "$PYTHON" - "${SCAN_BASE}/intelligence/phase-manifest.json" "${SCAN_BASE}/intelligence/intel-plan.json" "${SCAN_BASE}/intelligence/investigation-cards.json" "${SCAN_BASE}/intelligence" <<'PY' || err "intelligence OODA validation failed"
 import json
@@ -201,6 +315,18 @@ cards = cards_doc.get("cards")
 if not isinstance(cards, list):
     raise SystemExit(1)
 allowed_sources = {"tool_evidence", "graph_inference", "agent_exploration", "coverage_gap"}
+
+def has_codegraph_evidence(ctx):
+    if not isinstance(ctx, dict):
+        return False
+    edges = ctx.get("edges")
+    if isinstance(edges, list) and edges:
+        return True
+    nodes = ctx.get("nodes")
+    if not isinstance(nodes, list):
+        return False
+    return any(isinstance(node, dict) and node.get("role") not in {"source", "target"} for node in nodes)
+
 for card in cards:
     if not isinstance(card, dict) or card.get("source") not in allowed_sources:
         raise SystemExit(1)
@@ -220,8 +346,7 @@ for scope in scopes:
                 ctx = json.loads(cg_context.read_text())
             except Exception:
                 ctx = {}
-            if isinstance(ctx, dict):
-                codegraph_ok = (len(ctx.get("nodes", []) or []) + len(ctx.get("edges", []) or [])) > 0
+            codegraph_ok = has_codegraph_evidence(ctx)
         if not codegraph_ok:
             raise SystemExit(1)
 PY
@@ -231,14 +356,13 @@ PY
         check_file "${SCAN_BASE}/triage/consolidated.md"
         check_json "${SCAN_BASE}/triage/findings.json"
         check_json "${SCAN_BASE}/triage/intrusion-seeds.json"
-        check_json "${SCAN_BASE}/triage/phase-manifest.json"
+        check_manifest_shape "${SCAN_BASE}/triage/phase-manifest.json" triage ok degraded
         ;;
     intrusion)
         check_file "${SCAN_BASE}/intrusion/summary.md"
         check_json "${SCAN_BASE}/intrusion/enrichment.json"
         check_json "${SCAN_BASE}/intrusion/intrusion-plan.json"
-        check_json "${SCAN_BASE}/intrusion/phase-manifest.json"
-        check_manifest_status "${SCAN_BASE}/intrusion/phase-manifest.json" ok
+        check_manifest_shape "${SCAN_BASE}/intrusion/phase-manifest.json" intrusion ok
         if [ -f "${SCAN_BASE}/intrusion/phase-manifest.json" ] && [ -f "${SCAN_BASE}/intrusion/intrusion-plan.json" ]; then
             "$PYTHON" - "${SCAN_BASE}/intrusion/phase-manifest.json" "${SCAN_BASE}/intrusion/intrusion-plan.json" "${SCAN_BASE}/intrusion" <<'PY' || err "intrusion scoped codegraph validation failed"
 import json
@@ -253,9 +377,21 @@ if plan.get("mode") != "targeted-ooda":
 scopes = plan.get("scopes")
 if not isinstance(scopes, list) or not scopes:
     raise SystemExit(1)
+
+def has_codegraph_evidence(ctx):
+    if not isinstance(ctx, dict):
+        return False
+    edges = ctx.get("edges")
+    if isinstance(edges, list) and edges:
+        return True
+    nodes = ctx.get("nodes")
+    if not isinstance(nodes, list):
+        return False
+    return any(isinstance(node, dict) and node.get("role") not in {"source", "target"} for node in nodes)
+
 # When no scope is marked required (e.g. no critical/high triage findings),
 # every scope is treated as required. codegraph is the sole graph backend;
-# every scope must have a non-empty context.json.
+# every scope must have graph edges or evidence-bearing nodes.
 required_scopes = [scope for scope in scopes if isinstance(scope, dict) and scope.get("required")]
 if not required_scopes:
     required_scopes = [scope for scope in scopes if isinstance(scope, dict)]
@@ -270,8 +406,7 @@ for scope in required_scopes:
             ctx = json.loads(cg_context.read_text())
         except Exception:
             ctx = {}
-        if isinstance(ctx, dict):
-            codegraph_ok = (len(ctx.get("nodes", []) or []) + len(ctx.get("edges", []) or [])) > 0
+        codegraph_ok = has_codegraph_evidence(ctx)
     if not codegraph_ok:
         raise SystemExit(1)
 PY
@@ -280,12 +415,12 @@ PY
     final-reconciliation)
         check_json "${SCAN_BASE}/final-reconciliation/findings.json"
         check_file "${SCAN_BASE}/final-reconciliation/summary.md"
-        check_json "${SCAN_BASE}/final-reconciliation/phase-manifest.json"
+        check_manifest_shape "${SCAN_BASE}/final-reconciliation/phase-manifest.json" final-reconciliation ok degraded
         ;;
     report)
         check_file "${SCAN_BASE}/report/security-report.md"
         check_json "${SCAN_BASE}/report/security-report.json"
-        check_json "${SCAN_BASE}/report/phase-manifest.json"
+        check_manifest_shape "${SCAN_BASE}/report/phase-manifest.json" report ok degraded
         ;;
     *)
         err "unknown phase: $PHASE"

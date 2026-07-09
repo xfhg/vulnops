@@ -66,6 +66,21 @@ check_exec() {
     fi
 }
 
+check_version_command() {
+    local path="$1"
+    local label="$2"
+    local version
+    if [ ! -x "$path" ]; then
+        return
+    fi
+    version="$("$path" --version 2>/dev/null | head -n 1 || true)"
+    if [ -n "$version" ]; then
+        ok "${label} version: ${version}"
+    else
+        err "${label} --version produced no output"
+    fi
+}
+
 check_nonempty_dir() {
     local path="$1"
     local label="$2"
@@ -105,6 +120,53 @@ check_env_path_inside() {
     esac
 }
 
+check_scan_tool_config() {
+    local py
+    py="$(command -v python3 2>/dev/null || true)"
+    if [ -z "$py" ]; then
+        err "python3 not found for config consistency checks"
+        return
+    fi
+    "$py" - "${HARNESS_ROOT}/config.toml" <<'PY' || err "scan tool config inconsistent"
+from __future__ import annotations
+
+import sys
+from pathlib import Path
+
+try:
+    import tomllib
+except ModuleNotFoundError:
+    print("tomllib unavailable", file=sys.stderr)
+    raise SystemExit(1)
+
+path = Path(sys.argv[1])
+with path.open("rb") as handle:
+    cfg = tomllib.load(handle)
+
+scans = cfg.get("harness", {}).get("scans", {})
+errors: list[str] = []
+
+sca = scans.get("sca", {})
+if sca.get("binary") != "bins/wraith":
+    errors.append("[harness.scans.sca].binary must be 'bins/wraith'")
+sca_flags = sca.get("extra_flags", [])
+if "--offline" not in sca_flags:
+    errors.append("[harness.scans.sca].extra_flags must include '--offline'")
+
+secrets = scans.get("secrets", {})
+if secrets.get("binary") != "bins/poltergeist":
+    errors.append("[harness.scans.secrets].binary must be 'bins/poltergeist'")
+if secrets.get("extra_flags", []) != []:
+    errors.append("[harness.scans.secrets].extra_flags must be []")
+
+if errors:
+    for error in errors:
+        print(error, file=sys.stderr)
+    raise SystemExit(1)
+PY
+    ok "scan tool config matches wrapper defaults"
+}
+
 
 harness_setup_containment "$HARNESS_ROOT"
 
@@ -139,6 +201,12 @@ check_exec "${HARNESS_ROOT}/bins/wraith" "Wraith binary"
 check_exec "${HARNESS_ROOT}/bins/poltergeist" "Poltergeist binary"
 check_exec "${HARNESS_ROOT}/bins/osv-scanner" "OSV scanner binary"
 check_exec "${HARNESS_ROOT}/bins/codegraph" "codegraph AST toolkit (required)"
+check_version_command "${HARNESS_ROOT}/bins/omp" "OMP binary"
+check_version_command "${HARNESS_ROOT}/bins/wraith" "Wraith binary"
+check_version_command "${HARNESS_ROOT}/bins/poltergeist" "Poltergeist binary"
+check_version_command "${HARNESS_ROOT}/bins/osv-scanner" "OSV scanner binary"
+check_version_command "${HARNESS_ROOT}/bins/codegraph" "codegraph AST toolkit"
+check_scan_tool_config
 check_codegraph_init
 check_osv_db "${HARNESS_ROOT}/.harness/osv-db"
 
@@ -252,10 +320,16 @@ if [ -f "${PI_CODING_AGENT_DIR}/config.yml" ]; then
     else
         err "harness-local OMP config must disable setup wizard and set setupVersion: 1"
     fi
-    if grep -F -q "${OMP_MODEL_SELECTOR}" "${PI_CODING_AGENT_DIR}/config.yml"; then
-        ok "harness-local OMP config enables ${OMP_MODEL_SELECTOR}"
+    missing_roles=()
+    for role in default task slow smol plan advisor; do
+        if ! grep -q "^[[:space:]]*${role}:[[:space:]]*[^[:space:]]" "${PI_CODING_AGENT_DIR}/config.yml"; then
+            missing_roles+=("$role")
+        fi
+    done
+    if [ "${#missing_roles[@]}" -eq 0 ]; then
+        ok "harness-local OMP config has non-empty model roles"
     else
-        err "harness-local OMP config missing model selector: ${OMP_MODEL_SELECTOR}"
+        err "harness-local OMP config missing model role(s): ${missing_roles[*]}"
     fi
 fi
 
@@ -263,9 +337,9 @@ if [ -f "${PI_CODING_AGENT_DIR}/models.yml" ]; then
     if grep -F -q "  ${OMP_PROVIDER_NAME}:" "${PI_CODING_AGENT_DIR}/models.yml" &&
         grep -F -q "baseUrl:" "${PI_CODING_AGENT_DIR}/models.yml" &&
         grep -F -q "${ON_PREM_MODEL_NAME:-}" "${PI_CODING_AGENT_DIR}/models.yml"; then
-        ok "harness-local OMP models include configured on-prem model"
+        ok "harness-local OMP models include configured custom provider/model"
     else
-        err "harness-local OMP models missing configured provider/model"
+        err "harness-local OMP models missing configured custom provider/model"
     fi
     if grep -q 'apiKey:' "${PI_CODING_AGENT_DIR}/models.yml" || [ "${ON_PREM_PROVIDER_AUTH:-api-key}" = "none" ]; then
         ok "harness-local OMP models include auth material or no-auth mode"

@@ -51,7 +51,7 @@ Read `intelligence/intel-plan.json`. `build-intelligence.py` already emitted one
 bash "${harness_root}/scripts/codegraph-context.sh" blast-radius "<rel_path>" 2
 ```
 
-A required scope is satisfied when its `context.json` exists with nodes + edges > 0. If a required scope has no parseable code (empty context), record the sanitized reason in warnings and finalize as failed.
+A required scope is satisfied when its `context.json` contains at least one graph edge or an evidence-bearing node beyond source/target stubs. If a required scope has no parseable code, record the sanitized reason in warnings and finalize as failed.
 
 ### Step 3: Finalize Intelligence
 
@@ -65,7 +65,9 @@ This updates `investigation-cards.json` with graph evidence where available and 
 - `intelligence/summary.md`
 - `intelligence/phase-manifest.json`
 
-Use `status: "ok"` only when all required codegraph intelligence scopes have non-empty context. Use `status: "failed"` when required scoped codegraph evidence is missing.
+Use `status: "ok"` only when all required codegraph intelligence scopes have evidence-bearing context. Use `status: "failed"` when required scoped codegraph evidence is missing.
+
+`intelligence/phase-manifest.json` must include `phase: "intelligence"`, `status`, `started_at`, `completed_at`, `inputs`, `outputs`, `coverage`, object `tool_versions`, `warnings`, and `errors`, matching `schemas/phase-manifest.schema.json`.
 
 ## Investigation Card Rules
 

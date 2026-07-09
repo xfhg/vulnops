@@ -46,6 +46,18 @@ from pathlib import Path
 
 root = Path(sys.argv[1]).resolve()
 scan = Path(sys.argv[2]).resolve()
+if not scan.exists():
+    try:
+        scan_label = str(scan.relative_to(root))
+    except ValueError:
+        scan_label = str(scan)
+    print("Audit Status")
+    print(f"- Scan: {scan_label}")
+    print("- State: not complete")
+    print("- Validation: failed")
+    print("  [audit-status] stale audit context: scan_base does not exist")
+    raise SystemExit(1)
+
 
 phase_dirs = [
     ("recon", "repo-context"),

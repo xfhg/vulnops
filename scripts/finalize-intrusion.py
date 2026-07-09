@@ -33,16 +33,29 @@ def seed_map(scan: Path) -> dict[str, dict[str, Any]]:
     return {str(seed.get("id")): seed for seed in seeds if isinstance(seed, dict) and seed.get("id")}
 
 
-def graph_stats(context_path: Path) -> dict[str, int]:
+def has_codegraph_evidence(ctx: Any) -> bool:
+    if not isinstance(ctx, dict):
+        return False
+    edges = ctx.get("edges")
+    if isinstance(edges, list) and edges:
+        return True
+    nodes = ctx.get("nodes")
+    if not isinstance(nodes, list):
+        return False
+    return any(isinstance(node, dict) and node.get("role") not in {"source", "target"} for node in nodes)
+
+
+def graph_stats(context_path: Path) -> dict[str, Any]:
     ctx = load_json(context_path, {})
     if not isinstance(ctx, dict):
-        return {"nodes": 0, "edges": 0, "communities": 0}
+        return {"nodes": 0, "edges": 0, "communities": 0, "has_evidence": False}
     nodes = ctx.get("nodes", [])
     edges = ctx.get("edges", [])
     return {
         "nodes": len(nodes) if isinstance(nodes, list) else 0,
         "edges": len(edges) if isinstance(edges, list) else 0,
         "communities": 0,
+        "has_evidence": has_codegraph_evidence(ctx),
     }
 
 
@@ -51,12 +64,12 @@ def validate_scope(scan: Path, scope: dict[str, Any]) -> tuple[bool, dict[str, A
     cg_context = scan / "intrusion" / "codegraph-runs" / sid / "codegraph-out" / "context.json"
     errors: list[str] = []
     stats = graph_stats(cg_context)
-    codegraph_ok = (stats["nodes"] + stats["edges"]) > 0
+    codegraph_ok = bool(stats.get("has_evidence"))
     if not codegraph_ok:
         if not cg_context.is_file():
             errors.append(f"{sid}: missing codegraph context.json")
         else:
-            errors.append(f"{sid}: codegraph context has no nodes or edges")
+            errors.append(f"{sid}: codegraph context has no graph edges or evidence-bearing nodes")
     evidence_kind = "codegraph" if codegraph_ok else "none"
     merged = {
         "scope_id": sid,
@@ -80,6 +93,7 @@ def main() -> None:
     args = parser.parse_args()
 
     scan = Path(args.scan_base).resolve()
+    started_at = datetime.now(timezone.utc).isoformat()
     intrusion = scan / "intrusion"
     plan = load_json(intrusion / "intrusion-plan.json", {})
     if not isinstance(plan, dict) or plan.get("mode") != "targeted-ooda":
@@ -206,7 +220,8 @@ def main() -> None:
     manifest = {
         "phase": "intrusion",
         "status": status,
-        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "started_at": started_at,
+        "completed_at": datetime.now(timezone.utc).isoformat(),
         "inputs": [
             "repo-context/security-surfaces.json",
             "triage/intrusion-seeds.json",
@@ -225,7 +240,7 @@ def main() -> None:
             "required_scopes_failed": required_failed,
             "enrichment_entries": len(enrichments),
         },
-        "tool_versions": ["codegraph AST analysis via scripts/codegraph-context.sh"],
+        "tool_versions": {"codegraph": "AST analysis via scripts/codegraph-context.sh"},
         "warnings": warnings,
         "errors": errors,
     }

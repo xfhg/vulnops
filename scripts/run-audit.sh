@@ -120,12 +120,16 @@ main() {
 
     # ── Create scan directories ──
     mkdir -p "${scan_base}/repo-context"
+    mkdir -p "${scan_base}/sca/findings"
     mkdir -p "${scan_base}/sast/deepdive"
     mkdir -p "${scan_base}/sast/verify"
     mkdir -p "${scan_base}/intelligence/codegraph-runs"
+    mkdir -p "${scan_base}/intelligence"
     mkdir -p "${scan_base}/triage"
     mkdir -p "${scan_base}/report"
     mkdir -p "${scan_base}/intrusion/findings"
+    mkdir -p "${scan_base}/secrets/findings"
+    mkdir -p "${scan_base}/intrusion"
     mkdir -p "${scan_base}/intrusion/codegraph-runs"
     mkdir -p "${scan_base}/final-reconciliation"
 
@@ -202,7 +206,10 @@ main() {
     "run_wraith": "${HARNESS_ROOT}/scripts/run-wraith.sh",
     "run_poltergeist": "${HARNESS_ROOT}/scripts/run-poltergeist.sh",
     "run_codegraph": "${HARNESS_ROOT}/scripts/run-codegraph.sh",
-    "build_intelligence": "${HARNESS_ROOT}/scripts/build-intelligence.py"
+    "codegraph_context": "${HARNESS_ROOT}/scripts/codegraph-context.sh",
+    "build_intelligence": "${HARNESS_ROOT}/scripts/build-intelligence.py",
+    "build_intrusion_plan": "${HARNESS_ROOT}/scripts/build-intrusion-plan.py",
+    "finalize_intrusion": "${HARNESS_ROOT}/scripts/finalize-intrusion.py"
   },
   "created_at": "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 }

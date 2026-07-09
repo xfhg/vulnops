@@ -49,7 +49,7 @@ Required outputs:
 Required graph evidence (one context.json per planned scope):
 - `intelligence/codegraph-runs/*/codegraph-out/context.json`
 
-Toolkit: codegraph is the sole graph backend. Read `intelligence/codegraph-runs/<sid>/codegraph-out/context.json` for blast-radius, callers-of, and call-path questions. A non-empty context.json (nodes + edges > 0) satisfies a scope.
+Toolkit: codegraph is the sole graph backend. Read `intelligence/codegraph-runs/<sid>/codegraph-out/context.json` for blast-radius, callers-of, and call-path questions. A scope is satisfied only by at least one graph edge or an evidence-bearing node beyond source/target stubs.
 
 IRC progress:
 - Send `irc op=send to=Main message="<short phase status>"` at start, after plan creation, after each material codegraph stage, before validation, and before yielding.

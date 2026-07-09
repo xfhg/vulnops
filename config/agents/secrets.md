@@ -25,11 +25,36 @@ These are provided in your assignment:
 bash "${harness_root}/scripts/run-poltergeist.sh" <repo_path>
 ```
 
-This runs poltergeist if available, or falls back to grep-based secret detection automatically. Output is JSON to stdout.
+This runs Poltergeist and writes JSON to stdout. If Poltergeist is unavailable, the wrapper hard-fails unless `VULNOPS_ALLOW_POLTERGEIST_GREP_FALLBACK=1`; an explicit grep fallback run is degraded and must be recorded as `status: "degraded"` with a warning naming `grep-fallback`.
 
 Write raw results to `<scan_dir>/candidates.json`.
 
-Before any human-readable output, write `<scan_dir>/redacted-candidates.json`. It must contain the same candidates with secret material redacted. Downstream analysis should use `redacted-candidates.json`, not raw candidate values.
+Before any human-readable output, write `<scan_dir>/redacted-candidates.json`. It must contain the same candidates with secret material redacted and normalized to the schema documented below. Downstream analysis should use `redacted-candidates.json`, not raw candidate values.
+
+`redacted-candidates.json` must match `schemas/secrets-redacted-candidates.schema.json` and use this object shape; do not write a bare array:
+
+```json
+{
+  "schema_version": "1.0",
+  "tool": "<poltergeist|grep-fallback>",
+  "candidates": [
+    {
+      "id": "SEC-001",
+      "type": "<api-key|password|private-key|token|connection-string|credential|unknown>",
+      "classification": "<confirmed|likely|false-positive|deprecated|candidate>",
+      "severity": "<critical|high|medium|low|info>",
+      "file": "<relative path>",
+      "line": 1,
+      "redacted_value": "<redacted display value only>",
+      "evidence_refs": ["<relative path>:<line>"],
+      "raw_ref": "candidates.json:<index-or-id>",
+      "source": "<poltergeist|grep-fallback>"
+    }
+  ]
+}
+```
+
+If Poltergeist returns a bare array or tool-specific object, normalize it into `{schema_version, tool, candidates}`. Each candidate `evidence_refs` entry must cite the redacted source location only; never include the raw secret value.
 
 ### Step 2: Filter and Analyze Candidates
 
@@ -104,7 +129,7 @@ Write `<scan_dir>/summary.md`:
 - Systemic patterns identified
 - Scan methodology notes (tool used, coverage)
 
-Write `<scan_dir>/phase-manifest.json` with `phase: "secrets"`, `status`, `inputs`, `outputs`, `coverage`, `tool_versions`, `warnings`, and `errors`.
+Write `<scan_dir>/phase-manifest.json` with `phase: "secrets"`, `status`, `started_at`, `completed_at`, `inputs`, `outputs`, `coverage`, object `tool_versions`, `warnings`, and `errors`, matching `schemas/phase-manifest.schema.json`.
 
 ## Redaction Rules
 

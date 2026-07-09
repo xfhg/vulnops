@@ -413,7 +413,8 @@ def _emit_codegraph_context(repo: Path, run_dir: Path, scope: dict[str, Any], de
                 if isinstance(edge, dict):
                     edge.setdefault("origin", rel)
                     edges.append(edge)
-    note = "" if (nodes or edges) else ("; ".join(notes) or "no results")
+    has_evidence = bool(edges) or any(isinstance(node, dict) and node.get("role") not in {"source", "target"} for node in nodes)
+    note = "" if has_evidence else ("; ".join(notes) or "no graph edges or evidence-bearing nodes")
     payload = {
         "schema_version": "1.0",
         "scope_id": scope.get("id", ""),

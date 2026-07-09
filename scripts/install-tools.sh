@@ -236,6 +236,10 @@ download_omp() {
 
     log "Installing omp ${version} for ${platform}..."
 
+    local tmpdir
+    tmpdir="$(mktemp -d "${INSTALL_DIR}/.omp-update.XXXXXX")"
+    trap "rm -rf '$tmpdir'" RETURN
+
     local assets=(
         "omp-${os}-${omp_arch}${ext}"
         "omp-${os}-${arch}${ext}"
@@ -245,7 +249,7 @@ download_omp() {
     for asset in "${assets[@]}"; do
         local url="https://github.com/can1357/oh-my-pi/releases/download/${version}/${asset}"
         log "  Trying: ${asset}"
-        if curl -sfL -o "${INSTALL_DIR}/omp" "$url"; then
+        if curl -sfL -o "${tmpdir}/omp" "$url"; then
             downloaded=true
             break
         fi
@@ -261,7 +265,8 @@ download_omp() {
         return 1
     fi
 
-    chmod +x "${INSTALL_DIR}/omp"
+    chmod +x "${tmpdir}/omp"
+    mv -f "${tmpdir}/omp" "${INSTALL_DIR}/omp"
     fix_binary "${INSTALL_DIR}/omp"
     echo "$version" > "$version_file"
     log "  Installed: ${INSTALL_DIR}/omp"

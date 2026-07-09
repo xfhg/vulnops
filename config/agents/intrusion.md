@@ -74,7 +74,7 @@ codegraph is scoped and AST-only; there is no full-repo mode.
 bash "${harness_root}/scripts/codegraph-context.sh" blast-radius "<rel_path>" 2
 ```
 
-A required scope is satisfied when its `context.json` exists with nodes + edges > 0. If a non-required scope has no parseable code, record it in warnings and continue. If a required scope has no parseable code, write `status: "failed"` and stop.
+A required scope is satisfied when its `context.json` contains at least one graph edge or an evidence-bearing node beyond source/target stubs. If a non-required scope has no parseable code, record it in warnings and continue. If a required scope has no parseable code, write `status: "failed"` and stop.
 
 ### Step 4: Ask Targeted Graph Questions
 
@@ -143,7 +143,7 @@ The finalizer also writes `<scan_base>/intrusion/enrichment.json`:
 ]
 ```
 
-The finalizer writes `<scan_base>/intrusion/phase-manifest.json` with `phase: "intrusion"`, `status`, `inputs`, `outputs`, `coverage`, `tool_versions`, `warnings`, and `errors`. Use `status: "ok"` only after codegraph produced non-empty context for every required scope. Use `status: "failed"` if codegraph is unavailable or a required scope has no parseable code.
+The finalizer writes `<scan_base>/intrusion/phase-manifest.json` with `phase: "intrusion"`, `status`, `started_at`, `completed_at`, `inputs`, `outputs`, `coverage`, object `tool_versions`, `warnings`, and `errors`, matching `schemas/phase-manifest.schema.json`. Use `status: "ok"` only after codegraph produced evidence-bearing context for every required scope. Use `status: "failed"` if codegraph is unavailable or a required scope has no parseable code.
 
 ## Completion
 

@@ -49,7 +49,7 @@ Write:
 - `<scan_dir>/decompose.md`
 - `<scan_dir>/task-manifest.json`
 
-Task manifest chunks must include id, risk_rank, size, files, focus_entry_points, hypothesis, threat_id, lenses, related_advisories, and evidence_refs.
+Task manifest JSON must include `chunks`; include a top-level `rationale` whenever `chunks` is non-empty. Each chunk must include id, risk_rank, size, files, focus_entry_points, hypothesis, threat_id, lenses, related_advisories, and evidence_refs.
 
 Use specialist lenses where appropriate:
 
@@ -99,6 +99,8 @@ Write:
 - `<scan_dir>/phase-manifest.json`
 
 Coverage ledger rows close each nominated file/vector as `finding`, `clean`, `not_applicable`, or `deferred`.
+
+`phase-manifest.json` must include `phase: "sast"`, `status`, `started_at`, `completed_at`, `inputs`, `outputs`, `coverage`, object `tool_versions`, `warnings`, and `errors`, matching `schemas/phase-manifest.schema.json`.
 
 ## Depth Fanout
 

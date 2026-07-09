@@ -85,17 +85,34 @@ bin_path = sys.argv[3]
 
 nodes = []
 edges = []
+commands_run = []
+seen_nodes = set()
 
-# Run `codegraph affected <target> --json` (best signal for blast radius)
+def add_node(node_id, kind, role, **extra):
+    node_id = str(node_id)
+    key = (node_id, kind, role)
+    if key in seen_nodes:
+        return
+    seen_nodes.add(key)
+    node = {"id": node_id, "kind": kind, "role": role}
+    node.update({k: v for k, v in extra.items() if v is not None})
+    nodes.append(node)
+
+add_node(target, "file", "source")
+
+# Run `codegraph affected <target> --json` (best signal for blast radius).
+affected_argv = [bin_path, "affected", target, "--json"]
 try:
     affected = subprocess.run(
-        [bin_path, "affected", target, "--json"],
+        affected_argv,
         capture_output=True, text=True, timeout=30, check=False,
     )
+    commands_run.append({"argv": ["codegraph", "affected", "<target>", "--json"], "exit_code": affected.returncode})
 except (FileNotFoundError, subprocess.TimeoutExpired) as exc:
     print(json.dumps({
-        "nodes": [], "edges": [],
-        "source": "codegraph", "depth": depth,
+        "nodes": nodes, "edges": edges,
+        "source": "codegraph", "target": target, "depth": depth,
+        "commands_run": [{"argv": ["codegraph", "affected", "<target>", "--json"], "error": type(exc).__name__}],
         "note": f"affected exec error: {type(exc).__name__}",
     }))
     raise SystemExit(0)
@@ -107,18 +124,23 @@ except json.JSONDecodeError:
 
 if isinstance(parsed, dict):
     for path in parsed.get("changedFiles", []) or []:
-        nodes.append({"id": path, "kind": "file", "role": "affected"})
+        add_node(path, "file", "affected")
+        edges.append({"from": target, "to": path, "kind": "blast-radius"})
     for path in parsed.get("affectedTests", []) or []:
-        nodes.append({"id": path, "kind": "file", "role": "test"})
+        add_node(path, "file", "test")
+        edges.append({"from": target, "to": path, "kind": "affected-test"})
 
 # Also run `codegraph node <target> --file` for in-file symbol map (best
 # effort; this gives the agent the call graph anchored at the file).
+node_argv = [bin_path, "node", target, "--file", target, "--symbols-only"]
 try:
     node = subprocess.run(
-        [bin_path, "node", target, "--file", target, "--symbols-only"],
+        node_argv,
         capture_output=True, text=True, timeout=20, check=False,
     )
-except (FileNotFoundError, subprocess.TimeoutExpired):
+    commands_run.append({"argv": ["codegraph", "node", "<target>", "--file", "<target>", "--symbols-only"], "exit_code": node.returncode})
+except (FileNotFoundError, subprocess.TimeoutExpired) as exc:
+    commands_run.append({"argv": ["codegraph", "node", "<target>", "--file", "<target>", "--symbols-only"], "error": type(exc).__name__})
     node = None
 if node is not None and node.returncode == 0:
     for line in node.stdout.splitlines():
@@ -126,12 +148,15 @@ if node is not None and node.returncode == 0:
         if not line:
             continue
         if any(prefix in line for prefix in ("function ", "class ", "method ", "import ")):
-            nodes.append({"id": line, "kind": "symbol", "role": "in_file"})
+            add_node(line, "symbol", "in_file")
+            edges.append({"from": target, "to": line, "kind": "defines"})
 
-note = "" if nodes else "no affected files found"
+note = "" if len(nodes) > 1 or edges else "no affected files found"
 print(json.dumps({
     "nodes": nodes, "edges": edges,
-    "source": "codegraph", "depth": depth, "note": note,
+    "source": "codegraph", "target": target, "depth": depth,
+    "commands_run": commands_run,
+    "note": note,
 }))
 PYEOF
         then
@@ -157,22 +182,27 @@ bin_path = sys.argv[2]
 
 nodes = [{"id": symbol, "kind": "symbol", "role": "target"}]
 edges = []
+commands_run = []
+seen_callers = set()
 
 try:
     res = subprocess.run(
         [bin_path, "callers", symbol, "--json"],
         capture_output=True, text=True, timeout=30, check=False,
     )
+    commands_run.append({"argv": ["codegraph", "callers", "<symbol>", "--json"], "exit_code": res.returncode})
 except (FileNotFoundError, subprocess.TimeoutExpired) as exc:
     print(json.dumps({
         "nodes": nodes, "edges": edges,
-        "source": "codegraph", "note": f"callers exec error: {type(exc).__name__}",
+        "source": "codegraph", "target": symbol,
+        "commands_run": [{"argv": ["codegraph", "callers", "<symbol>", "--json"], "error": type(exc).__name__}],
+        "note": f"callers exec error: {type(exc).__name__}",
     }))
     raise SystemExit(0)
 
 raw = res.stdout.strip()
 callers = []
-# Real JSON list (rare): `[{"name": "..."}]` or `[{"symbol": "..."}]`
+# Real JSON list (rare): `[{"name": "..."}]` or `[{"symbol": "..."}]`.
 # Friendly message: `Symbol "..." not found` — treat as no callers.
 if raw.startswith("["):
     try:
@@ -181,42 +211,61 @@ if raw.startswith("["):
             for item in arr:
                 if isinstance(item, dict):
                     name = item.get("name") or item.get("symbol") or item.get("id")
+                    file_path = item.get("file") or item.get("path")
+                    line = item.get("line")
                     if name:
-                        callers.append(name)
+                        callers.append({"id": str(name), "file": file_path, "line": line})
                 elif isinstance(item, str):
-                    callers.append(item)
+                    callers.append({"id": item})
     except json.JSONDecodeError:
         callers = []
 
 # The upstream sometimes emits a flat "file:line caller-name" or
 # "caller-name @ file:line" form. If so, the JSON path above is empty;
 # try a regex extraction so the agent still gets a usable signal.
-# Fallback regex pass: strip ANSI escape codes, drop info lines and the
-# "not found" friendly message, then take the first token of each
-# remaining line as a caller name. With these filters the "Symbol X not
-# found" output becomes an empty callers list (which the JSON shape
-# already handles cleanly).
 if not callers and raw:
     import re
     ansi_re = re.compile(r"\x1b\[[0-9;]*m")
-    for line in raw.splitlines():
-        stripped = ansi_re.sub("", line).strip()
+    loc_re = re.compile(r"^(?P<file>[^:\s]+):(?P<line>\d+)\s+(?P<name>\S+)")
+    for line_text in raw.splitlines():
+        stripped = ansi_re.sub("", line_text).strip()
         if not stripped:
             continue
         low = stripped.lower()
         if "not found" in low or stripped.startswith("ℹ") or stripped.startswith("✓") or stripped.startswith("✗"):
             continue
-        first = stripped.split()[0] if stripped.split() else ""
-        if first and first != symbol:
-            callers.append(f"{first} ({stripped})")
+        match = loc_re.match(stripped)
+        if match:
+            caller = {
+                "id": match.group("name"),
+                "file": match.group("file"),
+                "line": int(match.group("line")),
+            }
+        else:
+            first = stripped.split()[0] if stripped.split() else ""
+            caller = {"id": f"{first} ({stripped})"} if first and first != symbol else None
+        if caller:
+            callers.append(caller)
 
-for c in callers:
-    edges.append({"from": c, "to": symbol, "kind": "calls"})
+for caller in callers:
+    caller_id = str(caller.get("id", ""))
+    if not caller_id or caller_id in seen_callers:
+        continue
+    seen_callers.add(caller_id)
+    node = {"id": caller_id, "kind": "symbol", "role": "caller"}
+    if caller.get("file") is not None:
+        node["file"] = caller["file"]
+    if caller.get("line") is not None:
+        node["line"] = caller["line"]
+    nodes.append(node)
+    edges.append({"from": caller_id, "to": symbol, "kind": "calls"})
 
 note = "" if callers else "no callers found"
 print(json.dumps({
     "nodes": nodes, "edges": edges,
-    "source": "codegraph", "note": note,
+    "source": "codegraph", "target": symbol,
+    "commands_run": commands_run,
+    "note": note,
 }))
 PYEOF
         then

@@ -173,7 +173,7 @@ Also write `<scan_dir>/security-surfaces.json` for downstream OODA routing:
 }
 ```
 
-Finally write `<scan_dir>/phase-manifest.json` with `phase: "recon"`, `status`, `inputs`, `outputs`, `coverage`, `tool_versions`, `warnings`, and `errors`.
+Finally write `<scan_dir>/phase-manifest.json` with `phase: "recon"`, `status`, `started_at`, `completed_at`, `inputs`, `outputs`, `coverage`, object `tool_versions`, `warnings`, and `errors`, matching `schemas/phase-manifest.schema.json`.
 
 ## Completion
 

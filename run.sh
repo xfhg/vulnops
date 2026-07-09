@@ -45,7 +45,6 @@ fi
 # explicitly and --tools allowlisting disables MCP discovery. To enable BM25 tool
 # discovery, add the tool here and remove this comment (Step 10 of the consistency plan).
 "${OMP_BIN}" \
-    --model "${ON_PREM_PROVIDER_NAME:-on-prem}/${ON_PREM_MODEL_NAME}" \
     --append-system-prompt "${HARNESS_ROOT}/.omp/main/vulnops-main.md" \
     --tools "read,bash,edit,write,grep,glob,lsp,task,todo,irc,ask,web_search" \
     --approval-mode yolo \

@@ -36,7 +36,7 @@ Read Intelligence Fusion artifacts before planning intrusion. Triage remains the
 
 Do not yield while codegraph scope extraction is still running or only partial `codegraph-runs/` artifacts exist. Intrusion validates only when `intrusion/enrichment.json`, `intrusion/intrusion-plan.json`, and required `intrusion/codegraph-runs/<sid>/codegraph-out/context.json` outputs exist, and `intrusion/phase-manifest.json` has status `ok`.
 
-codegraph is the sole graph backend. For every required scope, `intrusion/codegraph-runs/<sid>/codegraph-out/context.json` must exist with nodes + edges > 0. Blast-radius, callers-of, and call-path questions are answered from that AST context. There is no LLM extraction step and no whole-repo mode.
+codegraph is the sole graph backend. For every required scope, `intrusion/codegraph-runs/<sid>/codegraph-out/context.json` must exist with at least one graph edge or an evidence-bearing node beyond source/target stubs. Blast-radius, callers-of, and call-path questions are answered from that AST context. There is no LLM extraction step and no whole-repo mode.
 
 Write:
 - `intrusion/summary.md`

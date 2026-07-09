@@ -60,7 +60,7 @@ Capture output. If the script fails, check the error message — it will indicat
 
 Aggregate all complete tool results into `<scan_dir>/raw-results.json`.
 
-Also write `<scan_dir>/raw-advisories.json`. This must retain per-advisory evidence for every vulnerability the SCA phase cites later:
+Also write `<scan_dir>/raw-advisories.json`. It must match `schemas/sca-raw-advisory.schema.json`: a top-level array where each advisory object includes `advisory_id`, `package`, `version`, `ecosystem`, `severity`, `source_lockfile`, `raw_ref`, and `summary`.
 ```json
 [
   {
@@ -75,6 +75,8 @@ Also write `<scan_dir>/raw-advisories.json`. This must retain per-advisory evide
   }
 ]
 ```
+
+If no lockfiles or no advisories are found, write `[]` to `raw-advisories.json` and still write `summary.md` and `phase-manifest.json`. Every promoted SCA finding must have at least one `raw_ref` that points to an `advisory_id` in `raw-advisories.json`.
 
 ### Step 3: Analyze Candidates
 
@@ -129,4 +131,4 @@ Write `<scan_dir>/summary.md`:
 - High-confidence findings requiring immediate attention
 - Any scan errors or limitations
 
-Write `<scan_dir>/phase-manifest.json` with `phase: "sca"`, `status`, `inputs`, `outputs`, `coverage`, `tool_versions`, `warnings`, and `errors`.
+Write `<scan_dir>/phase-manifest.json` with `phase: "sca"`, `status`, `started_at`, `completed_at`, `inputs`, `outputs`, `coverage`, object `tool_versions`, `warnings`, and `errors`, matching `schemas/phase-manifest.schema.json`.

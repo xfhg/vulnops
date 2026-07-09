@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://vulnops.local/schemas/sca-raw-advisory.schema.json",
+  "title": "VulnOps SCA Raw Advisory List",
+  "type": "array",
+  "items": {
+    "type": "object",
+    "required": ["advisory_id", "package", "version", "ecosystem", "severity", "source_lockfile", "raw_ref", "summary"],
+    "additionalProperties": true,
+    "properties": {
+      "advisory_id": {"type": "string"},
+      "package": {"type": "string"},
+      "version": {"type": "string"},
+      "ecosystem": {"type": "string"},
+      "severity": {"type": "string", "enum": ["critical", "high", "medium", "low", "info"]},
+      "source_lockfile": {"type": "string"},
+      "raw_ref": {"type": "string"},
+      "summary": {"type": "string"}
+    }
+  }
+}

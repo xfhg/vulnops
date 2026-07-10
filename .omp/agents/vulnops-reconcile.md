@@ -41,11 +41,20 @@ Read:
 - `intrusion/enrichment.json` when present
 
 Write:
-- `final-reconciliation/findings.json`
+- `final-reconciliation/candidates.json`
 - `final-reconciliation/summary.md`
 - `final-reconciliation/phase-manifest.json`
 
-Do not promote unverified findings into final report input.
+Each candidate must already match the non-rejected full-finding branch of
+`schemas/v2/final-findings.schema.json`, including the source-specific code,
+dependency, or redacted-secret payload. Use
+`provenance.independent_verification_ref: "pending"`; the next phase replaces
+it. Preserve category, attack-class IDs, methodology references, selected
+lenses, structured root-cause location, ordered traces, and evidence tiers.
+Every `raw_refs`, `intelligence_refs`, `graph_refs`, and `validation_refs`
+entry must be a scan-relative artifact path with an optional JSON fragment or
+record suffix; bare IDs are not provenance.
+Do not promote unverified findings into final verification input.
 
 IRC progress:
 - Send `irc op=send to=Main message="<short phase status>"` at start, each material stage boundary, before validation, and before yielding.

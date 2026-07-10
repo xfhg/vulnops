@@ -1,0 +1,63 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "VulnOps v2 Security Surface Map",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "repository", "entry_points", "trust_boundaries", "security_relevant_files", "ignore_patterns", "generated_ignorable", "sensitive_data_types", "domain_tags", "warnings", "errors"],
+  "properties": {
+    "schema_version": {"const": "2.0"},
+    "repository": {"type": "string", "minLength": 1},
+    "entry_points": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "project_id", "path", "kind", "trust_boundary_ids", "evidence_refs"],
+        "properties": {
+          "id": {"type": "string", "pattern": "^(?!.*\\.\\.)[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$"},
+          "project_id": {"type": "string", "minLength": 1},
+          "path": {"type": "string", "minLength": 1},
+          "kind": {"enum": ["http", "cli", "worker", "library", "ipc", "file", "queue", "webhook", "browser", "mobile", "other"]},
+          "trust_boundary_ids": {"type": "array", "items": {"type": "string"}},
+          "evidence_refs": {"type": "array", "items": {"type": "string", "minLength": 1}, "minItems": 1}
+        }
+      }
+    },
+    "trust_boundaries": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "project_id", "source_trust", "target_trust", "description", "evidence_refs"],
+        "properties": {
+          "id": {"type": "string", "pattern": "^(?!.*\\.\\.)[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$"},
+          "project_id": {"type": ["string", "null"]},
+          "source_trust": {"type": "string", "minLength": 1},
+          "target_trust": {"type": "string", "minLength": 1},
+          "description": {"type": "string", "minLength": 1},
+          "evidence_refs": {"type": "array", "items": {"type": "string", "minLength": 1}, "minItems": 1}
+        }
+      }
+    },
+    "security_relevant_files": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["path", "categories", "evidence_refs"],
+        "properties": {
+          "path": {"type": "string", "minLength": 1},
+          "categories": {"type": "array", "items": {"enum": ["entry_point", "auth", "authorization", "privileged_sink", "external_call", "config_secret", "security_context", "parser", "storage", "crypto", "mobile_boundary"]}, "minItems": 1},
+          "evidence_refs": {"type": "array", "items": {"type": "string", "minLength": 1}, "minItems": 1}
+        }
+      }
+    },
+    "ignore_patterns": {"type": "array", "items": {"type": "string"}},
+    "generated_ignorable": {"type": "array", "items": {"type": "string"}},
+    "sensitive_data_types": {"type": "array", "items": {"type": "string"}},
+    "domain_tags": {"type": "array", "items": {"enum": ["ai_llm", "http_auth", "client", "native", "mobile", "iac", "etl"]}},
+    "warnings": {"type": "array", "items": {"type": "string"}},
+    "errors": {"type": "array", "items": {"type": "string"}}
+  }
+}

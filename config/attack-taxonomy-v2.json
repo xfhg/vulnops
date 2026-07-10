@@ -1,0 +1,33 @@
+{
+  "schema_version": "2.0",
+  "classes": [
+    {"id":"injection","title":"Injection","domain":"general","owner":"sast","methodology_ref":"skill://vulnops-attack-general#injection"},
+    {"id":"access_control","title":"Access control","domain":"general","owner":"sast","methodology_ref":"skill://vulnops-attack-general#access-control","lenses":["skill://vulnops-access-control"]},
+    {"id":"resource_file","title":"Resource and file handling","domain":"general","owner":"sast","methodology_ref":"skill://vulnops-attack-general#resource-file"},
+    {"id":"cryptography","title":"Cryptography and secrets use","domain":"general","owner":"sast","methodology_ref":"skill://vulnops-attack-general#cryptography","lenses":["skill://vulnops-crypto"]},
+    {"id":"business_logic","title":"Business logic","domain":"general","owner":"sast","methodology_ref":"skill://vulnops-attack-general#business-logic","lenses":["skill://vulnops-logic-bug"]},
+    {"id":"feature_abuse","title":"Feature abuse and data leakage","domain":"general","owner":"sast","methodology_ref":"skill://vulnops-attack-general#feature-abuse"},
+    {"id":"chained_trust","title":"Chained attacks and trust boundaries","domain":"general","owner":"sast","methodology_ref":"skill://vulnops-attack-general#chained-trust"},
+    {"id":"wildcard","title":"Wildcard attacker review","domain":"general","owner":"sast","methodology_ref":"skill://vulnops-attack-general#wildcard"},
+    {"id":"obvious_code","title":"Obvious code issues","domain":"general","owner":"sast","methodology_ref":"skill://vulnops-attack-general#obvious-code"},
+    {"id":"known_dependencies","title":"Known vulnerable dependencies","domain":"general","owner":"sca","methodology_ref":"config/agents/sca.md"},
+    {"id":"secret_enumeration","title":"Secret enumeration","domain":"general","owner":"secrets","methodology_ref":"config/agents/secrets.md"},
+    {"id":"ai_indirect_injection","title":"Indirect prompt injection","domain":"ai_llm","owner":"sast","methodology_ref":"skill://vulnops-attack-ai-llm#indirect-injection"},
+    {"id":"ai_tool_arguments","title":"Model tool-argument injection","domain":"ai_llm","owner":"sast","methodology_ref":"skill://vulnops-attack-ai-llm#tool-arguments"},
+    {"id":"ai_agency","title":"Excessive agency and confused deputy","domain":"ai_llm","owner":"sast","methodology_ref":"skill://vulnops-attack-ai-llm#agency"},
+    {"id":"ai_context_output","title":"AI context and output handling","domain":"ai_llm","owner":"sast","methodology_ref":"skill://vulnops-attack-ai-llm#context-output"},
+    {"id":"http_framing","title":"HTTP request framing and desync","domain":"http_auth","owner":"sast","methodology_ref":"skill://vulnops-attack-http-auth#framing"},
+    {"id":"http_cache","title":"HTTP cache poisoning and deception","domain":"http_auth","owner":"sast","methodology_ref":"skill://vulnops-attack-http-auth#cache"},
+    {"id":"auth_tokens","title":"JWT and session verification","domain":"http_auth","owner":"sast","methodology_ref":"skill://vulnops-attack-http-auth#tokens","lenses":["skill://vulnops-access-control","skill://vulnops-crypto"]},
+    {"id":"auth_federation","title":"OAuth, OIDC, and SAML","domain":"http_auth","owner":"sast","methodology_ref":"skill://vulnops-attack-http-auth#federation","lenses":["skill://vulnops-access-control"]},
+    {"id":"client_dom","title":"DOM injection and clobbering","domain":"client","owner":"sast","methodology_ref":"skill://vulnops-attack-client#dom"},
+    {"id":"client_messaging","title":"Browser messaging, CORS, and WebSockets","domain":"client","owner":"sast","methodology_ref":"skill://vulnops-attack-client#messaging"},
+    {"id":"client_ui","title":"UI redress and navigation","domain":"client","owner":"sast","methodology_ref":"skill://vulnops-attack-client#ui"},
+    {"id":"client_prototype","title":"Prototype pollution and gadgets","domain":"client","owner":"sast","methodology_ref":"skill://vulnops-attack-client#prototype"},
+    {"id":"native_memory","title":"Native memory safety","domain":"native","owner":"sast","methodology_ref":"skill://vulnops-attack-native#memory"},
+    {"id":"native_privileged","title":"Kernel and privileged interfaces","domain":"native","owner":"sast","methodology_ref":"skill://vulnops-attack-native#privileged"},
+    {"id":"iac_supply_chain","title":"IaC and CI/CD trust","domain":"iac","owner":"sast","methodology_ref":"skill://vulnops-iac","lenses":["skill://vulnops-iac"]},
+    {"id":"etl_data_movement","title":"Batch, ETL, import, and export trust","domain":"etl","owner":"sast","methodology_ref":"skill://vulnops-batch-etl","lenses":["skill://vulnops-batch-etl"]},
+    {"id":"mobile_platform","title":"Mobile platform security boundaries","domain":"mobile","owner":"sast","methodology_ref":"skill://vulnops-attack-mobile","lenses":["skill://vulnops-logic-bug"]}
+  ]
+}

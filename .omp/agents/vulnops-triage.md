@@ -36,6 +36,13 @@ Read `intelligence/investigation-cards.json` and preserve intelligence provenanc
 
 Read SCA, secrets, and verified SAST outputs. Deduplicate, filter, and rank. Do not promote unverified SAST findings.
 
+SAST candidates were already deduplicated by code root cause. Limit this phase
+to cross-source consolidation (for example, a reachable dependency advisory
+supporting the same code flaw) and preserve attacker, trace, conditions,
+intended behavior, validation tier, reproduction/test/patch refs, closure
+reason, and all provenance. Never flatten rich evidence into title/severity
+only.
+
 Write:
 - `triage/consolidated.md`
 - `triage/findings.json`

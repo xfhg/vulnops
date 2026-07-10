@@ -1,111 +1,48 @@
 # SAST Coordinator Compatibility Prompt
 
-This file is retained for compatibility. The canonical SAST orchestration is now handled by project-local OMP agents:
+The project-local OMP SAST agents are canonical. This file documents their v2
+artifact contract for recovery and non-OMP automation.
 
-- `.omp/agents/vulnops-sast-lead.md`
-- `.omp/agents/vulnops-threatmodel.md`
-- `.omp/agents/vulnops-decompose.md`
-- `.omp/agents/vulnops-deepdive-chunk.md`
-- `.omp/agents/vulnops-verify-one.md`
+## Inputs and constraints
 
-## Inputs
+- Read paths only from `.harness/audit-context.json`.
+- Target source is read-only and audit runtime has no network access.
+- Consume validated SCA and Secrets outputs; never repeat their enumeration.
+- Target code may run only through `scripts/run-safe-reproduction.sh` when
+  context `reproduction_mode` is `safe`.
 
-These are provided in your assignment:
+## Pipeline
 
-- **repo_path**: path to the target repository root (read-only)
-- **scan_dir**: absolute directory for SAST outputs; this must be `.harness/audit-context.json` `paths.sast`
-- **harness_root**: path to the harness root directory
-- **repo_context**: path to repo.md
-- **criteria_path**: path to config/scan-criteria.yaml
-- **depth**: quick | balanced | full
+1. Write `threat-model.json` matching `schemas/v2/threat-model.schema.json`.
+   Select applicable general, AI/LLM, HTTP/auth, browser, native, mobile, IaC,
+   and ETL classes, plus evidence-backed repository-specific classes.
+2. Run `scripts/build-hunt-plan.py`. It writes strict `hunt-plan.json`, the
+   compatibility `task-manifest.json`, and `decompose.md`. One task owns one
+   subsystem and attack class; dependency and secret cells are tool-owned.
+3. Hunters write `deepdive/<task_id>.json` matching the v2 hunt-result schema.
+   Candidates require attacker, crossed boundary, intended behavior, root
+   cause, typed preconditions, ordered trace, mitigation review, and impact.
+4. Run `scripts/finalize-sast.py` to mechanically validate, aggregate, create
+   the coverage ledger, deduplicate by root cause, and create the validation
+   queue. Malformed candidates are rejected before model validation.
+5. Requeue reserved high-risk cells, shallow/failed high-risk cells, and
+   distinct bounded rabbit-hole leads through `build-hunt-plan.py --gapfill`.
+   Execute and aggregate each new batch, then repeat until no work is added or
+   the per-depth task, round, or attempt cap is reached.
+6. Adversarial verifiers emit strict `source_verified`, `rejected`, `deferred`,
+   or `environment_required` results. Apply complete corrected candidates;
+   after a preferred dedup trace is rejected, use `--advance-alternates` to
+   verify the next member without rechecking a surviving root cause.
+7. In safe mode, reproduction workers create sanitized local regression-test
+   and draft-patch artifacts in a disposable offline sandbox.
+8. Run `finalize-sast.py --finalize` to write verified, dropped, coverage,
+   wishlist, summary, and phase-manifest artifacts.
 
-## Constraints
+## Default budgets
 
-- READ-ONLY on repo_path. Never modify the target.
-- All outputs go to scan_dir.
-- Do not use relative output paths such as `sast/...`; resolve every artifact from `.harness/audit-context.json` or the assigned absolute `scan_dir`.
-- No network.
-- Do not emit unverified SAST findings into triage.
-- Use shared skills:
-  - `skill://vulnops-exclusion-rules`
-  - `skill://vulnops-self-verification`
-  - `skill://vulnops-severity-guidance`
+- quick: 4 concurrent, 12 total tasks, 1 gapfill round, 2 attempts per cell.
+- balanced: 8 concurrent, 32 tasks, 2 rounds, 2 attempts.
+- full: 16 concurrent, 64 tasks, 3 rounds, 2 attempts.
 
-## Required SAST Subpipeline
-
-### 1. Threat Model
-
-Write:
-
-- `<scan_dir>/threat-model.md`
-- `<scan_dir>/threat-model.json`
-
-Threat model JSON must include assets, trust boundaries, entrypoints, threats, assumptions, evidence_refs, warnings, and errors.
-
-### 2. Decompose
-
-Write:
-
-- `<scan_dir>/decompose.md`
-- `<scan_dir>/task-manifest.json`
-
-Task manifest JSON must include `chunks`; include a top-level `rationale` whenever `chunks` is non-empty. Each chunk must include id, risk_rank, size, files, focus_entry_points, hypothesis, threat_id, lenses, related_advisories, and evidence_refs.
-
-Use specialist lenses where appropriate:
-
-- `skill://vulnops-access-control`
-- `skill://vulnops-iac`
-- `skill://vulnops-batch-etl`
-- `skill://vulnops-logic-bug`
-- `skill://vulnops-deserialization`
-- `skill://vulnops-crypto`
-
-### 3. Deep Dive
-
-Analyze each task-manifest chunk. Write per-chunk outputs under:
-
-- `<scan_dir>/deepdive/<chunk_id>.json`
-
-Aggregate all candidate findings into:
-
-- `<scan_dir>/raw-findings.json`
-
-Raw findings must include id, chunk_id, title, severity, confidence, source_ref, sink_ref, entrypoint_ref, evidence_refs, lenses, description, impact, remediation, and false_positive_notes.
-
-### 4. Adversarial Verify
-
-Verify every raw finding. Assume every finding is wrong until source review proves otherwise.
-
-For each raw finding:
-
-1. Re-read the cited source and sink.
-2. Walk callers backward to an external or lower-privileged entrypoint.
-3. Hunt for validation, encoding, allow-lists, framework protections, auth/authz gates, feature flags, generated/test-only scope, and dead code.
-4. Emit `verified`, `false-positive`, or `deferred`.
-
-Write:
-
-- `<scan_dir>/verified-findings.json`
-- `<scan_dir>/dropped-findings.json`
-
-Every raw finding must have exactly one verifier outcome.
-
-### 5. Coverage And Manifest
-
-Write:
-
-- `<scan_dir>/coverage-ledger.json`
-- `<scan_dir>/summary.md`
-- `<scan_dir>/phase-manifest.json`
-
-Coverage ledger rows close each nominated file/vector as `finding`, `clean`, `not_applicable`, or `deferred`.
-
-`phase-manifest.json` must include `phase: "sast"`, `status`, `started_at`, `completed_at`, `inputs`, `outputs`, `coverage`, object `tool_versions`, `warnings`, and `errors`, matching `schemas/phase-manifest.schema.json`.
-
-## Depth Fanout
-
-- **quick**: max 4 deepdive chunks, max 4 verify tasks
-- **balanced**: max 8 deepdive chunks, max 8 verify tasks
-- **full**: max 16 deepdive chunks, max 12 verify tasks
-
-Overflow work is queued in batches, not dropped.
+Overflow work is queued rather than dropped. A clean task without reviewed
+files, entrypoints, sinks, and mitigations is shallow, not successful.

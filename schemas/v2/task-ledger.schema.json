@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "VulnOps v2 Current-run Task Ledger",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "run_id", "tasks"],
+  "properties": {
+    "schema_version": {"const": "2.0"},
+    "run_id": {"type": "string", "minLength": 1},
+    "tasks": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "phase", "status", "attempts", "artifact", "updated_at", "error"],
+        "properties": {
+          "id": {"type": "string", "pattern": "^(?!.*\\.\\.)[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$"},
+          "phase": {"type": "string", "minLength": 1},
+          "status": {"enum": ["pending", "running", "ok", "degraded", "failed", "shallow"]},
+          "attempts": {"type": "integer", "minimum": 0},
+          "artifact": {"type": ["string", "null"]},
+          "updated_at": {"type": "string", "minLength": 1},
+          "error": {"type": ["string", "null"]}
+        }
+      }
+    }
+  }
+}

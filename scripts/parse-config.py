@@ -42,6 +42,9 @@ def main() -> None:
         cfg = tomllib.load(f)
 
     llm = cfg.get("llm", {})
+    harness = cfg.get("harness", {})
+    reproduction = harness.get("reproduction", {})
+    sast = harness.get("scans", {}).get("sast", {})
 
     # ── Core LLM vars ─────────────────────────────────────────────────
     base_url = str(llm.get("base_url", "") or "")
@@ -51,15 +54,45 @@ def main() -> None:
     provider_name = str(provider.get("name", "on-prem") or "on-prem")
     provider_api = str(provider.get("api", "openai-completions") or "openai-completions")
     provider_auth = str(provider.get("auth", "api-key") or "api-key")
+    selector = str(llm.get("selector", "") or "")
+    if not selector and model:
+        selector = f"{provider_name}/{model}"
 
     exports: list[tuple[str, str]] = [
+        ("VULNOPS_DEFAULT_DEPTH", str(harness.get("default_depth", "quick") or "quick")),
         ("ON_PREM_LLM_BASE_URL", base_url),
         ("ON_PREM_API_KEY", api_key),
         ("ON_PREM_MODEL_NAME", model),
         ("ON_PREM_PROVIDER_NAME", provider_name),
         ("ON_PREM_PROVIDER_API", provider_api),
         ("ON_PREM_PROVIDER_AUTH", provider_auth),
+        ("OMP_MODEL_SELECTOR", selector),
+        ("VULNOPS_REPRODUCTION_MODE", str(reproduction.get("mode", "off") or "off")),
+        ("VULNOPS_REPRODUCTION_SANDBOX", str(reproduction.get("sandbox", "auto") or "auto")),
+        ("VULNOPS_REPRODUCTION_TIMEOUT_SECONDS", str(reproduction.get("timeout_seconds", 120))),
+        ("VULNOPS_REPRODUCTION_CPU_SECONDS", str(reproduction.get("cpu_seconds", 60))),
+        ("VULNOPS_REPRODUCTION_MEMORY_MB", str(reproduction.get("memory_mb", 1024))),
+        ("VULNOPS_REPRODUCTION_MAX_PROCESSES", str(reproduction.get("max_processes", 64))),
+        ("VULNOPS_REPRODUCTION_MAX_OUTPUT_KB", str(reproduction.get("max_output_kb", 256))),
+        ("VULNOPS_REPRODUCTION_MAX_PARALLEL", str(reproduction.get("max_parallel", 1))),
+        ("VULNOPS_SAST_CONTEXT_PACKET_BYTES", str(sast.get("context_packet_bytes", 65536))),
     ]
+    budget_defaults = {
+        "quick": (12, 1, 2),
+        "balanced": (32, 2, 2),
+        "full": (64, 3, 2),
+    }
+    budgets = sast.get("budget", {})
+    for depth, defaults in budget_defaults.items():
+        item = budgets.get(depth, {})
+        prefix = f"VULNOPS_SAST_{depth.upper()}"
+        exports.extend(
+            [
+                (f"{prefix}_MAX_HUNT_TASKS", str(item.get("max_hunt_tasks", defaults[0]))),
+                (f"{prefix}_MAX_GAPFILL_ROUNDS", str(item.get("max_gapfill_rounds", defaults[1]))),
+                (f"{prefix}_MAX_ATTEMPTS", str(item.get("max_attempts", defaults[2]))),
+            ]
+        )
 
     # ── Emit ──────────────────────────────────────────────────────────
     for key, val in exports:

@@ -6,12 +6,16 @@ startup:
   setupWizard: false
 
 modelRoles:
-  default: 'on-prem/claude-opus-4-6'
-  task: 'on-prem/claude-opus-4-6'
-  slow: 'on-prem/claude-opus-4-6'
-  smol: 'on-prem/claude-opus-4-6'
-  plan: 'on-prem/claude-opus-4-6'
-  advisor: 'on-prem/claude-opus-4-6'
+  default: 'openai-codex/gpt-5.5:xhigh'
+  task: 'openai-codex/gpt-5.5:xhigh'
+  slow: 'openai-codex/gpt-5.5:xhigh'
+  smol: 'openai-codex/gpt-5.5:xhigh'
+  plan: 'openai-codex/gpt-5.5:xhigh'
+  advisor: 'openai-codex/gpt-5.5:xhigh'
+  vision: 'openai-codex/gpt-5.5:xhigh'
+  designer: 'openai-codex/gpt-5.5:xhigh'
+  commit: 'openai-codex/gpt-5.5:xhigh'
+  tiny: 'openai-codex/gpt-5.5:xhigh'
 
 memory:
   enabled: false

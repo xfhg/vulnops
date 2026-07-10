@@ -23,3 +23,18 @@ Especially watch for:
   required-scope codegraph contexts exist — reconciliation must not start early.
 - Subagents prompted via `ask` in a non-interactive audit run (the harness runs
   `--approval-mode yolo`; an `ask` call would stall).
+- A v2 phase manifest whose terminal status is not synchronized into
+  `run-manifest.json` and the corresponding top-level task in
+  `task-ledger.json`.
+- SAST starting before validated SCA and Secrets evidence, which would duplicate
+  dependency or secret enumeration instead of marking those cells tool-owned.
+- A hunt result that emitted malformed candidates but is counted as clean, or a
+  later successful gapfill attempt that is still dominated by an older shallow
+  attempt.
+- Verifier corrections without a complete corrected candidate/finding, unsafe
+  IDs interpolated into artifact paths, or duplicate/orphan verifier results.
+- `dynamic_verified` without an offline sandbox, expected unpatched failure,
+  patched pass, non-null test and patch references, and matching hashes.
+- Reporting driven from reconciliation instead of
+  `final-verification/findings.json`, or any model-authored reporting task where
+  the deterministic renderer is required.

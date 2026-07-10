@@ -60,7 +60,11 @@ Capture output. If the script fails, check the error message — it will indicat
 
 Aggregate all complete tool results into `<scan_dir>/raw-results.json`.
 
-Also write `<scan_dir>/raw-advisories.json`. It must match `schemas/sca-raw-advisory.schema.json`: a top-level array where each advisory object includes `advisory_id`, `package`, `version`, `ecosystem`, `severity`, `source_lockfile`, `raw_ref`, and `summary`.
+Also write `<scan_dir>/raw-advisories.json`. It must match
+`schemas/v2/sca-advisories.schema.json`: a strict top-level array where each
+advisory object includes `advisory_id`, `package`, `version`, `ecosystem`,
+`severity`, an existing target-relative `source_lockfile`, `raw_ref`, and
+`summary`.
 ```json
 [
   {

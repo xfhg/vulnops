@@ -39,7 +39,9 @@ Required artifacts:
 - `secrets/redacted-candidates.json`
 - `secrets/phase-manifest.json`
 
-Never write full secret values to scan artifacts. Redact before analysis.
+Never write secret values or partial identifiers to scan artifacts. Normalize
+every value to exactly `<redacted>` before analysis and validate against
+`schemas/v2/secrets-redacted.schema.json`.
 
 IRC progress:
 - Send `irc op=send to=Main message="<short phase status>"` at start, each material stage boundary, before validation, and before yielding.

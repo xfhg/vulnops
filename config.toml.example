@@ -11,9 +11,11 @@ base_url = ""
 # API key — empty string if no auth required
 api_key = ""
 
-# Default model name (used by OMP model discovery)
-# Must match a model ID served by the endpoint, or a [[llm.provider.models]] entry.
-model = "mimo-v2.5"
+# OMP model selector used by every harness role, phase, and subtask.
+selector = "openai-codex/gpt-5.5:xhigh"
+
+# Model ID retained for custom-provider metadata and fallback generation.
+model = "gpt-5.5:xhigh"
 
 # Provider metadata (used by scripts/bootstrap-omp.sh to generate
 # .harness/home/.omp/agent/models.yml)
@@ -40,9 +42,9 @@ discovery = "proxy"
 # ── Harness scan settings ─────────────────────────────────────────────
 [harness]
 # default_depth: scan intensity level
-#   "quick"     — ~5 min, focused on high-confidence vectors
-#   "balanced"  — ~15 min, broader coverage
-#   "full"      — ~30 min+, comprehensive (requires confirmation)
+#   "quick"     — 12 hunt tasks, 1 gapfill round
+#   "balanced"  — 32 hunt tasks, 2 gapfill rounds
+#   "full"      — 64 hunt tasks, 3 gapfill rounds
 default_depth = "balanced"
 
 [harness.runtime]
@@ -64,10 +66,9 @@ binary = "bins/wraith"
 extra_flags = ["--offline"]
 
 [harness.scans.sast]
-# Maximum parallel workers for file analysis
-max_workers = 5
-# Number of candidate files per analysis batch
-batch_size = 10
+# Maximum UTF-8 size of the architecture/evidence packet injected into one
+# hunter. Agents may read additional source through tools.
+context_packet_bytes = 65536
 
 [harness.scans.sast.fanout.quick]
 deepdive_chunks = 4
@@ -81,6 +82,35 @@ verify_findings = 8
 deepdive_chunks = 16
 verify_findings = 12
 
+[harness.scans.sast.budget.quick]
+max_hunt_tasks = 12
+max_gapfill_rounds = 1
+max_attempts = 2
+
+[harness.scans.sast.budget.balanced]
+max_hunt_tasks = 32
+max_gapfill_rounds = 2
+max_attempts = 2
+
+[harness.scans.sast.budget.full]
+max_hunt_tasks = 64
+max_gapfill_rounds = 3
+max_attempts = 2
+
+# Safe reproduction is config-only and off by default. When enabled, target
+# code may run only through the fail-closed disposable sandbox wrapper.
+[harness.reproduction]
+mode = "off" # off | safe
+sandbox = "auto" # auto | bubblewrap
+timeout_seconds = 120
+cpu_seconds = 60
+memory_mb = 1024
+max_processes = 64
+max_output_kb = 256
+max_parallel = 1
+# Sanitized regression tests and draft patches are retained under the run.
+# Exact proof tokens and raw command output are never rendered into reports.
+
 [harness.scans.secrets]
 # Path to poltergeist binary (relative to harness root)
 binary = "bins/poltergeist"
@@ -88,16 +118,11 @@ binary = "bins/poltergeist"
 extra_flags = []
 
 [harness.scans.intelligence]
-# Intelligence uses codegraph AST analysis. Optional because the audit can
-# fall back to triage + intrusion + report when the intelligence phase
-# cannot run.
-optional = true
+# Intelligence is a required evidence-preservation layer.
 
 [harness.scans.intrusion]
-# Intrusion uses codegraph AST analysis (no LLM extraction step). Optional
-# because the audit can still terminate with status ok when the target has
-# no parseable code for codegraph.
-optional = true
+# Intrusion is required, but a run with no verified seeds may have zero graph
+# scopes. Every planned scope must use the required offline AST backend.
 
 [harness.scans.reconciliation]
 # Reconcile triage findings with intrusion enrichment before report generation.

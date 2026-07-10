@@ -66,7 +66,7 @@ find_repo_root() {
 }
 
 main() {
-    local depth="${1:-quick}"
+    local depth="${1:-${VULNOPS_DEFAULT_DEPTH:-quick}}"
     case "$depth" in
         quick|balanced|full) ;;
         *) err "Invalid depth: ${depth}. Use quick, balanced, or full."; exit 1 ;;
@@ -74,7 +74,7 @@ main() {
 
     # ── Verify tools ──
     local tools_ok=true
-    for tool in wraith poltergeist omp; do
+    for tool in wraith poltergeist omp codegraph; do
         if [ -x "${HARNESS_ROOT}/bins/${tool}" ]; then
             local ver
             ver="$("${HARNESS_ROOT}/bins/${tool}" --version 2>/dev/null || echo 'unknown')"
@@ -115,14 +115,76 @@ main() {
     local short_sha
     short_sha="$(cd "$clone_dir" && git rev-parse --short HEAD 2>/dev/null || date +%Y%m%d)"
 
-    local scan_base="${HARNESS_ROOT}/scans/${repo_id}"
+    local target_fingerprint
+    target_fingerprint="$(python3 "${HARNESS_ROOT}/scripts/target-fingerprint.py" "$clone_dir")"
+
+    local repo_scan_root="${HARNESS_ROOT}/scans/${repo_id}"
+    local ctx="${HARNESS_ROOT}/.harness/audit-context.json"
+    local reproduction_mode="${VULNOPS_REPRODUCTION_MODE:-off}"
+    case "$reproduction_mode" in
+        off|safe) ;;
+        *) err "Invalid reproduction mode: ${reproduction_mode}"; exit 1 ;;
+    esac
+    local run_id=""
+    local scan_base=""
+    local resumed=false
+
+    # Resume only the current incomplete v2 run for the same repository,
+    # commit, depth, and exact working-tree fingerprint. Completed runs are
+    # never read as audit input; a new isolated run is created instead.
+    if [ -f "$ctx" ]; then
+        local resume_fields
+        resume_fields="$(python3 - "$ctx" "$clone_dir" "$short_sha" "$depth" "$target_fingerprint" "$reproduction_mode" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+path = Path(sys.argv[1])
+try:
+    doc = json.loads(path.read_text())
+except Exception:
+    raise SystemExit(0)
+if doc.get("schema_version") != "2.0":
+    raise SystemExit(0)
+if str(doc.get("repo_path")) != sys.argv[2]:
+    raise SystemExit(0)
+if str(doc.get("short_sha")) != sys.argv[3] or str(doc.get("depth")) != sys.argv[4]:
+    raise SystemExit(0)
+if str(doc.get("target_fingerprint")) != sys.argv[5]:
+    raise SystemExit(0)
+if str(doc.get("reproduction_mode")) != sys.argv[6]:
+    raise SystemExit(0)
+scan_base = Path(str(doc.get("scan_base", "")))
+manifest = scan_base / "run-manifest.json"
+try:
+    run = json.loads(manifest.read_text())
+except Exception:
+    raise SystemExit(0)
+if run.get("status") in {"complete", "failed"}:
+    raise SystemExit(0)
+print(f"{doc.get('run_id', '')}\t{scan_base}")
+PY
+)"
+        if [ -n "$resume_fields" ]; then
+            IFS=$'\t' read -r run_id scan_base <<<"$resume_fields"
+            resumed=true
+        fi
+    fi
+
+    if [ -z "$scan_base" ]; then
+        run_id="$(date -u +%Y%m%dT%H%M%SZ)-${short_sha}-$$"
+        scan_base="${repo_scan_root}/runs/${run_id}"
+    fi
     harness_require_allowed_output "$HARNESS_ROOT" "$scan_base"
 
     # ── Create scan directories ──
     mkdir -p "${scan_base}/repo-context"
+    mkdir -p "${scan_base}/repo-context/research"
     mkdir -p "${scan_base}/sca/findings"
     mkdir -p "${scan_base}/sast/deepdive"
     mkdir -p "${scan_base}/sast/verify"
+    mkdir -p "${scan_base}/sast/reproduction"
+    mkdir -p "${scan_base}/sast/fixes"
     mkdir -p "${scan_base}/intelligence/codegraph-runs"
     mkdir -p "${scan_base}/intelligence"
     mkdir -p "${scan_base}/triage"
@@ -132,8 +194,9 @@ main() {
     mkdir -p "${scan_base}/intrusion"
     mkdir -p "${scan_base}/intrusion/codegraph-runs"
     mkdir -p "${scan_base}/final-reconciliation"
+    mkdir -p "${scan_base}/final-verification/results"
 
-    # ── codegraph: optional AST toolkit. Index lives under ${scan_base}/.codegraph
+    # ── codegraph: required AST toolkit. Index lives under ${scan_base}/.codegraph
     # so two audits against different repos don't clobber each other's index.
     # ${clone_dir} is the actual checked-out target; the per-scan index is
     # the parallel branch the agents consult.
@@ -143,88 +206,40 @@ main() {
             bash "${HARNESS_ROOT}/scripts/setup-codegraph.sh" || true
     fi
 
-    # ── Write audit context ──
-    local ctx="${HARNESS_ROOT}/.harness/audit-context.json"
-    cat > "$ctx" <<ENDJSON
-{
-  "repo_name": "${repo_name}",
-  "remote_url": "${remote_url}",
-  "repo_id": "${repo_id}",
-  "short_sha": "${short_sha}",
-  "depth": "${depth}",
-  "harness_root": "${HARNESS_ROOT}",
-  "repo_path": "${clone_dir}",
-  "scan_base": "${scan_base}",
-  "paths": {
-	    "repo_context": "${scan_base}/repo-context",
-	    "repo_md": "${scan_base}/repo-context/repo.md",
-	    "repo_context_json": "${scan_base}/repo-context/repo-context.json",
-	    "security_surfaces_json": "${scan_base}/repo-context/security-surfaces.json",
-	    "sca": "${scan_base}/sca",
-	    "sca_raw_advisories": "${scan_base}/sca/raw-advisories.json",
-	    "sast": "${scan_base}/sast",
-	    "sast_threat_model": "${scan_base}/sast/threat-model.json",
-	    "sast_threat_model_md": "${scan_base}/sast/threat-model.md",
-	    "sast_task_manifest": "${scan_base}/sast/task-manifest.json",
-	    "sast_decompose_md": "${scan_base}/sast/decompose.md",
-	    "sast_deepdive": "${scan_base}/sast/deepdive",
-	    "sast_verify": "${scan_base}/sast/verify",
-	    "sast_raw_findings": "${scan_base}/sast/raw-findings.json",
-	    "sast_verified_findings": "${scan_base}/sast/verified-findings.json",
-	    "sast_dropped_findings": "${scan_base}/sast/dropped-findings.json",
-	    "sast_coverage_ledger": "${scan_base}/sast/coverage-ledger.json",
-	    "secrets": "${scan_base}/secrets",
-	    "secrets_redacted_candidates": "${scan_base}/secrets/redacted-candidates.json",
-	    "intelligence": "${scan_base}/intelligence",
-	    "intelligence_evidence_corpus": "${scan_base}/intelligence/evidence-corpus.json",
-	    "intelligence_attack_surface_map": "${scan_base}/intelligence/attack-surface-map.json",
-	    "intelligence_intel_plan": "${scan_base}/intelligence/intel-plan.json",
-    "intelligence_cards": "${scan_base}/intelligence/investigation-cards.json",
-    "intelligence_coverage_gaps": "${scan_base}/intelligence/coverage-gaps.json",
-    "intelligence_rule_gaps": "${scan_base}/intelligence/rule-gaps.json",
-    "intelligence_codegraph_runs": "${scan_base}/intelligence/codegraph-runs",
-    "triage": "${scan_base}/triage",
-    "intrusion_seeds": "${scan_base}/triage/intrusion-seeds.json",
-    "report": "${scan_base}/report",
-    "intrusion": "${scan_base}/intrusion",
-    "intrusion_findings": "${scan_base}/intrusion/findings",
-    "intrusion_enrichment": "${scan_base}/intrusion/enrichment.json",
-    "intrusion_plan": "${scan_base}/intrusion/intrusion-plan.json",
-    "intrusion_codegraph_runs": "${scan_base}/intrusion/codegraph-runs",
-    "final_reconciliation": "${scan_base}/final-reconciliation",
-    "final_reconciliation_findings": "${scan_base}/final-reconciliation/findings.json",
-    "final_report_md": "${scan_base}/report/security-report.md",
-    "final_report_json": "${scan_base}/report/security-report.json",
-    "codegraph_index_dir": "${scan_base}/.codegraph"
-  },
-  "tools": {
-    "wraith": "${HARNESS_ROOT}/bins/wraith",
-    "poltergeist": "${HARNESS_ROOT}/bins/poltergeist",
-    "omp": "${HARNESS_ROOT}/bins/omp",
-    "osv_scanner": "${HARNESS_ROOT}/bins/osv-scanner",
-    "codegraph": "${HARNESS_ROOT}/bins/codegraph",
-    "run_wraith": "${HARNESS_ROOT}/scripts/run-wraith.sh",
-    "run_poltergeist": "${HARNESS_ROOT}/scripts/run-poltergeist.sh",
-    "run_codegraph": "${HARNESS_ROOT}/scripts/run-codegraph.sh",
-    "codegraph_context": "${HARNESS_ROOT}/scripts/codegraph-context.sh",
-    "build_intelligence": "${HARNESS_ROOT}/scripts/build-intelligence.py",
-    "build_intrusion_plan": "${HARNESS_ROOT}/scripts/build-intrusion-plan.py",
-    "finalize_intrusion": "${HARNESS_ROOT}/scripts/finalize-intrusion.py"
-  },
-  "created_at": "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-}
-ENDJSON
+    # ── Write v2 run manifest, task ledger, and audit context atomically ──
+    local init_args=(
+        --harness-root "$HARNESS_ROOT"
+        --repo-path "$clone_dir"
+        --scan-base "$scan_base"
+        --run-id "$run_id"
+        --repo-name "$repo_name"
+        --remote-url "$remote_url"
+        --repo-id "$repo_id"
+        --commit "$short_sha"
+        --depth "$depth"
+        --target-fingerprint "$target_fingerprint"
+        --reproduction-mode "$reproduction_mode"
+        --model "${OMP_MODEL_SELECTOR:-${ON_PREM_MODEL_NAME:-unknown}}"
+    )
+    if [ "$resumed" = true ]; then
+        init_args+=(--resume)
+    fi
+    python3 "${HARNESS_ROOT}/scripts/init-run.py" "${init_args[@]}"
 
     log ""
     log "Target detected: ${clone_dir}"
     log "  Repo ID:    ${repo_id}"
     log "  Commit:     ${short_sha}"
     log "  Scan base:  ${scan_base}"
+    log "  Run ID:     ${run_id}"
     log "  Depth:      ${depth}"
+    log "  Reproduction: ${reproduction_mode}"
+    if [ "$resumed" = true ]; then
+        log "  Resume:     current incomplete v2 run"
+    fi
     log ""
     log "Context: ${ctx}"
 
-    cat "$ctx"
 }
 
 main "$@"

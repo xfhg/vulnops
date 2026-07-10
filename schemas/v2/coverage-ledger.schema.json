@@ -1,0 +1,64 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "VulnOps v2 Coverage Ledger",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "run_id", "rounds_completed", "cells", "tasks", "funnel", "warnings", "errors"],
+  "properties": {
+    "schema_version": {"const": "2.0"},
+    "run_id": {"type": "string", "minLength": 1},
+    "rounds_completed": {"type": "integer", "minimum": 0},
+    "cells": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "status", "task_ids", "evidence_refs", "reason"],
+        "properties": {
+          "id": {"type": "string", "minLength": 1},
+          "status": {"enum": ["tool_satisfied", "finding", "clean", "not_applicable", "deferred", "shallow", "failed"]},
+          "task_ids": {"type": "array", "items": {"type": "string"}},
+          "evidence_refs": {"type": "array", "items": {"type": "string"}},
+          "reason": {"type": "string", "minLength": 1}
+        }
+      }
+    },
+    "tasks": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "status", "attempts", "files_reviewed", "entrypoints_traced", "sinks_reviewed", "mitigations_checked", "candidate_ids", "rabbit_holes"],
+        "properties": {
+          "id": {"type": "string", "minLength": 1},
+          "status": {"enum": ["ok", "shallow", "failed"]},
+          "attempts": {"type": "integer", "minimum": 1},
+          "files_reviewed": {"type": "array", "items": {"type": "string"}},
+          "entrypoints_traced": {"type": "array", "items": {"type": "string"}},
+          "sinks_reviewed": {"type": "array", "items": {"type": "string"}},
+          "mitigations_checked": {"type": "array", "items": {"type": "string"}},
+          "candidate_ids": {"type": "array", "items": {"type": "string"}},
+          "rabbit_holes": {"type": "array", "items": {"type": "string"}}
+        }
+      }
+    },
+    "funnel": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["raw_candidates", "deduplicated_candidates", "mechanically_rejected", "adversarially_rejected", "source_verified", "dynamic_verified", "environment_required", "final_rejected", "reported"],
+      "properties": {
+        "raw_candidates": {"type": "integer", "minimum": 0},
+        "deduplicated_candidates": {"type": "integer", "minimum": 0},
+        "mechanically_rejected": {"type": "integer", "minimum": 0},
+        "adversarially_rejected": {"type": "integer", "minimum": 0},
+        "source_verified": {"type": "integer", "minimum": 0},
+        "dynamic_verified": {"type": "integer", "minimum": 0},
+        "environment_required": {"type": "integer", "minimum": 0},
+        "final_rejected": {"type": "integer", "minimum": 0},
+        "reported": {"type": "integer", "minimum": 0}
+      }
+    },
+    "warnings": {"type": "array", "items": {"type": "string"}},
+    "errors": {"type": "array", "items": {"type": "string"}}
+  }
+}

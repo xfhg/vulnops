@@ -4,7 +4,17 @@
 
 harness:
   name: vulnops
-  version: "1.0.0"
+  version: "2.0.0"
+  # Target code never runs unless this is explicitly changed to safe.
+  reproduction:
+    mode: off
+    sandbox: auto
+    timeout_seconds: 120
+    cpu_seconds: 60
+    memory_mb: 1024
+    max_processes: 64
+    max_output_kb: 256
+    max_parallel: 1
 
 # Target repository configuration
 target:
@@ -18,12 +28,10 @@ target:
 # Scan configuration
 scans:
   # Default scan depth: quick | balanced | full
-  # quick: ~5min, focused on high-confidence vectors
-  # balanced: ~15min, broader coverage
-  # full: ~30min+, comprehensive (requires confirmation)
-  default_depth: quick
+  # Depth controls bounded hunt and verification breadth.
+  default_depth: balanced
 
-  # Which scans to run (all independent, run in parallel)
+  # SCA and Secrets run in parallel; SAST consumes their validated evidence.
   enabled:
     - sca       # Software Composition Analysis (Wraith)
     - sast      # Static Application Security Testing (AI-driven)
@@ -42,21 +50,27 @@ scans:
 
   # SAST-specific settings
   sast:
-    # Maximum parallel workers for file analysis
-    max_workers: 5
-    # Candidate files per batch
-    batch_size: 10
-    # OMP subagent fanout limits by depth. Overflow work is queued in batches.
+    context_packet_bytes: 65536
+    # OMP concurrency and single-run budget limits by depth.
     fanout:
       quick:
         deepdive_chunks: 4
         verify_findings: 4
+        max_hunt_tasks: 12
+        max_gapfill_rounds: 1
+        max_attempts: 2
       balanced:
         deepdive_chunks: 8
         verify_findings: 8
+        max_hunt_tasks: 32
+        max_gapfill_rounds: 2
+        max_attempts: 2
       full:
         deepdive_chunks: 16
         verify_findings: 12
+        max_hunt_tasks: 64
+        max_gapfill_rounds: 3
+        max_attempts: 2
 
   # Secrets-specific settings
   secrets:
@@ -64,21 +78,16 @@ scans:
     # Extra poltergeist flags
     extra_flags: []
 
-  # Intelligence Fusion runs after deterministic scans and before triage.
+  # Intelligence Fusion runs after all validated discovery evidence.
   intelligence:
-    # Uses codegraph AST analysis (no LLM extraction). Optional because the
-    # audit can fall back to triage + intrusion + report when the
-    # intelligence phase cannot run.
-    optional: true
+    required: true
 
   # Intrusion-specific settings (AST graph analysis after triage)
   intrusion:
     codegraph:
       index_dir: .codegraph
-    # codegraph is the sole graph backend (AST-only, offline). Intrusion is
-    # optional: the audit can still terminate with status ok when the target
-    # has no parseable code.
-    optional: true
+    # Intrusion is required; a run with no seeds may have zero scopes.
+    required: true
 
 # Output configuration
 output:

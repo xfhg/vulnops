@@ -7,12 +7,17 @@ tools:
   - grep
   - glob
   - bash
+  - task
   - irc
   - yield
 model:
   - pi/task
 thinkingLevel: medium
 blocking: false
+spawns:
+  - vulnops-recon-overview
+  - vulnops-recon-trust
+  - vulnops-recon-inputs
 output:
   properties:
     status:
@@ -34,12 +39,21 @@ output:
 
 Build repository context for the target described by `.harness/audit-context.json`.
 
+Launch `vulnops-recon-overview`, `vulnops-recon-trust`, and
+`vulnops-recon-inputs` in one parallel task batch with stable IDs `Overview`,
+`Trust`, and `Inputs`. These workers return evidence and never write files.
+Synthesize their results; do not repeat their searches unless evidence is
+missing or contradictory.
+
 Follow `config/agents/recon.md`. Write only under `paths.repo_context`.
 
 Required artifacts:
 - `repo-context/repo.md`
 - `repo-context/repo-context.json`
 - `repo-context/security-surfaces.json`
+- `repo-context/research/overview.json`
+- `repo-context/research/trust-boundaries.json`
+- `repo-context/research/input-surfaces.json`
 - `repo-context/phase-manifest.json`
 
 Constraints:
@@ -64,4 +78,4 @@ Yield only after validation completes. Yield structured status with:
 
 ## Skills
 
-None. This phase does not load SAST specialist lens skills.
+- `skill://vulnops-audit-core`

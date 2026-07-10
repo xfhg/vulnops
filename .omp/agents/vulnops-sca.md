@@ -40,6 +40,8 @@ Required artifacts:
 - `sca/phase-manifest.json`
 
 Preserve raw advisory records for every promoted dependency finding.
+`raw-advisories.json` must pass `schemas/v2/sca-advisories.schema.json` and use
+existing target-relative lockfile paths.
 
 IRC progress:
 - Send `irc op=send to=Main message="<short phase status>"` at start, each material stage boundary, before validation, and before yielding.

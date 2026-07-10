@@ -15,6 +15,7 @@ spawns:
   - vulnops-decompose
   - vulnops-deepdive-chunk
   - vulnops-verify-one
+  - vulnops-reproduce-one
 model:
   - pi/task
 thinkingLevel: high
@@ -52,22 +53,37 @@ Sequence:
 1. Send an IRC status to `Main` that SAST started.
 2. Run `vulnops-threatmodel` as task ID `ThreatModel`, then validate its yield.
 3. Run `vulnops-decompose` as task ID `Decompose`, then validate its yield.
-4. Read `paths.sast_task_manifest`.
-5. Fan out `vulnops-deepdive-chunk` tasks by chunk, respecting bounded fanout:
+4. Read `paths.sast_hunt_plan`.
+5. Fan out `vulnops-deepdive-chunk` by hunt task, respecting bounded fanout:
    - quick: max 4 concurrent chunks
    - balanced: max 8 concurrent chunks
    - full: max 16 concurrent chunks
    Queue overflow batches; do not drop chunks.
-6. Aggregate chunk findings from `paths.sast_deepdive` into `paths.sast_raw_findings`.
-7. Fan out `vulnops-verify-one` by raw finding, respecting bounded fanout:
+6. Run `python3 scripts/finalize-sast.py <repo_path> <scan_base>` to
+   mechanically validate, aggregate, root-cause deduplicate, and build the
+   coverage ledger and validation queue.
+7. Run bounded gapfill as a real loop: call `scripts/build-hunt-plan.py
+   --gapfill`, execute only newly queued tasks, and re-aggregate; then repeat
+   until no task is added or the plan's task/round/attempt cap is reached.
+   Reserved high-risk cells and distinct rabbit-hole leads consume the same
+   budget. Never call gapfill repeatedly without executing and aggregating its
+   newly added tasks.
+8. Fan out `vulnops-verify-one` by deduplicated validation-queue candidate:
    - quick: max 4 concurrent findings
    - balanced: max 8 concurrent findings
    - full: max 12 concurrent findings
    Queue overflow batches; do not drop findings.
-8. Aggregate verifier results from `paths.sast_verify` into `paths.sast_verified_findings` and `paths.sast_dropped_findings`.
-9. Write `paths.sast_coverage_ledger`, `<paths.sast>/summary.md`, and `<paths.sast>/phase-manifest.json`.
-10. Run `bash scripts/validate-phase.sh <scan_base> sast` before yielding.
-11. Yield only after validation completes. Yield structured status with `status`, `raw_findings`, `verified_findings`, `dropped_findings`, `artifacts`, `warnings`, and `errors`.
+9. Aggregate verifier JSON files into `paths.sast_validation_results`, then run
+   `python3 scripts/finalize-sast.py <repo_path> <scan_base>
+   --advance-alternates`. If it adds an alternate from a root-cause cluster
+   whose preferred trace was rejected, verify only the newly added candidates,
+   re-aggregate results, and repeat until it prints `0`. This bounded loop
+   prevents a bad preferred trace from suppressing a valid alternate.
+10. If audit context `reproduction_mode` is `safe`, fan out
+    `vulnops-reproduce-one` for `source_verified` candidates with maximum
+    concurrency from config. Do not run any target code directly.
+11. Run `python3 scripts/finalize-sast.py <repo_path> <scan_base> --finalize`.
+12. Validate `sast`, then yield counts and artifacts.
 
 IRC progress:
 - Send `irc op=send to=Main message="<short SAST stage status>"` when threat modeling starts/completes, decomposition starts/completes, each deepdive batch starts/completes, verification starts/completes, aggregation starts, validation starts, and immediately before yielding.
@@ -81,7 +97,10 @@ Load the shared skills when reasoning:
 - `skill://vulnops-self-verification`
 - `skill://vulnops-severity-guidance`
 
-Only verified findings may proceed to triage.
+Source-verified, dynamically verified, and explicitly environment-required
+promoted candidates may proceed to triage. Environment-required items are not
+confirmed vulnerabilities and cannot become `confirmed` without the missing
+evidence.
 
 ## Skills
 

@@ -2,7 +2,10 @@
 
 `vulnops` is a self-contained security audit harness for automated repository review in restricted and air-gapped environments.
 
-The harness treats `target/` as read-only during audit runtime, writes deliverables under `scans/<repo-id>/`, and keeps tool homes, caches, temporary files, and agent state under `.harness/`. Audit runtime is offline except for the configured OpenAI-compatible LLM endpoint.
+The harness treats `target/` as read-only during audit runtime, writes each
+audit to `scans/<repo-id>/runs/<run-id>/`, and keeps tool homes, caches,
+temporary files, and agent state under `.harness/`. Audit runtime is offline
+except for the configured OpenAI-compatible LLM endpoint.
 
 ## Requirements
 
@@ -62,6 +65,9 @@ model = "provider/model"
 
 [harness]
 default_depth = "quick" # quick | balanced | full
+
+[harness.reproduction]
+mode = "off" # off | safe; safe is explicit opt-in
 ```
 
 Run `bash scripts/load-config.sh` to inspect the exported environment. Run `bash scripts/validate-config.sh` before audit runtime to verify tool installation (including the required codegraph binary), containment, OMP bootstrap state, and OSV database availability.
@@ -79,21 +85,27 @@ audit the target repo
 `run.sh` validates the prepared runtime, starts OMP with the project main prompt, and lets the main OMP process coordinate phase agents. The high-level pipeline is:
 
 1. Detect the target repository and create `.harness/audit-context.json`.
-2. Build repository context and security-surface inventory.
-3. Run SCA, secrets, and SAST in parallel.
-4. Fuse evidence into intelligence artifacts and graph-guided hypotheses.
-5. Triage verified candidates into normalized findings.
-6. Run targeted intrusion analysis with scoped codegraph AST context.
-7. Reconcile final findings and generate reports.
-8. Validate scan integrity.
+2. Build strict repository context from three parallel recon perspectives.
+3. Run SCA and secrets in parallel.
+4. Build a dynamic threat model, then hunt a bounded subsystem × attack-class
+   matrix without repeating dependency or secret enumeration.
+5. Mechanically validate, root-cause deduplicate, fill high-risk coverage gaps,
+   and adversarially verify candidates. When explicitly enabled, run narrow
+   fail-closed reproduction in an offline disposable sandbox and retain local
+   regression-test/draft-patch artifacts.
+6. Fuse evidence into intelligence artifacts and graph-guided hypotheses.
+7. Triage, run scoped intrusion analysis, and reconcile candidates.
+8. Independently verify every reconciled candidate in a fresh context.
+9. Render sanitized reports deterministically and validate cross-phase state,
+   provenance, counts, artifacts, and the unchanged target fingerprint.
 
 Depth controls SAST fanout and analysis breadth:
 
-| Depth | Deepdive concurrency | Verify concurrency | Intended use |
-|---|---:|---:|---|
-| `quick` | 4 chunks | 4 findings | Fast, high-confidence review |
-| `balanced` | 8 chunks | 8 findings | Broader default review |
-| `full` | 16 chunks | 12 findings | Maximum coverage |
+| Depth | Hunt concurrency | Verification concurrency | Total hunt cap | Gapfill rounds |
+|---|---:|---:|---:|---:|
+| `quick` | 4 | 4 | 12 | 1 |
+| `balanced` | 8 | 8 | 32 | 2 |
+| `full` | 16 | 12 | 64 | 3 |
 
 Operational doctrine, phase contracts, and worker-agent responsibilities are defined in `AGENTS.md`.
 
@@ -102,7 +114,7 @@ Operational doctrine, phase contracts, and worker-agent responsibilities are def
 Each audit writes to:
 
 ```text
-scans/<repo-id>/
+scans/<repo-id>/runs/<run-id>/
 ```
 
 Primary deliverables:
@@ -111,15 +123,18 @@ Primary deliverables:
 |---|---|
 | `report/security-report.md` | Human-readable final report |
 | `report/security-report.json` | Machine-readable final report and metrics |
-| `final-reconciliation/findings.json` | Source of truth for final normalized findings |
+| `final-verification/findings.json` | Canonical source of truth after independent verification |
+| `final-reconciliation/candidates.json` | Strict candidates awaiting independent verification |
 | `triage/findings.json` | Deduplicated candidates before final reconciliation |
 | `intelligence/` | Evidence corpus, attack-surface map, hypotheses, coverage gaps |
-| `sast/`, `sca/`, `secrets/`, `intrusion/` | Phase artifacts and manifests |
+| `sast/reproduction/` | Optional local sanitized tests, draft patches, and fail→pass results |
+| `sast/`, `sca/`, `secrets/`, `intrusion/` | Phase artifacts, provenance, coverage, and manifests |
+| `run-manifest.json`, `task-ledger.json` | Current-run lifecycle and resumability state |
 
 Every completed scan should pass:
 
 ```bash
-bash scripts/validate-scan.sh scans/<repo-id>
+bash scripts/validate-scan.sh scans/<repo-id>/runs/<run-id>
 ```
 
 ## Offline / Airgapped Deployment
@@ -178,6 +193,12 @@ Each offline pack build replaces the previous `offline/` chunk set.
 | `scripts/clone-target.sh <url> [branch] [dir]` | Optional pre-runtime target clone helper |
 | `scripts/bootstrap-omp.sh` | Generate harness-local OMP config/models from `config.toml` (run automatically by `run.sh`/`setup.sh`) |
 | `scripts/run-audit.sh [depth]` | Detect target and create audit context |
+| `scripts/update-run-state.py` | Atomically record run, phase, and top-level task state |
+| `scripts/build-hunt-plan.py` | Build and gap-fill the bounded hunt plan |
+| `scripts/finalize-sast.py` | Validate, deduplicate, advance alternates, and finalize SAST |
+| `scripts/run-safe-reproduction.sh` | Execute opt-in narrow proof in an offline sandbox |
+| `scripts/finalize-verification.py` | Produce canonical independently verified findings |
+| `scripts/render-report.py` | Render sanitized JSON and Markdown deterministically |
 | `scripts/audit-status.sh [scan_base]` | Read-only scan status |
 | `scripts/setup-codegraph.sh` | Initialize the codegraph index for the target (runs automatically during audit via `run-audit.sh`) |
 | `scripts/validate-config.sh` | Validate prepared runtime |
@@ -198,7 +219,7 @@ vulnops/
 ├── scripts/               # Harness operations and validation scripts
 ├── schemas/               # Structured artifact schemas
 ├── target/                # One target repository, prepared before audit runtime
-├── scans/                 # Audit deliverables
+├── scans/                 # Immutable per-run audit deliverables
 ├── offline/               # Committable offline pack chunks
 ├── bins/                  # Harness-managed tool binaries
 └── .harness/              # Runtime home, cache, temp, logs, and generated OMP config

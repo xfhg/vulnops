@@ -1,0 +1,83 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "VulnOps v2 SAST Candidate Finding",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version", "id", "task_id", "cell_ids", "finding_kind", "title",
+    "category", "attack_class_id", "domain", "methodology_refs", "severity",
+    "confidence", "attacker", "intended_behavior", "root_cause",
+    "root_cause_location", "trace", "conditions", "impact", "remediation",
+    "evidence_refs", "lenses", "mitigations_checked"
+  ],
+  "properties": {
+    "schema_version": {"const": "2.0"},
+    "id": {"type": "string", "pattern": "^(?!.*\\.\\.)[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$"},
+    "task_id": {"type": "string", "pattern": "^(?!.*\\.\\.)[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$"},
+    "cell_ids": {"type": "array", "items": {"type": "string", "pattern": "^(?!.*\\.\\.)[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$"}, "minItems": 1},
+    "finding_kind": {"const": "code"},
+    "title": {"type": "string", "minLength": 1},
+    "category": {"type": "string", "minLength": 1},
+    "attack_class_id": {"type": "string", "pattern": "^(?!.*\\.\\.)[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$"},
+    "domain": {"enum": ["general", "ai_llm", "http_auth", "client", "native", "mobile", "iac", "etl"]},
+    "methodology_refs": {"type": "array", "items": {"type": "string", "minLength": 1}, "minItems": 1},
+    "severity": {"enum": ["informational", "low", "medium", "high", "critical"]},
+    "confidence": {"enum": ["low", "medium", "high"]},
+    "attacker": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["perspective", "starting_access", "boundary_crossed"],
+      "properties": {
+        "perspective": {"type": "string", "minLength": 1},
+        "starting_access": {"type": "string", "minLength": 1},
+        "boundary_crossed": {"type": "string", "minLength": 1}
+      }
+    },
+    "intended_behavior": {"type": "string", "minLength": 1},
+    "root_cause": {"type": "string", "minLength": 1},
+    "root_cause_location": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["file", "line", "scope", "mechanism"],
+      "properties": {
+        "file": {"type": "string", "minLength": 1},
+        "line": {"type": "integer", "minimum": 1},
+        "scope": {"type": "string", "minLength": 1},
+        "mechanism": {"type": "string", "minLength": 1}
+      }
+    },
+    "trace": {
+      "type": "array",
+      "minItems": 2,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["kind", "file", "line", "scope", "description"],
+        "properties": {
+          "kind": {"enum": ["entrypoint", "propagation", "sink"]},
+          "file": {"type": "string", "minLength": 1},
+          "line": {"type": "integer", "minimum": 1},
+          "scope": {"type": "string", "minLength": 1},
+          "description": {"type": "string", "minLength": 1}
+        }
+      }
+    },
+    "conditions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["kind", "description"],
+        "properties": {
+          "kind": {"enum": ["authentication_level", "authorization_role", "user_interaction", "system_configuration", "network_routing", "environmental_dependency", "data_state", "timing_dependency", "third_party_dependency"]},
+          "description": {"type": "string", "minLength": 1}
+        }
+      }
+    },
+    "impact": {"type": "string", "minLength": 1},
+    "remediation": {"type": "string", "minLength": 1},
+    "evidence_refs": {"type": "array", "items": {"type": "string"}, "minItems": 1},
+    "lenses": {"type": "array", "items": {"type": "string"}, "minItems": 1},
+    "mitigations_checked": {"type": "array", "items": {"type": "string"}, "minItems": 1}
+  }
+}

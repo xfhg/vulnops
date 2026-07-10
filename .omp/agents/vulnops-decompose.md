@@ -30,7 +30,8 @@ output:
         type: string
 ---
 
-Create a risk-ranked SAST task manifest from repository context and threat model.
+Create the risk-ranked v2 area × attack-class plan from repository context and
+the dynamic threat model.
 
 Path contract:
 - Read `.harness/audit-context.json` first.
@@ -44,9 +45,18 @@ Inputs:
 
 Write:
 - `paths.sast_task_manifest`
+- `paths.sast_hunt_plan`
 - `paths.sast_decompose_md`
 
-The top-level manifest must include `chunks`; include a top-level `rationale` whenever `chunks` is non-empty. Each chunk must include id, risk_rank, size, files, focus_entry_points, hypothesis, threat_id, lenses, related_advisories, and evidence_refs.
+Run:
+
+`python3 scripts/build-hunt-plan.py <repo_path> <scan_base>`
+
+Validate `paths.sast_hunt_plan` against `schemas/v2/hunt-plan.schema.json` with
+semantic `hunt-plan` and the target path. The builder emits the compatibility
+task manifest. Each task carries authoritative `methodology_refs` and selected
+`lenses`. Do not hand-create a second plan or schedule cells owned by
+SCA/Secrets.
 
 Use specialist lenses where appropriate (declared in Skills below).
 
@@ -77,3 +87,4 @@ Yield only after validation completes. Yield structured status with:
 - `skill://vulnops-logic-bug`
 - `skill://vulnops-deserialization`
 - `skill://vulnops-crypto`
+- `skill://vulnops-audit-core`

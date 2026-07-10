@@ -41,12 +41,24 @@ Inputs:
 - `.harness/audit-context.json`
 - `paths.repo_md`
 - `paths.repo_context_json`
+- `paths.security_surfaces_json`
+- `paths.sca_raw_advisories`
+- `paths.secrets_redacted_candidates`
+- `config/attack-taxonomy-v2.json`
 
 Write:
 - `paths.sast_threat_model_md`
 - `paths.sast_threat_model`
 
-Threat model JSON must include assets, trust boundaries, entrypoints, threats, assumptions, evidence_refs, warnings, and errors. Every threat must map to a real entrypoint, asset, or trust boundary.
+Threat model JSON must match `schemas/v2/threat-model.schema.json`. Select only
+applicable upstream attack classes and invent repository-specific classes when
+the mapped architecture requires them. Each class names applicable subsystem
+IDs, evidence, owner (`sast`, `sca`, or `secrets`), methodology reference, and
+reason. Dependency and secret enumeration are tool-owned; do not schedule them
+as SAST work. Emit strict, stable IDs and evidence-backed objects for assets,
+trust boundaries, entrypoints, subsystems, and threats. Every subsystem file
+and entrypoint path must exist under the target; every cross-reference must
+resolve to an ID in the same document.
 
 IRC progress:
 - Send `irc op=send to=Main message="<short phase status>"` at start, each material stage boundary, before validation, and before yielding.
@@ -64,4 +76,10 @@ Yield only after validation completes. Yield structured status with:
 
 ## Skills
 
-None. This phase does not load SAST specialist lens skills.
+- `skill://vulnops-audit-core`
+- `skill://vulnops-attack-general`
+- `skill://vulnops-attack-ai-llm`
+- `skill://vulnops-attack-http-auth`
+- `skill://vulnops-attack-client`
+- `skill://vulnops-attack-native`
+- `skill://vulnops-attack-mobile`

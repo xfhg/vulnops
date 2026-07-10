@@ -13,9 +13,15 @@ The main OMP process is the audit lead. Do not spawn a lead subagent. Phase suba
 bash scripts/run-audit.sh [depth]
 ```
 
-This finds the repo inside `target/`, computes all paths, creates scan directories, and writes `.harness/audit-context.json`. Read that file for every path you need.
+This finds the repo inside `target/`, computes an exact working-tree
+fingerprint, creates an isolated `scans/<repo-id>/runs/<run-id>/` directory,
+and writes `.harness/audit-context.json`. Read that file for every path you
+need. Only the current incomplete run may resume, and only when repository,
+commit, depth, fingerprint, and reproduction mode all match. Completed and
+failed runs are never audit input.
 
-Depth is `quick` (default), `balanced`, or `full`.
+Depth is `quick`, `balanced`, or `full`; omission uses
+`harness.default_depth` (`balanced` in the example config).
 
 ### Configuration
 
@@ -38,9 +44,12 @@ codegraph is the sole graph backend and a required binary (`bins/codegraph`, val
 
 1. Run `bash scripts/run-audit.sh [depth]`.
 2. Read `.harness/audit-context.json`.
-3. Spawn phase subagents directly.
-4. Use OMP task completion/yield as the terminal phase signal.
-5. Run final validation.
+3. Mark the run, phase, and top-level task lifecycle through
+   `scripts/update-run-state.py`; synchronize terminal state from the validated
+   phase manifest.
+4. Spawn phase subagents directly.
+5. Use OMP task completion/yield as the terminal phase signal.
+6. Run final validation, then mark the run complete or failed.
 
 Live feedback comes from OMP's native task/subagent cards and IRC. Main uses `irc op=list`, `irc op=wait`, and `irc op=inbox` for live phase presence and progress; `validate-phase.sh` validates after yield; `wait-phase.sh` is only for manual recovery, CI, or non-OMP automation.
 
@@ -62,7 +71,13 @@ Project-local OMP agents live in `.omp/agents/`. Use named phase agents, not gen
 - `vulnops-triage`
 - `vulnops-intrusion`
 - `vulnops-reconcile`
-- `vulnops-reporter`
+- `vulnops-final-verification`
+
+#### Recon sub-pipeline
+
+- `vulnops-recon-overview`
+- `vulnops-recon-trust`
+- `vulnops-recon-inputs`
 
 #### SAST sub-pipeline (spawned by `vulnops-sast-lead` via `task`)
 
@@ -70,6 +85,11 @@ Project-local OMP agents live in `.omp/agents/`. Use named phase agents, not gen
 - `vulnops-decompose`
 - `vulnops-deepdive-chunk`
 - `vulnops-verify-one`
+- `vulnops-reproduce-one`
+
+#### Final verification sub-pipeline
+
+- `vulnops-independent-verify-one`
 
 OMP skills live in `.omp/skills/`. Audit agents should use the shared exclusion, self-verification, severity, and specialist lens skills through `skill://...` when relevant.
 
@@ -81,6 +101,9 @@ Required outputs:
 - `<paths.repo_md>`
 - `<paths.repo_context_json>`
 - `<paths.security_surfaces_json>`
+- `<paths.repo_context>/research/overview.json`
+- `<paths.repo_context>/research/trust-boundaries.json`
+- `<paths.repo_context>/research/input-surfaces.json`
 - `<paths.repo_context>/phase-manifest.json`
 
 After the recon task yields, run:
@@ -97,7 +120,6 @@ Main spawns these agents in one OMP task batch with stable IDs:
 
 - `SCA` -> `vulnops-sca`
 - `Secrets` -> `vulnops-secrets`
-- `SASTLead` -> `vulnops-sast-lead`
 
 SCA required outputs:
 - `<paths.sca>/summary.md`
@@ -109,34 +131,50 @@ Secrets required outputs:
 - `<paths.secrets_redacted_candidates>`
 - `<paths.secrets>/phase-manifest.json`
 
-SAST is internally sequential with bounded fanout:
+After SCA and Secrets both yield and validate, Main runs `SASTLead` ->
+`vulnops-sast-lead`. SAST consumes their evidence so code hunters never repeat
+dependency or secret enumeration. SAST is internally sequential with bounded
+fanout:
 
 1. `vulnops-threatmodel` writes:
    - `<paths.sast_threat_model>`
    - `<paths.sast_threat_model_md>`
 2. `vulnops-decompose` writes:
    - `<paths.sast_task_manifest>`
+   - `<paths.sast_hunt_plan>`
    - `<paths.sast_decompose_md>`
-3. `vulnops-sast-lead` fans out `vulnops-deepdive-chunk` by task-manifest chunk:
+3. `vulnops-sast-lead` fans out one subsystem/attack-class hunt task:
    - `quick`: max 4 concurrent chunks
    - `balanced`: max 8 concurrent chunks
    - `full`: max 16 concurrent chunks
    - overflow chunks are queued, not dropped
-4. Deepdive writes per-chunk JSON under `<paths.sast_deepdive>` and aggregate raw findings to `<paths.sast_raw_findings>`.
-5. `vulnops-sast-lead` fans out `vulnops-verify-one` by raw finding:
+4. Deterministic aggregation validates source traces, deduplicates by root
+   cause location, merges provenance, builds the coverage ledger, and loops
+   through capped high-risk gapfill until no new work or a cap is reached.
+5. `vulnops-sast-lead` fans out `vulnops-verify-one` by deduplicated candidate:
    - `quick`: max 4 concurrent findings
    - `balanced`: max 8 concurrent findings
    - `full`: max 12 concurrent findings
    - overflow findings are queued, not dropped
-6. Verify writes:
+   - if a preferred dedup trace is rejected, the next distinct trace in that
+     root-cause cluster is verified; a surviving root cause is not rechecked
+6. When config enables safe reproduction, source-verified candidates may run
+   only through `scripts/run-safe-reproduction.sh`; test and draft patch
+   artifacts stay under the scan.
+7. Verify/finalize writes:
    - `<paths.sast_verified_findings>`
    - `<paths.sast_dropped_findings>`
-7. SAST final outputs:
+8. SAST final outputs also include:
    - `<paths.sast_coverage_ledger>`
+   - `<paths.sast_validation_results>`
+   - `<paths.sast_dedup_clusters>`
+   - `<paths.sast_wishlist>`
    - `<paths.sast>/summary.md`
    - `<paths.sast>/phase-manifest.json`
 
-Main lets OMP's subagent UI and IRC messages show live progress for all three parallel phases. As each phase task yields, Main summarizes its status and validates that phase:
+Main lets OMP's subagent UI and IRC messages show live progress. Validate SCA
+and Secrets after their parallel batch, then validate SAST after its separate
+task yields:
 
 ```bash
 bash scripts/validate-phase.sh <scan_base> sca
@@ -144,11 +182,14 @@ bash scripts/validate-phase.sh <scan_base> secrets
 bash scripts/validate-phase.sh <scan_base> sast
 ```
 
-Raw SAST findings are not final candidates until verified.
+Raw SAST findings are not final candidates until verified. Source-verified,
+dynamically verified, and environment-required candidates retain distinct
+tiers; environment-required is never treated as confirmed.
 
 ### Step 3: Intelligence Fusion
 
-Main runs `vulnops-intelligence` as task ID `Intelligence` after SCA, secrets, and SAST have all yielded and validated.
+Main runs `vulnops-intelligence` as task ID `Intelligence` after SCA, Secrets,
+and SAST have all yielded and validated.
 
 Required outputs:
 - `<paths.intelligence_evidence_corpus>`
@@ -186,7 +227,9 @@ After triage yields, run:
 bash scripts/validate-phase.sh <scan_base> triage
 ```
 
-Triage must not promote unverified, dropped, or deferred SAST findings.
+Triage must not promote rejected, dropped, or deferred SAST findings. It may
+carry an explicitly environment-required item forward only with that tier and
+its missing-evidence reason intact.
 
 ### Step 5: Intrusion Analysis
 
@@ -211,7 +254,7 @@ Intrusion is terminal only when `intrusion/phase-manifest.json` status is `ok`, 
 Main runs `vulnops-reconcile` as task ID `Reconcile` only after intrusion is terminal.
 
 Required outputs:
-- `<paths.final_reconciliation_findings>`
+- `<paths.final_reconciliation_candidates>`
 - `<paths.final_reconciliation>/summary.md`
 - `<paths.final_reconciliation>/phase-manifest.json`
 
@@ -223,18 +266,39 @@ bash scripts/validate-phase.sh <scan_base> final-reconciliation
 
 Final reconciliation applies intrusion upgrades/downgrades only when enrichment has evidence references. It must not promote unverified findings.
 
-### Step 7: Report
+### Step 7: Independent Final Verification
 
-Main runs `vulnops-reporter` as task ID `Reporter`.
+Main runs `vulnops-final-verification` as task ID `FinalVerification`.
 
-Reporter reads `<paths.final_reconciliation_findings>` as the source of truth.
+Required outputs:
+- `<paths.final_verified_findings>`
+- `<paths.final_verification>/summary.md`
+- `<paths.final_verification>/phase-manifest.json`
+
+After it yields, run:
+
+```bash
+bash scripts/validate-phase.sh <scan_base> final-verification
+```
+
+Every reconciled candidate must have exactly one fresh-context verifier result.
+Corrections must provide a complete strict finding; missing, duplicate, orphan,
+or malformed results fail the phase.
+
+### Step 8: Deterministic Report
+
+Run `python3 scripts/render-report.py <scan_base>`. It reads
+`<paths.final_verified_findings>` as the only finding source of truth.
+The renderer redacts secrets and technical proof tokens; exact proof inputs
+remain only in access-controlled local artifacts, while the report retains
+safe evidence, test, and draft-patch references.
 
 Required outputs:
 - `<paths.final_report_md>`
 - `<paths.final_report_json>`
 - `<paths.report>/phase-manifest.json`
 
-After reporter yields, run:
+After rendering, run:
 
 ```bash
 bash scripts/validate-phase.sh <scan_base> report
@@ -242,7 +306,7 @@ bash scripts/validate-phase.sh <scan_base> report
 
 Markdown is presentation only. JSON controls metrics and finding status.
 
-### Step 8: Validate
+### Step 9: Validate
 
 Run:
 
@@ -251,7 +315,8 @@ bash scripts/validate-scan.sh <scan_base>
 ```
 
 If validation fails, present the validation errors instead of pretending the scan is complete.
-If validation succeeds, the audit request is terminal. Report the final paths/counts once, then stop issuing tool calls for that request.
+If validation succeeds, mark the run `complete`. The audit request is terminal.
+Report the final paths/counts once, then stop issuing tool calls for that request.
 
 For phase-level checkpoints, use:
 
@@ -259,7 +324,10 @@ For phase-level checkpoints, use:
 bash scripts/validate-phase.sh <scan_base> <phase>
 ```
 
-Supported phases include `recon`, `sca`, `secrets`, `sast-threatmodel`, `sast-decompose`, `sast-deepdive`, `sast-verify`, `sast`, `intelligence`, `triage`, `intrusion`, `final-reconciliation`, and `report`.
+Supported phases include `recon`, `sca`, `secrets`, `sast-threatmodel`,
+`sast-decompose`, `sast-deepdive`, `sast-verify`, `sast`, `intelligence`,
+`triage`, `intrusion`, `final-reconciliation`, `final-verification`, and
+`report`.
 
 ---
 
@@ -269,7 +337,9 @@ Supported phases include `recon`, `sca`, `secrets`, `sast-threatmodel`, `sast-de
 2. **Harness-local writes only.** Scan artifacts go under `scans/`; runtime homes, temp files, caches, and logs stay under `.harness/`.
 3. **Offline by default.** No internet during audit runtime except the configured LLM endpoint.
 4. **Evidence-based.** No speculation. Every finding needs source evidence.
-5. **No exploit payloads.** Use safe proof and code reasoning.
+5. **No weaponized payloads.** Safe local proof is permitted only when config
+   enables it and only through `scripts/run-safe-reproduction.sh`; never run
+   target code unsandboxed.
 6. **No secret exfiltration.** Redact all values before writing artifacts.
 7. **Bounded fanout.** Use OMP subagents aggressively but within depth limits.
 8. **No passive sleep polling.** Use OMP task/yield and IRC progress, then `scripts/validate-phase.sh`.
@@ -289,6 +359,13 @@ Phase agents declare their own `skill://` lists in their `.omp/agents/*.md`. The
 - `skill://vulnops-logic-bug` — business-logic and race condition specialist lens
 - `skill://vulnops-deserialization` — deserialization and gadget specialist lens
 - `skill://vulnops-crypto` — cryptography and randomness specialist lens
+- `skill://vulnops-audit-core` — shared attacker, evidence, verification-tier, and reporting gate
+- `skill://vulnops-attack-general` — general vulnerability hunt doctrine
+- `skill://vulnops-attack-ai-llm` — AI/LLM trust and tool-use doctrine
+- `skill://vulnops-attack-http-auth` — HTTP, cache, token, and federation doctrine
+- `skill://vulnops-attack-client` — browser and client-side doctrine
+- `skill://vulnops-attack-native` — native memory and privileged-interface doctrine
+- `skill://vulnops-attack-mobile` — mobile OS, app-link, IPC, storage, and WebView doctrine
 
 ## Tools
 
@@ -297,6 +374,12 @@ Phase agents declare their own `skill://` lists in their `.omp/agents/*.md`. The
 - `scripts/run-wraith.sh` — SCA scan wrapper
 - `scripts/run-poltergeist.sh` — secrets scan wrapper
 - `scripts/build-intelligence.py` — deterministic OODA intelligence artifact builder/finalizer
+- `scripts/build-hunt-plan.py` — bounded area × attack-class planner and gapfill scheduler
+- `scripts/finalize-sast.py` — strict aggregation, correction, dedup fallback, and evidence-tier finalizer
+- `scripts/run-safe-reproduction.sh` — opt-in fail-closed offline reproduction sandbox
+- `scripts/finalize-verification.py` — canonical independent-verification finalizer
+- `scripts/render-report.py` — deterministic sanitized report renderer
+- `scripts/update-run-state.py` — atomic run/phase/task lifecycle updater
 - `scripts/run-codegraph.sh` — codegraph CLI wrapper (required, sole graph backend)
 - `scripts/codegraph-context.sh` — codegraph blast-radius context helper (emits per-scope `context.json`)
 - `scripts/validate-config.sh` — audit runtime readiness gate

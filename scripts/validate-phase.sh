@@ -24,6 +24,21 @@ if [ -z "$PYTHON" ]; then
     exit 1
 fi
 
+if [ -f "${SCAN_BASE}/run-manifest.json" ] &&
+    "$PYTHON" - "${SCAN_BASE}/run-manifest.json" <<'PY'
+import json
+import sys
+from pathlib import Path
+try:
+    doc = json.loads(Path(sys.argv[1]).read_text())
+except Exception:
+    raise SystemExit(1)
+raise SystemExit(0 if doc.get("schema_version") == "2.0" else 1)
+PY
+then
+    exec "$PYTHON" "${HARNESS_ROOT}/scripts/validate-phase-v2.py" "$HARNESS_ROOT" "$SCAN_BASE" "$PHASE"
+fi
+
 errors=0
 
 err() {

@@ -27,15 +27,17 @@ bash "${harness_root}/scripts/run-poltergeist.sh" <repo_path>
 
 This runs Poltergeist and writes JSON to stdout. If Poltergeist is unavailable, the wrapper hard-fails unless `VULNOPS_ALLOW_POLTERGEIST_GREP_FALLBACK=1`; an explicit grep fallback run is degraded and must be recorded as `status: "degraded"` with a warning naming `grep-fallback`.
 
-Write raw results to `<scan_dir>/candidates.json`.
+The wrapper redacts tool output before returning it. Never persist a raw secret
+result. Normalize the already-redacted output directly into
+`<scan_dir>/redacted-candidates.json`; downstream analysis uses only this file.
 
-Before any human-readable output, write `<scan_dir>/redacted-candidates.json`. It must contain the same candidates with secret material redacted and normalized to the schema documented below. Downstream analysis should use `redacted-candidates.json`, not raw candidate values.
-
-`redacted-candidates.json` must match `schemas/secrets-redacted-candidates.schema.json` and use this object shape; do not write a bare array:
+`redacted-candidates.json` must match
+`schemas/v2/secrets-redacted.schema.json` and use this strict object shape; do
+not write a bare array:
 
 ```json
 {
-  "schema_version": "1.0",
+  "schema_version": "2.0",
   "tool": "<poltergeist|grep-fallback>",
   "candidates": [
     {
@@ -45,16 +47,19 @@ Before any human-readable output, write `<scan_dir>/redacted-candidates.json`. I
       "severity": "<critical|high|medium|low|info>",
       "file": "<relative path>",
       "line": 1,
-      "redacted_value": "<redacted display value only>",
+      "redacted_value": "<redacted>",
       "evidence_refs": ["<relative path>:<line>"],
-      "raw_ref": "candidates.json:<index-or-id>",
+      "raw_ref": "<tool-output:index-or-id>",
       "source": "<poltergeist|grep-fallback>"
     }
   ]
 }
 ```
 
-If Poltergeist returns a bare array or tool-specific object, normalize it into `{schema_version, tool, candidates}`. Each candidate `evidence_refs` entry must cite the redacted source location only; never include the raw secret value.
+If Poltergeist returns a bare array or tool-specific object, normalize it into
+`{schema_version, tool, candidates}`. Each candidate `evidence_refs` entry must
+cite the redacted source location only; never include the raw secret value,
+prefix, suffix, length, or fingerprint.
 
 ### Step 2: Filter and Analyze Candidates
 
@@ -72,10 +77,9 @@ For each candidate:
    - Is it a root/admin credential vs. limited-scope?
    - Is there rotation evidence (multiple versions in history)?
 
-4. **Redact the actual value** in all output. Show only:
-   - First 4 and last 4 characters for short secrets
-   - Prefix for long tokens (e.g., `sk-...xxxx`)
-   - Never display full passwords, private keys, or connection strings
+4. **Redact the actual value** in all output as exactly `<redacted>`. Never
+   display prefixes, suffixes, lengths, fingerprints, passwords, private keys,
+   tokens, or connection-string credentials.
 
 Write findings to `<scan_dir>/findings/<filename>-<line>-<type>.md` — these per-finding files are an agent analysis convenience and are NOT part of the validated contract (`validate-phase.sh` / `validate-scan.sh` do not require them). Downstream phases may read them when present:
 
@@ -99,7 +103,7 @@ Write findings to `<scan_dir>/findings/<filename>-<line>-<type>.md` — these pe
 <what an attacker could do with this secret>
 
 ## Redacted Value
-<first-4>...<last-4>
+<redacted>
 
 ## Evidence
 <why you classified it this way>
@@ -134,8 +138,6 @@ Write `<scan_dir>/phase-manifest.json` with `phase: "secrets"`, `status`, `start
 ## Redaction Rules
 
 **NEVER** output actual secret values. This is non-negotiable.
-- Private keys: show key type and fingerprint only
-- API keys: show prefix and suffix only
-- Passwords: show length and character class only
-- Tokens: show token type and issuer only
+- Private keys: show key type only
+- API keys, passwords, tokens, and connection strings: show type and location only
 - Connection strings: show protocol and host, redact credentials

@@ -37,10 +37,33 @@ if [ -x "${POLTERGEIST}" ]; then
 from __future__ import annotations
 
 import json
+import re
 import sys
 from pathlib import Path
 
 text = Path(sys.argv[1]).read_text(encoding="utf-8", errors="replace")
+patterns = (
+    re.compile(r"-----BEGIN [A-Z ]*PRIVATE KEY-----.*?-----END [A-Z ]*PRIVATE KEY-----", re.S),
+    re.compile(r"\b(?:ghp_[A-Za-z0-9]{20,}|AKIA[0-9A-Z]{16}|sk-[A-Za-z0-9]{20,})\b"),
+    re.compile(r"(?i)(authorization\s*:\s*(?:bearer|basic)\s+)[^\s]+"),
+    re.compile(r"(?i)((?:password|passwd|secret|api[_-]?key|token)\s*[=:]\s*)[^\s,;]+"),
+)
+sensitive_keys = {"secret", "value", "match", "content", "snippet", "context", "raw", "password", "passwd", "token", "api_key", "private_key", "raw_value"}
+
+def scrub(value, key=""):
+    if isinstance(value, dict):
+        return {name: scrub(item, str(name).lower()) for name, item in value.items()}
+    if isinstance(value, list):
+        return [scrub(item, key) for item in value]
+    if isinstance(value, str):
+        if key in sensitive_keys:
+            return "<redacted>"
+        result = value
+        for pattern in patterns:
+            result = pattern.sub("<redacted>", result)
+        return result
+    return value
+
 for index, char in enumerate(text):
     if char not in "[{":
         continue
@@ -49,7 +72,7 @@ for index, char in enumerate(text):
         parsed = json.loads(candidate)
     except json.JSONDecodeError:
         continue
-    print(json.dumps(parsed))
+    print(json.dumps(scrub(parsed)))
     raise SystemExit(0)
 raise SystemExit("poltergeist did not emit JSON")
 PY
@@ -71,7 +94,7 @@ json_string() {
 }
 
 # Explicit degraded grep-based fallback: scan for common secret patterns.
-echo '{"schema_version":"1.0","tool":"grep-fallback","degraded":true,"candidates":['
+echo '{"schema_version":"2.0","tool":"grep-fallback","candidates":['
 first=true
 candidate_index=0
 while IFS= read -r -d '' file; do
@@ -106,10 +129,9 @@ while IFS= read -r -d '' file; do
                 *api*key*|*apikey*|*akia*) secret_type="api-key"; severity="high" ;;
                 *ghp_*|*sk-*|*eyj*) secret_type="token"; severity="high" ;;
             esac
-            redacted=$(printf '%s' "$content" | sed -E 's/AKIA[0-9A-Z]{16}/AKIA...REDACTED/g; s/-----BEGIN[[:space:]][A-Z ]*PRIVATE KEY-----/[PRIVATE KEY REDACTED]/g; s/((password|passwd|pwd)[[:space:]]*[:=][[:space:]]*)[^[:space:]]+/\1...REDACTED/g; s/((api[_-]?key|apikey)[[:space:]]*[:=][[:space:]]*)[^[:space:]]+/\1...REDACTED/g; s/ghp_[0-9a-zA-Z]{30,}/ghp_...REDACTED/g; s/sk-[0-9a-zA-Z]{32,}/sk-...REDACTED/g; s/eyJ[0-9a-zA-Z_-]*\.eyJ[0-9a-zA-Z_-]*/JWT...REDACTED/g')
             candidate_id="$(printf 'SEC-%03d' "$candidate_index")"
             evidence_ref="${rel_file}:${lineno}"
-            raw_ref="candidates.json:${candidate_index}"
+            raw_ref="grep-fallback:${candidate_index}"
             if [ "$first" = true ]; then first=false; else echo ","; fi
             printf '{"id":%s,"type":%s,"classification":"candidate","severity":%s,"file":%s,"line":%s,"redacted_value":%s,"evidence_refs":[%s],"raw_ref":%s,"source":"grep-fallback"}' \
                 "$(printf '%s' "$candidate_id" | json_string)" \
@@ -117,7 +139,7 @@ while IFS= read -r -d '' file; do
                 "$(printf '%s' "$severity" | json_string)" \
                 "$(printf '%s' "$rel_file" | json_string)" \
                 "$lineno" \
-                "$(printf '%s' "$redacted" | json_string)" \
+                '"<redacted>"' \
                 "$(printf '%s' "$evidence_ref" | json_string)" \
                 "$(printf '%s' "$raw_ref" | json_string)"
         done <<< "$matches"

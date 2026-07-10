@@ -268,7 +268,8 @@ def collect_observations(repo: Path, scan: Path, surfaces: dict[str, Any]) -> li
         if not isinstance(finding, dict):
             continue
         refs = finding.get("evidence_refs", []) or []
-        files = [rel for rel in evidence_paths(finding.get("source_ref"), finding.get("sink_ref"), finding.get("entrypoint_ref"), refs) if file_exists(repo, rel, ignore_patterns)]
+        trace_refs = [step.get("file") for step in finding.get("trace", []) if isinstance(step, dict) and step.get("file")]
+        files = [rel for rel in evidence_paths(finding.get("source_ref"), finding.get("sink_ref"), finding.get("entrypoint_ref"), refs, trace_refs) if file_exists(repo, rel, ignore_patterns)]
         observations.append(
             observation(
                 oid=f"OBS-SAST-{index:03d}",
@@ -280,7 +281,7 @@ def collect_observations(repo: Path, scan: Path, surfaces: dict[str, Any]) -> li
                 files=files,
                 evidence_refs=list(dict.fromkeys([str(ref) for ref in refs] + files)),
                 raw_refs=[source_phase_ref("sast", f"verified-findings.json:{finding.get('id', index)}")],
-                summary=finding.get("description") or finding.get("impact") or finding.get("title", ""),
+                summary=finding.get("description") or finding.get("impact") or finding.get("root_cause") or finding.get("title", ""),
                 tags=[str(item) for item in finding.get("lenses", []) if isinstance(item, str)] or ["attack_path"],
             )
         )

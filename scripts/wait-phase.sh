@@ -101,10 +101,20 @@ required_paths() {
                 "${SCAN_BASE}/intrusion/phase-manifest.json"
             ;;
         final-reconciliation)
+            local reconciliation_artifact="${SCAN_BASE}/final-reconciliation/findings.json"
+            if [ -f "${SCAN_BASE}/run-manifest.json" ]; then
+                reconciliation_artifact="${SCAN_BASE}/final-reconciliation/candidates.json"
+            fi
             printf '%s\n' \
-                "${SCAN_BASE}/final-reconciliation/findings.json" \
+                "$reconciliation_artifact" \
                 "${SCAN_BASE}/final-reconciliation/summary.md" \
                 "${SCAN_BASE}/final-reconciliation/phase-manifest.json"
+            ;;
+        final-verification)
+            printf '%s\n' \
+                "${SCAN_BASE}/final-verification/findings.json" \
+                "${SCAN_BASE}/final-verification/summary.md" \
+                "${SCAN_BASE}/final-verification/phase-manifest.json"
             ;;
         report)
             printf '%s\n' \

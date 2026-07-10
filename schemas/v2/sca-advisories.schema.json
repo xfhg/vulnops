@@ -1,0 +1,20 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "VulnOps v2 SCA Advisory Evidence",
+  "type": "array",
+  "items": {
+    "type": "object",
+    "additionalProperties": false,
+    "required": ["advisory_id", "package", "version", "ecosystem", "severity", "source_lockfile", "raw_ref", "summary"],
+    "properties": {
+      "advisory_id": {"type": "string", "minLength": 1},
+      "package": {"type": "string", "minLength": 1},
+      "version": {"type": "string", "minLength": 1},
+      "ecosystem": {"type": "string", "minLength": 1},
+      "severity": {"enum": ["critical", "high", "medium", "low", "info"]},
+      "source_lockfile": {"type": "string", "minLength": 1},
+      "raw_ref": {"type": "string", "minLength": 1},
+      "summary": {"type": "string", "minLength": 1}
+    }
+  }
+}

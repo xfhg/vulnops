@@ -1,0 +1,53 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "VulnOps v2 Run Manifest",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version", "run_id", "repo_id", "repository", "commit",
+    "depth", "status", "scan_base", "created_at", "updated_at",
+    "target_fingerprint", "model", "model_diversity", "reproduction_mode",
+    "phases"
+  ],
+  "properties": {
+    "schema_version": {"const": "2.0"},
+    "run_id": {"type": "string", "minLength": 1},
+    "repo_id": {"type": "string", "minLength": 1},
+    "repository": {"type": "string", "minLength": 1},
+    "commit": {"type": "string", "minLength": 1},
+    "depth": {"enum": ["quick", "balanced", "full"]},
+    "status": {"enum": ["initialized", "running", "degraded", "failed", "complete"]},
+    "scan_base": {"type": "string", "minLength": 1},
+    "created_at": {"type": "string", "minLength": 1},
+    "updated_at": {"type": "string", "minLength": 1},
+    "target_fingerprint": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+    "model": {"type": "string", "minLength": 1},
+    "model_diversity": {"const": false},
+    "reproduction_mode": {"enum": ["off", "safe"]},
+    "phases": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "recon", "sca", "secrets", "sast", "intelligence", "triage",
+        "intrusion", "final-reconciliation", "final-verification", "report"
+      ],
+      "properties": {
+        "recon": {"$ref": "#/$defs/phaseStatus"},
+        "sca": {"$ref": "#/$defs/phaseStatus"},
+        "secrets": {"$ref": "#/$defs/phaseStatus"},
+        "sast": {"$ref": "#/$defs/phaseStatus"},
+        "intelligence": {"$ref": "#/$defs/phaseStatus"},
+        "triage": {"$ref": "#/$defs/phaseStatus"},
+        "intrusion": {"$ref": "#/$defs/phaseStatus"},
+        "final-reconciliation": {"$ref": "#/$defs/phaseStatus"},
+        "final-verification": {"$ref": "#/$defs/phaseStatus"},
+        "report": {"$ref": "#/$defs/phaseStatus"}
+      }
+    }
+  },
+  "$defs": {
+    "phaseStatus": {
+      "enum": ["pending", "running", "ok", "degraded", "failed", "skipped"]
+    }
+  }
+}

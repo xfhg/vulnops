@@ -68,6 +68,7 @@ phase_dirs = [
     ("triage", "triage"),
     ("intrusion", "intrusion"),
     ("final-reconciliation", "final-reconciliation"),
+    ("final-verification", "final-verification"),
     ("report", "report"),
 ]
 
@@ -87,6 +88,10 @@ def load_json(path: Path):
 
 
 phases = []
+run_manifest = load_json(scan / "run-manifest.json")
+is_v2 = isinstance(run_manifest, dict) and run_manifest.get("schema_version") == "2.0"
+if not is_v2:
+    phase_dirs = [item for item in phase_dirs if item[0] != "final-verification"]
 for phase, dirname in phase_dirs:
     path = scan / dirname / "phase-manifest.json"
     manifest = load_json(path)
@@ -114,18 +119,23 @@ report = load_json(report_json)
 if isinstance(report, dict) and isinstance(report.get("summary"), dict):
     summary = report["summary"]
 
-complete = validation.returncode == 0 and all(item["status"] == "ok" for item in phases)
+terminal = {"ok", "degraded", "skipped"}
+complete = validation.returncode == 0 and all(item["status"] in terminal for item in phases)
 
 print("Audit Status")
 print(f"- Scan: {rel(scan)}")
 print(f"- State: {'complete' if complete else 'not complete'}")
+if is_v2:
+    print(f"- Run ID: {run_manifest.get('run_id', 'unknown')}")
+    print(f"- Run manifest: {run_manifest.get('status', 'unknown')}")
+    print(f"- Reproduction: {run_manifest.get('reproduction_mode', 'off')}")
 for item in phases:
     print(f"- {item['phase']}: {item['status']}")
 if summary:
     print(f"- Findings: {summary.get('total', 'unknown')} total")
     counts = [
         f"{key}={summary.get(key)}"
-        for key in ("critical", "high", "medium", "low", "info")
+        for key in ("critical", "high", "medium", "low", "informational", "info")
         if key in summary
     ]
     if counts:

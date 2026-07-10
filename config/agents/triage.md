@@ -50,6 +50,14 @@ For each duplicate group, create a merged finding that preserves:
 - Evidence from all source scans
 - The most specific severity rating
 - Any intelligence card IDs and graph scope IDs that explain reachability, blast radius, dependency impact, or coverage uncertainty
+- SAST attacker model, intended behavior, ordered trace, typed conditions,
+  validation tier, reproduction/test/patch references, category,
+  attack-class/methodology/lens metadata, structured root-cause location, and
+  closure reason
+
+SAST input has already been deduplicated by code root cause. Do not repeat that
+work; deduplicate only across scan sources or clearly linked multi-source
+evidence.
 
 ### Step 3: False Positive Filtering
 

@@ -1,186 +1,57 @@
 #!/usr/bin/env python3
-"""Apply independent verifier outcomes and emit canonical VulnOps v2 findings."""
-
+"""Finalize strict synthesized findings from fresh-context verifier results."""
 from __future__ import annotations
-
-import argparse
-import importlib.util
-import json
-import os
-import re
+import argparse, importlib.util, json, os, re
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
-
-
-SAFE_ID = re.compile(r"^(?!.*\.\.)[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$")
-
-
-def now() -> str:
-    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-
-
-def load(path: Path, fallback: Any) -> Any:
-    try:
-        return json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
-        return fallback
-
-
-def write_json(path: Path, value: object) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    temporary = path.with_name(f".{path.name}.{os.getpid()}.tmp")
-    temporary.write_text(json.dumps(value, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-    temporary.replace(path)
-
-
-def write_text(path: Path, value: str) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    temporary = path.with_name(f".{path.name}.{os.getpid()}.tmp")
-    temporary.write_text(value, encoding="utf-8")
-    temporary.replace(path)
-
-
-def candidate_items(document: object) -> list[dict]:
-    if isinstance(document, list):
-        return [item for item in document if isinstance(item, dict)]
-    if isinstance(document, dict) and isinstance(document.get("findings"), list):
-        return [item for item in document["findings"] if isinstance(item, dict)]
-    return []
-
-
-def full_finding_errors(root: Path, repo: Path, finding: object) -> list[str]:
-    spec = importlib.util.spec_from_file_location("vulnops_validate_json", root / "scripts/validate-json.py")
-    if spec is None or spec.loader is None:
-        return ["cannot load strict finding validator"]
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    schema = load(root / "schemas/v2/final-findings.schema.json", {})
-    errors = module.Validator(schema).collect(finding, schema["$defs"]["fullFinding"])
-    wrapper = {"findings": [finding]}
-    errors.extend(module.semantic_errors(wrapper, "final-findings", repo))
-    return errors
-
-
-def result_ref(scan: Path, finding_id: str) -> str:
-    return f"final-verification/results/{finding_id}.json"
-
-
-def set_independent_ref(finding: dict, ref: str) -> None:
-    provenance = finding.setdefault("provenance", {})
-    provenance["independent_verification_ref"] = ref
-
-
-def rejected(candidate: dict, result: dict, ref: str) -> dict:
-    provenance = dict(candidate.get("provenance", {}))
-    provenance["independent_verification_ref"] = ref
-    return {
-        "id": candidate["id"],
-        "verdict": "rejected",
-        "finding_kind": candidate["finding_kind"],
-        "title": candidate["title"],
-        "closure_reason": str(result.get("closure_reason", "independent verification rejected the finding")),
-        "provenance": provenance,
-    }
-
-
-def main() -> int:
-    parser = argparse.ArgumentParser()
-    parser.add_argument("repo_path", type=Path)
-    parser.add_argument("scan_base", type=Path)
-    args = parser.parse_args()
-    root = Path(__file__).resolve().parent.parent
-    context_path = Path(os.environ.get("VULNOPS_AUDIT_CONTEXT", root / ".harness/audit-context.json"))
-    context = load(context_path, {})
-    candidates_doc = load(args.scan_base / "final-reconciliation/candidates.json", [])
-    candidates = candidate_items(candidates_doc)
-    findings: list[dict] = []
-    warnings: list[str] = []
-    errors: list[str] = []
-
+SAFE=re.compile(r"^F-[0-9]{3}$")
+def now()->str:return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+def load(path:Path,fallback:Any)->Any:
+    try:return json.loads(path.read_text(encoding="utf-8"))
+    except (OSError,json.JSONDecodeError):return fallback
+def write(path:Path,doc:object)->None:
+    path.parent.mkdir(parents=True,exist_ok=True); tmp=path.with_name(f".{path.name}.{os.getpid()}.tmp"); tmp.write_text(json.dumps(doc,indent=2,sort_keys=True)+"\n"); tmp.replace(path)
+def validate_candidate(root:Path,candidate:object)->list[str]:
+    spec=importlib.util.spec_from_file_location("validator",root/"scripts/validate-json.py"); module=importlib.util.module_from_spec(spec); assert spec and spec.loader; spec.loader.exec_module(module); schema=load(root/"schemas/v2/synthesis-findings.schema.json",{}); return module.Validator(schema).collect(candidate,schema["$defs"]["finding"])
+def main()->int:
+    p=argparse.ArgumentParser(); p.add_argument("repo_path",type=Path); p.add_argument("scan_base",type=Path); a=p.parse_args(); root=Path(__file__).resolve().parent.parent; context=load(Path(os.environ.get("VULNOPS_AUDIT_CONTEXT",root/".harness/audit-context.json")),{}); primary=str(context.get("model",os.environ.get("OMP_MODEL_SELECTOR",""))); verifier=str(context.get("verifier_model",os.environ.get("OMP_VERIFIER_MODEL_SELECTOR",""))); diversity=primary!=verifier; source=load(a.scan_base/"synthesis/findings.json",{}); candidates=source.get("findings",[]) if isinstance(source,dict) else []; findings=[]; rejections=[]; errors=[]
+    ids=[str(x.get("id")) for x in candidates if isinstance(x,dict)]
+    if len(ids)!=len(set(ids)):errors.append("synthesis contains duplicate finding IDs")
     for candidate in candidates:
-        finding_id = str(candidate.get("id", ""))
-        if not SAFE_ID.fullmatch(finding_id):
-            errors.append(f"reconciled candidate has unsafe id: {finding_id!r}")
-            continue
-        path = args.scan_base / result_ref(args.scan_base, finding_id)
-        result = load(path, None)
-        if not isinstance(result, dict):
-            errors.append(f"missing independent verifier result for {finding_id}")
-            continue
-        status = result.get("status")
-        ref = result_ref(args.scan_base, finding_id)
-        if status == "verified":
-            finding = dict(candidate)
-            set_independent_ref(finding, ref)
-            findings.append(finding)
-        elif status == "corrected":
-            corrected = result.get("corrected_finding")
-            if not isinstance(corrected, dict) or corrected.get("id") != finding_id:
-                errors.append(f"invalid corrected finding for {finding_id}")
-                continue
-            correction_errors = full_finding_errors(root, args.repo_path, corrected)
-            if correction_errors:
-                errors.append(f"corrected finding {finding_id} is invalid: {'; '.join(correction_errors[:8])}")
-                continue
-            set_independent_ref(corrected, ref)
-            findings.append(corrected)
-        elif status == "needs_environment":
-            finding = dict(candidate)
-            finding["verdict"] = "needs_environment"
-            verification = dict(finding.get("verification", {}))
-            verification["level"] = "environment_required"
-            verification["reproduction_status"] = "environment_required"
-            finding["verification"] = verification
-            finding["closure_reason"] = str(result.get("closure_reason"))
-            set_independent_ref(finding, ref)
-            findings.append(finding)
-        elif status == "rejected":
-            findings.append(rejected(candidate, result, ref))
-        else:
-            errors.append(f"unknown independent verifier status for {finding_id}")
-
-    output = {
-        "schema_version": "2.0",
-        "run_id": str(context.get("run_id", "unknown")),
-        "model_diversity": False,
-        "findings": findings,
-    }
-    write_json(args.scan_base / "final-verification/findings.json", output)
-
-    confirmed = sum(1 for item in findings if item.get("verdict") == "confirmed")
-    needs_environment = sum(1 for item in findings if item.get("verdict") == "needs_environment")
-    rejected_count = sum(1 for item in findings if item.get("verdict") == "rejected")
-    write_text(
-        args.scan_base / "final-verification/summary.md",
-        "# Independent Final Verification\n\n"
-        f"- Confirmed: {confirmed}\n"
-        f"- Needs environment: {needs_environment}\n"
-        f"- Rejected: {rejected_count}\n"
-        f"- Model diversity: false\n",
-    )
-    manifest = {
-        "phase": "final-verification",
-        "status": "failed" if errors else "degraded" if needs_environment else "ok",
-        "started_at": now(),
-        "completed_at": now(),
-        "inputs": ["final-reconciliation/candidates.json"],
-        "outputs": ["final-verification/findings.json", "final-verification/summary.md"],
-        "coverage": {"candidates": len(candidates), "confirmed": confirmed, "needs_environment": needs_environment, "rejected": rejected_count},
-        "tool_versions": {"model": str(context.get("model", os.environ.get("OMP_MODEL_SELECTOR", "unknown"))), "model_diversity": False},
-        "warnings": warnings,
-        "errors": errors,
-    }
-    write_json(args.scan_base / "final-verification/phase-manifest.json", manifest)
-
-    ledger_path = args.scan_base / "sast/coverage-ledger.json"
-    ledger = load(ledger_path, {})
-    if isinstance(ledger, dict) and isinstance(ledger.get("funnel"), dict):
-        ledger["funnel"]["final_rejected"] = rejected_count
-        ledger["funnel"]["reported"] = confirmed + needs_environment
-        write_json(ledger_path, ledger)
-    return 1 if errors else 0
-
-
-if __name__ == "__main__":
-    raise SystemExit(main())
+        fid=str(candidate.get("id","")); ref=f"final-verification/results/{fid}.json"
+        if not SAFE.fullmatch(fid):errors.append(f"unsafe synthesized finding ID: {fid!r}");continue
+        if (candidate.get("verification") or {}).get("model")!=primary:errors.append(f"{fid} source validation did not use the configured primary model");continue
+        result=load(a.scan_base/ref,None)
+        if not isinstance(result,dict):errors.append(f"missing independent verifier result for {fid}");continue
+        if result.get("model")!=verifier or result.get("model_diversity") is not diversity:errors.append(f"{fid} verifier model metadata mismatch");continue
+        primitive_ids=[str(x.get("primitive_id")) for x in candidate.get("primitive_steps",[]) if isinstance(x,dict)]
+        result_ids=[str(x.get("primitive_id")) for x in result.get("primitive_results",[]) if isinstance(x,dict)]
+        if candidate.get("finding_kind")=="chain":
+            if len(primitive_ids)<2:errors.append(f"{fid} chain requires at least two primitive steps");continue
+            if result_ids!=primitive_ids:errors.append(f"{fid} verifier did not assess every chain primitive in order");continue
+            if result.get("status") in {"verified","corrected"} and any(x.get("status")!="verified" for x in result.get("primitive_results",[])):errors.append(f"{fid} cannot verify a chain with an unverified primitive");continue
+        elif result.get("primitive_results"):
+            errors.append(f"{fid} non-chain verifier result must not contain primitive results");continue
+        status=result.get("status")
+        if status=="rejected":rejections.append({"id":fid,"reason":str(result.get("closure_reason")),"independent_verification_ref":ref});continue
+        finding=dict(candidate)
+        if status=="corrected":
+            corrected=result.get("corrected_finding")
+            if not isinstance(corrected,dict) or corrected.get("id")!=fid:errors.append(f"invalid corrected finding for {fid}");continue
+            problems=validate_candidate(root,corrected)
+            if problems:errors.append(f"corrected finding {fid} is invalid: {'; '.join(problems[:8])}");continue
+            finding=corrected
+        elif status not in {"verified","needs_environment"}:errors.append(f"unknown verifier status for {fid}");continue
+        if status=="needs_environment":finding["status"]="needs_environment"; finding["verification"]={**finding["verification"],"level":"environment_required"}; finding["closure_rationale"]=str(result.get("closure_reason"))
+        finding["verdict"]="needs_environment" if finding.get("status")=="needs_environment" else "confirmed"; finding["model_diversity"]=diversity; finding["independent_verification_ref"]=ref; findings.append(finding)
+    extras={x.stem for x in (a.scan_base/"final-verification/results").glob("*.json")}-set(ids)
+    if extras:errors.append("orphan verifier results: "+", ".join(sorted(extras)))
+    output={"schema_version":"2.0","run_id":str(context.get("run_id","")),"model_diversity":diversity,"findings":findings,"rejections":rejections}; write(a.scan_base/"final-verification/findings.json",output)
+    counts={"confirmed":sum(x["verdict"]=="confirmed" for x in findings),"needs_environment":sum(x["verdict"]=="needs_environment" for x in findings),"rejected":len(rejections)}; (a.scan_base/"final-verification/summary.md").write_text("# Independent Final Verification\n\n"+"\n".join(f"- {k.replace('_',' ').title()}: {v}" for k,v in counts.items())+f"\n- Model diversity: {str(diversity).lower()}\n")
+    manifest={"phase":"final-verification","status":"failed" if errors else "degraded" if counts["needs_environment"] else "ok","started_at":now(),"completed_at":now(),"inputs":["synthesis/findings.json"],"outputs":["final-verification/findings.json","final-verification/summary.md"],"coverage":{"candidates":len(candidates),**counts},"tool_versions":{"primary_model":primary,"verifier_model":verifier,"model_diversity":str(diversity).lower()},"warnings":[],"errors":errors}; write(a.scan_base/"final-verification/phase-manifest.json",manifest)
+    if errors:
+        for error in errors:print(f"[finalize-verification] ERROR: {error}",file=__import__('sys').stderr)
+        return 1
+    return 0
+if __name__=="__main__":raise SystemExit(main())

@@ -7,6 +7,10 @@ HARNESS_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 # shellcheck source=scripts/harness-lib.sh
 source "${HARNESS_ROOT}/scripts/harness-lib.sh"
 harness_setup_containment "$HARNESS_ROOT"
+# run-audit.sh is a documented standalone entry point as well as an OMP child.
+# Load canonical configuration here so model identity never depends on a parent
+# shell having invoked run.sh first.
+eval "$("${HARNESS_ROOT}/scripts/load-config.sh")"
 TARGET_DIR="${HARNESS_ROOT}/target"
 
 RED='\033[0;31m'
@@ -26,13 +30,13 @@ Detect the target repo inside target/ and prepare audit paths.
 The user must have already cloned the repo into target/.
 
 Arguments:
-  depth   quick|balanced|full (default: quick)
+  depth   quick|balanced|full (default: harness.default_depth)
 
 The script expects a single subdirectory in target/ (e.g. target/myrepo/).
 If there's a .git inside target/ directly, that works too.
 
 Examples:
-  $0              # Quick audit
+  $0              # Configured default depth
   $0 balanced     # Balanced depth
 
 EOF
@@ -92,6 +96,11 @@ main() {
         err "Missing tools. Install them first."
         exit 1
     fi
+    if ! bash "${HARNESS_ROOT}/scripts/probe-toolchain.sh" >/dev/null; then
+        err "Audit toolchain failed its contained functional probe."
+        exit 1
+    fi
+    log "  toolchain: functional contracts passed"
 
     # ── Find repo ──
     local clone_dir
@@ -121,6 +130,8 @@ main() {
     local repo_scan_root="${HARNESS_ROOT}/scans/${repo_id}"
     local ctx="${HARNESS_ROOT}/.harness/audit-context.json"
     local reproduction_mode="${VULNOPS_REPRODUCTION_MODE:-off}"
+    local primary_model="${OMP_MODEL_SELECTOR:-${ON_PREM_MODEL_NAME:-unknown}}"
+    local verifier_model="${OMP_VERIFIER_MODEL_SELECTOR:-${primary_model}}"
     case "$reproduction_mode" in
         off|safe) ;;
         *) err "Invalid reproduction mode: ${reproduction_mode}"; exit 1 ;;
@@ -134,37 +145,9 @@ main() {
     # never read as audit input; a new isolated run is created instead.
     if [ -f "$ctx" ]; then
         local resume_fields
-        resume_fields="$(python3 - "$ctx" "$clone_dir" "$short_sha" "$depth" "$target_fingerprint" "$reproduction_mode" <<'PY'
-import json
-import sys
-from pathlib import Path
-
-path = Path(sys.argv[1])
-try:
-    doc = json.loads(path.read_text())
-except Exception:
-    raise SystemExit(0)
-if doc.get("schema_version") != "2.0":
-    raise SystemExit(0)
-if str(doc.get("repo_path")) != sys.argv[2]:
-    raise SystemExit(0)
-if str(doc.get("short_sha")) != sys.argv[3] or str(doc.get("depth")) != sys.argv[4]:
-    raise SystemExit(0)
-if str(doc.get("target_fingerprint")) != sys.argv[5]:
-    raise SystemExit(0)
-if str(doc.get("reproduction_mode")) != sys.argv[6]:
-    raise SystemExit(0)
-scan_base = Path(str(doc.get("scan_base", "")))
-manifest = scan_base / "run-manifest.json"
-try:
-    run = json.loads(manifest.read_text())
-except Exception:
-    raise SystemExit(0)
-if run.get("status") in {"complete", "failed"}:
-    raise SystemExit(0)
-print(f"{doc.get('run_id', '')}\t{scan_base}")
-PY
-)"
+        resume_fields="$(python3 "${HARNESS_ROOT}/scripts/resume-run.py" \
+            "$ctx" "$clone_dir" "$short_sha" "$depth" "$target_fingerprint" \
+            "$reproduction_mode" "$primary_model" "$verifier_model")"
         if [ -n "$resume_fields" ]; then
             IFS=$'\t' read -r run_id scan_base <<<"$resume_fields"
             resumed=true
@@ -180,30 +163,31 @@ PY
     # ── Create scan directories ──
     mkdir -p "${scan_base}/repo-context"
     mkdir -p "${scan_base}/repo-context/research"
-    mkdir -p "${scan_base}/sca/findings"
+    mkdir -p "${scan_base}/tool-collection"
     mkdir -p "${scan_base}/sast/deepdive"
     mkdir -p "${scan_base}/sast/verify"
     mkdir -p "${scan_base}/sast/reproduction"
     mkdir -p "${scan_base}/sast/fixes"
-    mkdir -p "${scan_base}/intelligence/codegraph-runs"
-    mkdir -p "${scan_base}/intelligence"
-    mkdir -p "${scan_base}/triage"
+    mkdir -p "${scan_base}/campaign-planning"
     mkdir -p "${scan_base}/report"
-    mkdir -p "${scan_base}/intrusion/findings"
-    mkdir -p "${scan_base}/secrets/findings"
-    mkdir -p "${scan_base}/intrusion"
+    mkdir -p "${scan_base}/intrusion/results"
     mkdir -p "${scan_base}/intrusion/codegraph-runs"
-    mkdir -p "${scan_base}/final-reconciliation"
+    mkdir -p "${scan_base}/synthesis"
     mkdir -p "${scan_base}/final-verification/results"
 
-    # ── codegraph: required AST toolkit. Index lives under ${scan_base}/.codegraph
-    # so two audits against different repos don't clobber each other's index.
-    # ${clone_dir} is the actual checked-out target; the per-scan index is
-    # the parallel branch the agents consult.
+    # ── codegraph indexes an immutable harness-local source snapshot. The
+    # upstream CLI stores its database beneath the indexed project, so it must
+    # never be pointed at the read-only target checkout.
     if [ -x "${HARNESS_ROOT}/bins/codegraph" ]; then
         CODEGRAPH_TARGET_DIR="${clone_dir}" \
-        CODEGRAPH_INDEX_DIR="${scan_base}/.codegraph" \
-            bash "${HARNESS_ROOT}/scripts/setup-codegraph.sh" || true
+        CODEGRAPH_RUNTIME_DIR="${HARNESS_ROOT}/.harness/codegraph/${run_id}" \
+            bash "${HARNESS_ROOT}/scripts/setup-codegraph.sh"
+    fi
+    local post_index_fingerprint
+    post_index_fingerprint="$(python3 "${HARNESS_ROOT}/scripts/target-fingerprint.py" "$clone_dir")"
+    if [ "$post_index_fingerprint" != "$target_fingerprint" ]; then
+        err "Target working tree changed while preparing the Codegraph snapshot."
+        exit 1
     fi
 
     # ── Write v2 run manifest, task ledger, and audit context atomically ──
@@ -219,7 +203,8 @@ PY
         --depth "$depth"
         --target-fingerprint "$target_fingerprint"
         --reproduction-mode "$reproduction_mode"
-        --model "${OMP_MODEL_SELECTOR:-${ON_PREM_MODEL_NAME:-unknown}}"
+        --model "$primary_model"
+        --verifier-model "$verifier_model"
     )
     if [ "$resumed" = true ]; then
         init_args+=(--resume)
@@ -235,7 +220,7 @@ PY
     log "  Depth:      ${depth}"
     log "  Reproduction: ${reproduction_mode}"
     if [ "$resumed" = true ]; then
-        log "  Resume:     current incomplete v2 run"
+        log "  Resume:     current incomplete canonical v2 run"
     fi
     log ""
     log "Context: ${ctx}"

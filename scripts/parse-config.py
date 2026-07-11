@@ -16,7 +16,7 @@ from pathlib import Path
 try:
     import tomllib  # Python 3.11+ stdlib
 except ModuleNotFoundError:
-    # Python < 3.11 fallback — shouldn't happen on the target venv, but
+    # Python < 3.11 fallback — shouldn't happen on the supported host, but
     # fail gracefully rather than crashing.
     sys.exit(0)
 
@@ -54,9 +54,8 @@ def main() -> None:
     provider_name = str(provider.get("name", "on-prem") or "on-prem")
     provider_api = str(provider.get("api", "openai-completions") or "openai-completions")
     provider_auth = str(provider.get("auth", "api-key") or "api-key")
-    selector = str(llm.get("selector", "") or "")
-    if not selector and model:
-        selector = f"{provider_name}/{model}"
+    selector = str(llm.get("selector", "") or "").strip()
+    verifier_selector = str(llm.get("verification", {}).get("selector", "") or "").strip() or selector
 
     exports: list[tuple[str, str]] = [
         ("VULNOPS_DEFAULT_DEPTH", str(harness.get("default_depth", "quick") or "quick")),
@@ -67,6 +66,7 @@ def main() -> None:
         ("ON_PREM_PROVIDER_API", provider_api),
         ("ON_PREM_PROVIDER_AUTH", provider_auth),
         ("OMP_MODEL_SELECTOR", selector),
+        ("OMP_VERIFIER_MODEL_SELECTOR", verifier_selector),
         ("VULNOPS_REPRODUCTION_MODE", str(reproduction.get("mode", "off") or "off")),
         ("VULNOPS_REPRODUCTION_SANDBOX", str(reproduction.get("sandbox", "auto") or "auto")),
         ("VULNOPS_REPRODUCTION_TIMEOUT_SECONDS", str(reproduction.get("timeout_seconds", 120))),

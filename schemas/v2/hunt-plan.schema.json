@@ -60,12 +60,12 @@
       "items": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["id", "cell_ids", "subsystem", "attack_class_id", "domain", "methodology_refs", "lenses", "files", "entrypoints", "context_packet", "evidence_refs", "attempt", "round"],
+        "required": ["id", "cell_ids", "subsystem", "attack_class_ids", "domain", "methodology_refs", "lenses", "files", "entrypoints", "context_packet", "evidence_refs", "attempt", "round"],
         "properties": {
           "id": {"type": "string", "pattern": "^(?!.*\\.\\.)[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$"},
           "cell_ids": {"type": "array", "items": {"type": "string", "pattern": "^(?!.*\\.\\.)[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$"}, "minItems": 1},
           "subsystem": {"type": "string", "minLength": 1},
-          "attack_class_id": {"type": "string", "minLength": 1},
+          "attack_class_ids": {"type": "array", "items": {"type": "string", "minLength": 1}, "minItems": 1, "maxItems": 4, "uniqueItems": true},
           "domain": {"enum": ["general", "ai_llm", "http_auth", "client", "native", "mobile", "iac", "etl"]},
           "methodology_refs": {"type": "array", "items": {"type": "string", "minLength": 1}, "minItems": 1},
           "lenses": {"type": "array", "items": {"type": "string", "minLength": 1}},

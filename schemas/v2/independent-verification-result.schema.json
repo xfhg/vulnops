@@ -1,31 +1,14 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "VulnOps v2 Independent Verification Result",
-  "type": "object",
-  "additionalProperties": false,
-  "required": ["schema_version", "finding_id", "status", "closure_reason", "evidence_refs", "corrections", "corrected_finding", "model", "model_diversity"],
+  "type": "object", "additionalProperties": false,
+  "required": ["schema_version", "finding_id", "status", "closure_reason", "evidence_refs", "primitive_results", "corrections", "corrected_finding", "model", "model_diversity"],
   "properties": {
-    "schema_version": {"const": "2.0"},
-    "finding_id": {"type": "string", "pattern": "^(?!.*\\.\\.)[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$"},
-    "status": {"enum": ["verified", "corrected", "rejected", "needs_environment"]},
-    "closure_reason": {"type": "string", "minLength": 1},
-    "evidence_refs": {"type": "array", "items": {"type": "string"}, "minItems": 1},
-    "corrections": {
-      "type": "array",
-      "items": {
-        "type": "object",
-        "additionalProperties": false,
-        "required": ["field", "before", "after", "reason"],
-        "properties": {
-          "field": {"type": "string", "minLength": 1},
-          "before": {"type": "string"},
-          "after": {"type": "string"},
-          "reason": {"type": "string", "minLength": 1}
-        }
-      }
-    },
-    "corrected_finding": {"type": ["object", "null"]},
-    "model": {"type": "string", "minLength": 1},
-    "model_diversity": {"const": false}
+    "schema_version": {"const": "2.0"}, "finding_id": {"type": "string", "pattern": "^F-[0-9]{3}$"},
+    "status": {"enum": ["verified", "corrected", "rejected", "needs_environment"]}, "closure_reason": {"type": "string", "minLength": 1},
+    "evidence_refs": {"type": "array", "items": {"type": "string", "minLength": 1}, "minItems": 1},
+    "primitive_results": {"type": "array", "items": {"type": "object", "additionalProperties": false, "required": ["primitive_id", "status", "evidence_refs", "reason"], "properties": {"primitive_id": {"type": "string", "minLength": 1}, "status": {"enum": ["verified", "rejected", "needs_environment"]}, "evidence_refs": {"type": "array", "items": {"type": "string", "minLength": 1}, "minItems": 1}, "reason": {"type": "string", "minLength": 1}}}},
+    "corrections": {"type": "array", "items": {"type": "object", "additionalProperties": false, "required": ["field", "before", "after", "reason"], "properties": {"field": {"type": "string", "minLength": 1}, "before": {"type": "string"}, "after": {"type": "string"}, "reason": {"type": "string", "minLength": 1}}}},
+    "corrected_finding": {"type": ["object", "null"]}, "model": {"type": "string", "minLength": 1}, "model_diversity": {"type": "boolean"}
   }
 }

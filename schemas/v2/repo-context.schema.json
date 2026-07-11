@@ -30,7 +30,12 @@
           "base_path": {"type": "string"},
           "languages": {"type": "array", "items": {"type": "string"}, "minItems": 1},
           "frameworks": {"type": "array", "items": {"type": "string"}},
-          "dependency_files": {"type": "array", "items": {"type": "string"}},
+          "dependency_files": {
+            "type": "array",
+            "uniqueItems": true,
+            "description": "Target-relative Wraith-supported lockfiles/manifests only; the semantic validator owns the canonical filename contract.",
+            "items": {"type": "string", "minLength": 1}
+          },
           "entry_points": {
             "type": "array",
             "items": {

@@ -10,6 +10,8 @@ import sys
 from pathlib import Path
 from typing import Any
 
+from dependency_contract import discover_dependency_files, is_supported_dependency_file
+
 
 class Validator:
     def __init__(self, schema: dict[str, Any]) -> None:
@@ -260,6 +262,7 @@ def semantic_errors(document: Any, kind: str, repo: Path | None) -> list[str]:
     elif kind == "repo-context" and isinstance(document, dict):
         project_ids: set[str] = set()
         entrypoint_ids: set[str] = set()
+        dependency_files: set[str] = set()
         for index, project in enumerate(document.get("projects", [])):
             if not isinstance(project, dict):
                 continue
@@ -269,12 +272,30 @@ def semantic_errors(document: Any, kind: str, repo: Path | None) -> list[str]:
             project_ids.add(project_id)
             if repo is not None:
                 base = safe_repo_file(repo, str(project.get("base_path", "")) or ".")
-                if base is None or not base.exists():
+                if base is None or not base.is_dir():
                     errors.append(f"$.projects[{index}].base_path is not target-relative")
                 for file_index, relative in enumerate(project.get("dependency_files", [])):
-                    path = safe_repo_file(repo, str(relative))
+                    relative_text = str(relative)
+                    path = safe_repo_file(repo, relative_text)
                     if path is None or not path.is_file():
                         errors.append(f"$.projects[{index}].dependency_files[{file_index}] does not exist")
+                    if not is_supported_dependency_file(relative_text):
+                        errors.append(f"$.projects[{index}].dependency_files[{file_index}] is not a supported Wraith input")
+                    if relative_text in dependency_files:
+                        errors.append(f"$.projects[{index}].dependency_files[{file_index}] is assigned to more than one project")
+                    dependency_files.add(relative_text)
+                    if base is not None and path is not None:
+                        try:
+                            path.relative_to(base)
+                        except ValueError:
+                            errors.append(f"$.projects[{index}].dependency_files[{file_index}] is outside the project base_path")
+        if repo is not None:
+            discovered = set(discover_dependency_files(repo))
+            declared = dependency_files
+            for relative in sorted(discovered - declared):
+                errors.append(f"$.projects is missing supported dependency input {relative!r}")
+            for relative in sorted(declared - discovered):
+                errors.append(f"$.projects declares dependency input that deterministic discovery did not find: {relative!r}")
             for entry_index, entrypoint in enumerate(project.get("entry_points", [])):
                 if not isinstance(entrypoint, dict):
                     continue
@@ -310,19 +331,24 @@ def semantic_errors(document: Any, kind: str, repo: Path | None) -> list[str]:
                 path = safe_repo_file(repo, str(item.get("path", "")))
                 if path is None or not path.is_file():
                     errors.append(f"$.security_relevant_files[{index}].path does not exist")
-    elif kind == "sca-advisories" and isinstance(document, list) and repo is not None:
+    elif kind == "sca-advisories" and isinstance(document, dict) and repo is not None:
         seen: set[tuple[str, str, str, str]] = set()
-        for index, advisory in enumerate(document):
+        advisories = document.get("advisories", [])
+        if document.get("advisory_count") != len(advisories):
+            errors.append("$.advisory_count does not match advisories")
+        for index, advisory in enumerate(advisories):
             if not isinstance(advisory, dict):
                 continue
             key = tuple(str(advisory.get(name, "")) for name in ("advisory_id", "package", "version", "source_lockfile"))
             if key in seen:
-                errors.append(f"$[{index}] duplicates an advisory/package/version/lockfile record")
+                errors.append(f"$.advisories[{index}] duplicates an advisory/package/version/lockfile record")
             seen.add(key)
             path = safe_repo_file(repo, str(advisory.get("source_lockfile", "")))
             if path is None or not path.is_file():
-                errors.append(f"$[{index}].source_lockfile does not exist")
+                errors.append(f"$.advisories[{index}].source_lockfile does not exist")
     elif kind == "secrets-redacted" and isinstance(document, dict) and repo is not None:
+        if document.get("candidate_count") != len(document.get("candidates", [])):
+            errors.append("$.candidate_count does not match candidates")
         seen: set[str] = set()
         for index, candidate in enumerate(document.get("candidates", [])):
             if not isinstance(candidate, dict):
@@ -340,55 +366,6 @@ def semantic_errors(document: Any, kind: str, repo: Path | None) -> list[str]:
             line = candidate.get("line")
             if not isinstance(line, int) or line < 1 or line > max(1, len(lines)):
                 errors.append(f"$.candidates[{index}].line is outside {relative!r}")
-    elif kind == "final-findings" and isinstance(document, dict):
-        seen: set[str] = set()
-        for index, finding in enumerate(document.get("findings", [])):
-            if not isinstance(finding, dict):
-                continue
-            finding_id = str(finding.get("id", ""))
-            if finding_id in seen:
-                errors.append(f"$.findings[{index}].id is duplicated: {finding_id!r}")
-            seen.add(finding_id)
-            if finding.get("verdict") == "rejected":
-                continue
-            finding_kind = finding.get("finding_kind")
-            trace = finding.get("trace")
-            if finding_kind == "code":
-                validate_trace(trace, f"$.findings[{index}].trace", repo, errors)
-                validate_source_location(finding.get("root_cause_location"), f"$.findings[{index}].root_cause_location", repo, errors)
-                location = finding.get("root_cause_location") or {}
-                trace_locations = {
-                    (str(step.get("file")), step.get("line"), str(step.get("scope")))
-                    for step in trace or []
-                    if isinstance(step, dict)
-                }
-                key = (str(location.get("file")), location.get("line"), str(location.get("scope")))
-                if key not in trace_locations:
-                    errors.append(f"$.findings[{index}].root_cause_location must identify a cited trace step")
-                if finding.get("dependency") is not None or finding.get("secret") is not None:
-                    errors.append(f"$.findings[{index}]: code finding has source-specific payload")
-            elif finding_kind == "dependency":
-                if finding.get("dependency") is None or finding.get("secret") is not None:
-                    errors.append(f"$.findings[{index}]: dependency payload mismatch")
-            elif finding_kind == "secret":
-                if finding.get("secret") is None or finding.get("dependency") is not None:
-                    errors.append(f"$.findings[{index}]: secret payload mismatch")
-                secret = finding.get("secret") or {}
-                if repo is not None and safe_repo_file(repo, str(secret.get("file", ""))) is None:
-                    errors.append(f"$.findings[{index}].secret.file escapes target")
-            verdict = finding.get("verdict")
-            level = (finding.get("verification") or {}).get("level")
-            verification = finding.get("verification") or {}
-            remediation = finding.get("remediation") or {}
-            if verdict == "needs_environment" and level != "environment_required":
-                errors.append(f"$.findings[{index}]: needs_environment must use environment_required")
-            if verdict == "confirmed" and level == "environment_required":
-                errors.append(f"$.findings[{index}]: confirmed may not use environment_required")
-            if level == "dynamic_verified":
-                if verification.get("reproduction_status") != "dynamic_verified" or not verification.get("reproduction_ref"):
-                    errors.append(f"$.findings[{index}]: dynamic verification requires a dynamic reproduction reference")
-                if remediation.get("patch_status") != "fail_pass_verified" or not remediation.get("test_ref") or not remediation.get("patch_ref"):
-                    errors.append(f"$.findings[{index}]: dynamic verification requires fail-pass test and patch artifacts")
     elif kind == "hunt-plan" and isinstance(document, dict):
         cell_ids = [str(cell.get("id")) for cell in document.get("cells", []) if isinstance(cell, dict)]
         if len(cell_ids) != len(set(cell_ids)):
@@ -482,7 +459,7 @@ def main() -> int:
     parser.add_argument("document", type=Path)
     parser.add_argument(
         "--semantic",
-        choices=["none", "candidate", "validation-result", "reproduction-result", "repo-context", "security-surfaces", "sca-advisories", "secrets-redacted", "final-findings", "hunt-plan", "threat-model"],
+        choices=["none", "candidate", "validation-result", "reproduction-result", "repo-context", "security-surfaces", "sca-advisories", "secrets-redacted", "hunt-plan", "threat-model"],
         default="none",
     )
     parser.add_argument("--target", type=Path)

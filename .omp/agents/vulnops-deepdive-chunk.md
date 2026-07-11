@@ -1,6 +1,6 @@
 ---
 name: vulnops-deepdive-chunk
-description: Focused SAST deep-dive worker for one task-manifest chunk
+description: Focused SAST deep-dive worker for one batched subsystem task
 tools:
   - read
   - write

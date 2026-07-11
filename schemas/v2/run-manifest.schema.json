@@ -4,13 +4,14 @@
   "type": "object",
   "additionalProperties": false,
   "required": [
-    "schema_version", "run_id", "repo_id", "repository", "commit",
+    "schema_version", "workflow", "run_id", "repo_id", "repository", "commit",
     "depth", "status", "scan_base", "created_at", "updated_at",
-    "target_fingerprint", "model", "model_diversity", "reproduction_mode",
+    "target_fingerprint", "model", "verifier_model", "model_diversity", "reproduction_mode",
     "phases"
   ],
   "properties": {
     "schema_version": {"const": "2.0"},
+    "workflow": {"const": "canonical-redteam-v2"},
     "run_id": {"type": "string", "minLength": 1},
     "repo_id": {"type": "string", "minLength": 1},
     "repository": {"type": "string", "minLength": 1},
@@ -22,24 +23,23 @@
     "updated_at": {"type": "string", "minLength": 1},
     "target_fingerprint": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
     "model": {"type": "string", "minLength": 1},
-    "model_diversity": {"const": false},
+    "verifier_model": {"type": "string", "minLength": 1},
+    "model_diversity": {"type": "boolean"},
     "reproduction_mode": {"enum": ["off", "safe"]},
     "phases": {
       "type": "object",
       "additionalProperties": false,
       "required": [
-        "recon", "sca", "secrets", "sast", "intelligence", "triage",
-        "intrusion", "final-reconciliation", "final-verification", "report"
+        "recon", "tool-collection", "sast", "campaign-planning",
+        "intrusion", "synthesis", "final-verification", "report"
       ],
       "properties": {
         "recon": {"$ref": "#/$defs/phaseStatus"},
-        "sca": {"$ref": "#/$defs/phaseStatus"},
-        "secrets": {"$ref": "#/$defs/phaseStatus"},
+        "tool-collection": {"$ref": "#/$defs/phaseStatus"},
         "sast": {"$ref": "#/$defs/phaseStatus"},
-        "intelligence": {"$ref": "#/$defs/phaseStatus"},
-        "triage": {"$ref": "#/$defs/phaseStatus"},
+        "campaign-planning": {"$ref": "#/$defs/phaseStatus"},
         "intrusion": {"$ref": "#/$defs/phaseStatus"},
-        "final-reconciliation": {"$ref": "#/$defs/phaseStatus"},
+        "synthesis": {"$ref": "#/$defs/phaseStatus"},
         "final-verification": {"$ref": "#/$defs/phaseStatus"},
         "report": {"$ref": "#/$defs/phaseStatus"}
       }

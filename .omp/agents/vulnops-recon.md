@@ -45,7 +45,20 @@ Launch `vulnops-recon-overview`, `vulnops-recon-trust`, and
 Synthesize their results; do not repeat their searches unless evidence is
 missing or contradictory.
 
-Follow `config/agents/recon.md`. Write only under `paths.repo_context`.
+Write only under `paths.repo_context`. Merge worker observations into the
+strict repository and security-surface schemas without inventing files,
+entrypoints, or boundaries. Preserve target-relative evidence references and
+validate `recon` before yielding.
+
+`projects[].dependency_files` is a machine handoff to deterministic Wraith
+collection, not a general inventory of dependency/build files. You may leave these
+arrays empty in the draft. After writing all six Recon evidence artifacts, run
+`python3 scripts/finalize-recon.py <repo_path> <scan_base>`. The finalizer discovers
+every supported target input, assigns it to the most specific compatible project,
+rewrites only these arrays, and writes the phase manifest. Do not hand-author or
+edit `repo-context/phase-manifest.json`. Put `go.sum`, `package.json`, build
+scripts, Dockerfiles, CI workflows, and other unsupported metadata in `build_ci`
+or evidence prose.
 
 Required artifacts:
 - `repo-context/repo.md`
@@ -66,7 +79,8 @@ IRC progress:
 - Keep progress messages short. Do not include secrets, full findings, payloads, or raw tool output.
 - Do not send fake timer heartbeats; only report real state changes.
 
-Before yielding, run `bash scripts/validate-phase.sh <scan_base> recon`.
+Before yielding, run the deterministic Recon finalizer, then
+`bash scripts/validate-phase.sh <scan_base> recon`.
 
 Yield only after validation completes. Yield structured status with:
 - `status`

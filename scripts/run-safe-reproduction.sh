@@ -28,19 +28,8 @@ harness_require_allowed_output "$HARNESS_ROOT" "$SCAN_BASE"
 detect_backend() {
     local requested="${VULNOPS_REPRODUCTION_SANDBOX:-auto}"
     if [ "$requested" = "auto" ] || [ "$requested" = "bubblewrap" ]; then
-        local bwrap_bin
-        bwrap_bin="$(command -v bwrap 2>/dev/null || true)"
-        local probe_args=(--unshare-all --die-with-parent --new-session --tmpfs / --proc /proc --dev /dev --ro-bind /usr /usr)
-        local system_dir
-        for system_dir in /bin /sbin /lib /lib64; do
-            if [ -e "$system_dir" ]; then
-                probe_args+=(--ro-bind "$system_dir" "$system_dir")
-            fi
-        done
-        if [ -n "$bwrap_bin" ] && "$bwrap_bin" "${probe_args[@]}" /usr/bin/true 2>/dev/null; then
-            echo "bubblewrap"
-            return 0
-        fi
+        "${HARNESS_ROOT}/scripts/probe-bubblewrap.sh"
+        return $?
     fi
     return 1
 }

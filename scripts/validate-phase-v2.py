@@ -1,326 +1,188 @@
 #!/usr/bin/env python3
-"""Validate one VulnOps v2 phase contract."""
-
+"""Validate the sole canonical VulnOps v2 phase contract."""
 from __future__ import annotations
-
-import argparse
-import json
-import os
-import subprocess
-import sys
+import argparse, hashlib, importlib.util, json, os, subprocess, sys
 from pathlib import Path
-
-
-def load(path: Path, errors: list[str]) -> object | None:
-    try:
-        return json.loads(path.read_text(encoding="utf-8"))
-    except FileNotFoundError:
-        errors.append(f"missing {path}")
-    except json.JSONDecodeError as exc:
-        errors.append(f"invalid JSON {path}: {exc}")
+from typing import Any
+PHASE_DIR={"recon":"repo-context","tool-collection":"tool-collection","sast":"sast","campaign-planning":"campaign-planning","intrusion":"intrusion","synthesis":"synthesis","final-verification":"final-verification","report":"report"}
+def load(path:Path,errors:list[str])->Any:
+    try:return json.loads(path.read_text(encoding="utf-8"))
+    except FileNotFoundError:errors.append(f"missing {path}")
+    except json.JSONDecodeError as exc:errors.append(f"invalid JSON {path}: {exc}")
     return None
-
-
-def require_file(path: Path, errors: list[str]) -> None:
-    if not path.is_file():
-        errors.append(f"missing {path}")
-
-
-def require_manifest(scan: Path, directory: str, phase: str, errors: list[str], allowed: set[str] | None = None) -> None:
-    allowed = allowed or {"ok", "degraded"}
-    manifest = load(scan / directory / "phase-manifest.json", errors)
-    if not isinstance(manifest, dict):
-        return
-    if manifest.get("phase") != phase:
-        errors.append(f"{directory}/phase-manifest.json phase must be {phase}")
-    if manifest.get("status") not in allowed:
-        errors.append(f"{directory}/phase-manifest.json has non-terminal status")
-    for key in ("started_at", "completed_at"):
-        if not isinstance(manifest.get(key), str) or not manifest.get(key):
-            errors.append(f"{directory}/phase-manifest.json missing {key}")
-    for key in ("inputs", "outputs", "warnings", "errors"):
-        if not isinstance(manifest.get(key), list):
-            errors.append(f"{directory}/phase-manifest.json missing list {key}")
-
-
-def run_schema(root: Path, schema: str, document: Path, errors: list[str], *, semantic: str = "none", target: Path | None = None, each: bool = False) -> None:
-    command = [sys.executable, str(root / "scripts/validate-json.py"), str(root / f"schemas/v2/{schema}"), str(document)]
-    if semantic != "none":
-        command.extend(["--semantic", semantic])
-    if target is not None:
-        command.extend(["--target", str(target)])
-    if each:
-        command.append("--each")
-    result = subprocess.run(command, capture_output=True, text=True, check=False)
-    if result.returncode:
-        detail = result.stderr.strip() or result.stdout.strip()
-        errors.append(f"schema failure {document}: {detail}")
-
-
-def context_target(root: Path, scan: Path, errors: list[str]) -> Path | None:
-    context_path = Path(os.environ.get("VULNOPS_AUDIT_CONTEXT", root / ".harness/audit-context.json"))
-    context = load(context_path, errors)
-    if not isinstance(context, dict):
-        return None
-    if Path(str(context.get("scan_base", ""))).resolve() != scan.resolve():
-        errors.append("audit context does not point at requested v2 scan")
-        return None
-    target = Path(str(context.get("repo_path", "")))
-    if not target.is_dir():
-        errors.append("audit context target is unavailable")
-        return None
-    return target
-
-
-def has_graph_evidence(document: object) -> bool:
-    if not isinstance(document, dict):
-        return False
-    if isinstance(document.get("edges"), list) and document["edges"]:
-        return True
-    nodes = document.get("nodes")
-    return isinstance(nodes, list) and any(
-        isinstance(node, dict) and node.get("role") not in {"source", "target"}
-        for node in nodes
-    )
-
-
-def validate_scoped_graph(
-    scan: Path,
-    directory: str,
-    plan: object,
-    errors: list[str],
-    *,
-    mode: str,
-    require_all_when_none_marked: bool,
-) -> None:
-    if not isinstance(plan, dict) or plan.get("mode") != mode:
-        errors.append(f"{directory} plan mode must be {mode}")
-        return
-    scopes = plan.get("scopes")
-    if not isinstance(scopes, list):
-        errors.append(f"{directory} plan scopes must be a list")
-        return
-    required = [scope for scope in scopes if isinstance(scope, dict) and scope.get("required")]
-    if require_all_when_none_marked and not required:
-        required = [scope for scope in scopes if isinstance(scope, dict)]
-    if require_all_when_none_marked and not required:
-        coverage = plan.get("coverage") or {}
-        if int(coverage.get("seed_count", 0)) > 0:
-            errors.append(f"{directory} plan has seeds but no graph scope")
-    for scope in required:
-        scope_id = str(scope.get("id", ""))
-        if not scope_id:
-            errors.append(f"{directory} required scope is missing id")
-            continue
-        context_path = scan / directory / "codegraph-runs" / scope_id / "codegraph-out/context.json"
-        context = load(context_path, errors)
-        if not has_graph_evidence(context):
-            errors.append(f"{directory} required scope {scope_id} has no graph evidence")
-
-
-def main() -> int:
-    parser = argparse.ArgumentParser()
-    parser.add_argument("harness_root", type=Path)
-    parser.add_argument("scan_base", type=Path)
-    parser.add_argument("phase")
-    args = parser.parse_args()
-    root = args.harness_root.resolve()
-    scan = args.scan_base.resolve()
-    phase = args.phase
-    errors: list[str] = []
-
-    run_schema(root, "run-manifest.schema.json", scan / "run-manifest.json", errors)
-    target = context_target(root, scan, errors)
-
-    if phase == "recon":
-        require_file(scan / "repo-context/repo.md", errors)
-        run_schema(root, "repo-context.schema.json", scan / "repo-context/repo-context.json", errors, semantic="repo-context", target=target)
-        run_schema(root, "security-surfaces.schema.json", scan / "repo-context/security-surfaces.json", errors, semantic="security-surfaces", target=target)
-        for name in ("overview.json", "trust-boundaries.json", "input-surfaces.json"):
-            run_schema(root, "recon-research.schema.json", scan / "repo-context/research" / name, errors)
-        require_manifest(scan, "repo-context", "recon", errors)
-    elif phase == "sca":
-        require_file(scan / "sca/summary.md", errors)
-        run_schema(root, "sca-advisories.schema.json", scan / "sca/raw-advisories.json", errors, semantic="sca-advisories", target=target)
-        require_manifest(scan, "sca", "sca", errors, {"ok", "degraded", "skipped"})
-    elif phase == "secrets":
-        require_file(scan / "secrets/summary.md", errors)
-        run_schema(root, "secrets-redacted.schema.json", scan / "secrets/redacted-candidates.json", errors, semantic="secrets-redacted", target=target)
-        require_manifest(scan, "secrets", "secrets", errors, {"ok", "degraded", "skipped"})
-    elif phase == "sast-threatmodel":
-        require_file(scan / "sast/threat-model.md", errors)
-        run_schema(root, "threat-model.schema.json", scan / "sast/threat-model.json", errors, semantic="threat-model", target=target)
-    elif phase == "sast-decompose":
-        require_file(scan / "sast/decompose.md", errors)
-        run_schema(root, "hunt-plan.schema.json", scan / "sast/hunt-plan.json", errors, semantic="hunt-plan", target=target)
-        load(scan / "sast/task-manifest.json", errors)
-    elif phase == "sast-deepdive":
-        plan = load(scan / "sast/hunt-plan.json", errors)
-        if isinstance(plan, dict):
-            for task in plan.get("tasks", []):
-                if not isinstance(task, dict) or not task.get("id"):
-                    continue
-                run_schema(root, "hunt-result.schema.json", scan / f"sast/deepdive/{task['id']}.json", errors)
-        run_schema(root, "candidate-finding.schema.json", scan / "sast/raw-findings.json", errors, semantic="candidate", target=target, each=True)
-    elif phase == "sast-verify":
-        run_schema(root, "validation-result.schema.json", scan / "sast/validation-results.json", errors, semantic="validation-result", each=True)
-        queue = load(scan / "sast/validation-queue.json", errors)
-        validations = load(scan / "sast/validation-results.json", errors)
-        queue_items = queue if isinstance(queue, list) else []
-        validation_items = validations if isinstance(validations, list) else []
-        queue_ids = [str(item.get("id")) for item in queue_items if isinstance(item, dict)]
-        validation_ids = [str(item.get("candidate_id")) for item in validation_items if isinstance(item, dict)]
-        if len(validation_ids) != len(set(validation_ids)):
-            errors.append("sast/validation-results.json contains duplicate candidate_id values")
-        if set(queue_ids) != set(validation_ids):
-            missing = sorted(set(queue_ids) - set(validation_ids))
-            extra = sorted(set(validation_ids) - set(queue_ids))
-            if missing:
-                errors.append(f"missing SAST validation results: {', '.join(missing)}")
-            if extra:
-                errors.append(f"orphan SAST validation results: {', '.join(extra)}")
-        load(scan / "sast/verified-findings.json", errors)
-        load(scan / "sast/dropped-findings.json", errors)
-        load(scan / "sast/dedup-clusters.json", errors)
-    elif phase == "sast":
-        for subphase in ("sast-threatmodel", "sast-decompose", "sast-deepdive", "sast-verify"):
-            nested = subprocess.run(
-                [sys.executable, __file__, str(root), str(scan), subphase],
-                capture_output=True,
-                text=True,
-                check=False,
-            )
-            if nested.returncode:
-                errors.append(nested.stderr.strip() or f"{subphase} validation failed")
-        run_schema(root, "coverage-ledger.schema.json", scan / "sast/coverage-ledger.json", errors)
-        run_schema(root, "wishlist.schema.json", scan / "sast/wishlist.json", errors)
-        context_path = Path(os.environ.get("VULNOPS_AUDIT_CONTEXT", root / ".harness/audit-context.json"))
-        context = load(context_path, errors)
-        validations = load(scan / "sast/validation-results.json", errors)
-        if isinstance(context, dict) and context.get("reproduction_mode") == "safe" and isinstance(validations, list):
-            for item in validations:
-                if not isinstance(item, dict) or item.get("status") != "source_verified":
-                    continue
-                finding_id = str(item.get("candidate_id", ""))
-                result_path = scan / f"sast/reproduction/{finding_id}/result.json"
-                run_schema(root, "reproduction-result.schema.json", result_path, errors, semantic="reproduction-result")
-        require_file(scan / "sast/summary.md", errors)
-        require_manifest(scan, "sast", "sast", errors)
-    elif phase == "intelligence":
-        documents = {
-            name: load(scan / "intelligence" / name, errors)
-            for name in ("evidence-corpus.json", "attack-surface-map.json", "intel-plan.json", "investigation-cards.json", "coverage-gaps.json", "rule-gaps.json")
-        }
-        require_file(scan / "intelligence/summary.md", errors)
-        require_manifest(scan, "intelligence", "intelligence", errors, {"ok"})
-        plan = documents["intel-plan.json"]
-        cards = documents["investigation-cards.json"]
-        corpus = documents["evidence-corpus.json"]
-        surface_map = documents["attack-surface-map.json"]
-        coverage_gaps = documents["coverage-gaps.json"]
-        rule_gaps = documents["rule-gaps.json"]
-        observations = corpus.get("observations") if isinstance(corpus, dict) else None
-        if not isinstance(observations, list) or not observations:
-            errors.append("intelligence evidence corpus must retain at least one observation")
-        if not isinstance(surface_map, dict):
-            errors.append("intelligence attack surface map must be an object")
-        else:
-            for key in ("components", "entry_points", "trust_boundaries", "files_by_category"):
-                if key not in surface_map:
-                    errors.append(f"intelligence attack surface map missing {key}")
-        gaps = coverage_gaps.get("gaps") if isinstance(coverage_gaps, dict) else None
-        if not isinstance(gaps, list):
-            errors.append("intelligence coverage gaps must contain a gaps list")
-        rules = rule_gaps.get("rule_gaps") if isinstance(rule_gaps, dict) else None
-        if not isinstance(rules, list):
-            errors.append("intelligence rule gaps must contain a rule_gaps list")
-        validate_scoped_graph(scan, "intelligence", plan, errors, mode="intelligence-ooda", require_all_when_none_marked=False)
-        allowed_sources = {"tool_evidence", "graph_inference", "agent_exploration", "coverage_gap"}
-        card_items = cards.get("cards", []) if isinstance(cards, dict) else []
-        if not isinstance(card_items, list):
-            errors.append("intelligence investigation cards must contain a cards list")
-        else:
-            for index, card in enumerate(card_items):
-                if not isinstance(card, dict) or card.get("source") not in allowed_sources:
-                    errors.append(f"intelligence card {index} has an invalid source")
-                    continue
-                if not card.get("raw_refs"):
-                    errors.append(f"intelligence card {index} has no raw refs")
-                if card.get("source") != "coverage_gap" and not card.get("evidence_refs"):
-                    errors.append(f"intelligence card {index} has no evidence refs")
-    elif phase == "triage":
-        require_file(scan / "triage/consolidated.md", errors)
-        load(scan / "triage/findings.json", errors)
-        load(scan / "triage/intrusion-seeds.json", errors)
-        require_manifest(scan, "triage", "triage", errors)
-    elif phase == "intrusion":
-        require_file(scan / "intrusion/summary.md", errors)
-        load(scan / "intrusion/enrichment.json", errors)
-        plan = load(scan / "intrusion/intrusion-plan.json", errors)
-        require_manifest(scan, "intrusion", "intrusion", errors, {"ok"})
-        validate_scoped_graph(scan, "intrusion", plan, errors, mode="targeted-ooda", require_all_when_none_marked=True)
-    elif phase == "final-reconciliation":
-        run_schema(
-            root,
-            "final-findings.schema.json",
-            scan / "final-reconciliation/candidates.json",
-            errors,
-            semantic="final-findings",
-            target=target,
-        )
-        candidates = load(scan / "final-reconciliation/candidates.json", errors)
-        candidate_items = candidates.get("findings", []) if isinstance(candidates, dict) else []
-        for item in candidate_items:
-            if not isinstance(item, dict):
-                continue
-            severity = (item.get("severity") or {}).get("overall")
-            if severity in {"critical", "high"} and not (item.get("provenance") or {}).get("graph_refs"):
-                errors.append(f"reconciled {item.get('id')} critical/high candidate has no graph evidence")
-        require_file(scan / "final-reconciliation/summary.md", errors)
-        require_manifest(scan, "final-reconciliation", "final-reconciliation", errors)
-    elif phase == "final-verification":
-        candidates = load(scan / "final-reconciliation/candidates.json", errors)
-        results = scan / "final-verification/results"
-        result_ids: set[str] = set()
-        if results.is_dir():
-            for path in sorted(results.glob("*.json")):
-                run_schema(root, "independent-verification-result.schema.json", path, errors)
-                result = load(path, errors)
-                if isinstance(result, dict):
-                    result_id = str(result.get("finding_id", ""))
-                    result_ids.add(result_id)
-                    if path.stem != result_id:
-                        errors.append(f"{path} finding_id does not match its filename")
-        candidate_items = candidates.get("findings", []) if isinstance(candidates, dict) else []
-        candidate_ids = {
-            str(item.get("id"))
-            for item in candidate_items
-            if isinstance(item, dict)
-        }
-        if candidate_ids != result_ids:
-            missing = sorted(candidate_ids - result_ids)
-            extra = sorted(result_ids - candidate_ids)
-            if missing:
-                errors.append(f"missing independent verification results: {', '.join(missing)}")
-            if extra:
-                errors.append(f"orphan independent verification results: {', '.join(extra)}")
-        run_schema(root, "final-findings.schema.json", scan / "final-verification/findings.json", errors, semantic="final-findings", target=target)
-        require_manifest(scan, "final-verification", "final-verification", errors)
-    elif phase == "report":
-        require_file(scan / "report/security-report.md", errors)
-        run_schema(root, "report.schema.json", scan / "report/security-report.json", errors)
-        require_manifest(scan, "report", "report", errors)
-    else:
-        errors.append(f"unknown v2 phase: {phase}")
-
+def schema(root:Path,name:str,path:Path,errors:list[str],each:bool=False,semantic:str|None=None,target:Path|None=None)->None:
+    command=[sys.executable,str(root/"scripts/validate-json.py"),str(root/f"schemas/v2/{name}"),str(path)]+(["--each"] if each else [])
+    if semantic:command.extend(["--semantic",semantic])
+    if target is not None:command.extend(["--target",str(target)])
+    result=subprocess.run(command,capture_output=True,text=True,check=False)
+    if result.returncode:errors.append(result.stderr.strip() or f"schema failure: {path}")
+def artifact(scan:Path,ref:str)->Path|None:
+    relative=ref.split(":",1)[0].split("#",1)[0]; path=(scan/relative).resolve()
+    try:path.relative_to(scan.resolve())
+    except ValueError:return None
+    return path if path.is_file() else None
+def target_file(target:Path,relative:str)->bool:
+    path=(target/relative).resolve()
+    try:path.relative_to(target.resolve())
+    except ValueError:return False
+    return path.is_file()
+def manifest(scan:Path,phase:str,errors:list[str])->dict:
+    directory=PHASE_DIR[phase]; doc=load(scan/directory/"phase-manifest.json",errors)
+    if not isinstance(doc,dict):return {}
+    if doc.get("phase")!=phase:errors.append(f"{phase} manifest phase mismatch")
+    if doc.get("status") not in {"ok","degraded"}:errors.append(f"{phase} manifest is not successful terminal state")
+    for key in ("started_at","completed_at"):
+        if not isinstance(doc.get(key),str) or not doc[key]:errors.append(f"{phase} manifest missing {key}")
+    for key in ("inputs","outputs","warnings","errors"):
+        if not isinstance(doc.get(key),list):errors.append(f"{phase} manifest missing list {key}")
+    if doc.get("errors"):
+        errors.append(f"{phase} successful terminal manifest may not contain errors")
+    for ref in doc.get("outputs",[]) if isinstance(doc.get("outputs"),list) else []:
+        if artifact(scan,str(ref)) is None:errors.append(f"{phase} manifest output does not resolve: {ref}")
+    return doc
+def semantic_campaign(scan:Path,target:Path,index:dict,plan:dict,errors:list[str])->None:
+    records={x.get("id"):x for x in index.get("records",[]) if isinstance(x,dict)}; primitives={x.get("id"):x for x in index.get("primitives",[]) if isinstance(x,dict)}
+    if len(records)!=len(index.get("records",[])):errors.append("evidence record IDs must be unique")
+    if len(primitives)!=len(index.get("primitives",[])):errors.append("primitive IDs must be unique")
+    expected_sources=[]
+    for path,key in ((scan/"tool-collection/sca-advisories.json","advisories"),(scan/"tool-collection/secrets-redacted.json","candidates"),(scan/"sast/verified-findings.json",None),(scan/"sast/dropped-findings.json",None)):
+        doc=load(path,errors)
+        items=doc.get(key,[]) if key and isinstance(doc,dict) else doc if isinstance(doc,list) else []
+        for item in items:
+            if not isinstance(item,dict):continue
+            source_id=str(item.get("raw_id") or item.get("id"))
+            source_kind="sca" if key=="advisories" else "secret" if key=="candidates" else "sast"
+            expected_sources.append((source_kind,source_id))
+    indexed_sources={(str(item.get("source_kind")),str(item.get("source_id"))) for item in records.values()}
+    for source in expected_sources:
+        if source not in indexed_sources:errors.append(f"upstream evidence is missing from canonical index: {source[0]}:{source[1]}")
+    for primitive in primitives.values():
+        for rid in primitive.get("source_record_ids",[]):
+            if rid not in records:errors.append(f"primitive {primitive.get('id')} references unknown record {rid}")
+    campaigns=plan.get("campaigns",[]); ids=[x.get("id") for x in campaigns if isinstance(x,dict)]
+    if len(ids)!=len(set(ids)):errors.append("campaign IDs must be unique")
+    counts={lane:0 for lane in ("primitive_led","gap_driven","direct_validation")}
+    for campaign in campaigns:
+        counts[campaign.get("lane")]=counts.get(campaign.get("lane"),0)+1
+        for rid in campaign.get("starting_evidence",[]):
+            if rid not in records:errors.append(f"{campaign.get('id')} references unknown evidence {rid}")
+        for pid in campaign.get("primitive_ids",[]):
+            if pid not in primitives:errors.append(f"{campaign.get('id')} references unknown primitive {pid}")
+        for relative in campaign.get("source_files",[]):
+            if not target_file(target,str(relative)):errors.append(f"{campaign.get('id')} source file does not exist: {relative}")
+    for lane,count in counts.items():
+        if count>int((plan.get("budget") or {}).get(lane,0)):errors.append(f"{lane} campaigns exceed budget")
+    coverage=plan.get("coverage") or {}
+    if coverage.get("evidence_records")!=len(records) or coverage.get("primitives")!=len(primitives) or coverage.get("campaigns")!=len(campaigns):errors.append("campaign plan coverage counts do not match canonical artifacts")
+def semantic_synthesis(scan:Path,target:Path,doc:dict,index:dict,intrusion:dict,primary:str,errors:list[str])->None:
+    known={x.get("id") for x in index.get("primitives",[]) if isinstance(x,dict)}
+    evidence_sources={(str(x.get("source_kind")),str(x.get("source_id"))) for x in index.get("records",[]) if isinstance(x,dict)}
+    plan_doc=load(scan/"campaign-planning/campaign-plan.json",errors) or {};campaign_ids={str(x.get("id")) for x in plan_doc.get("campaigns",[]) if isinstance(x,dict)};intrusion_ids={str(x.get("campaign_id")) for x in intrusion.get("results",[]) if isinstance(x,dict)}
+    updates={str(x.get("id")) for result in intrusion.get("results",[]) if isinstance(result,dict) for x in result.get("primitive_updates",[]) if isinstance(x,dict) and x.get("id")}
+    ids=[]
+    for finding in doc.get("findings",[]):
+        fid=str(finding.get("id")); ids.append(fid)
+        if (finding.get("verification") or {}).get("model")!=primary:errors.append(f"{fid} source validation model mismatch")
+        trace=finding.get("trace",[])
+        if not trace or trace[0].get("kind")!="entrypoint" or trace[-1].get("kind")!="sink":errors.append(f"{fid} trace must run from entrypoint to sink")
+        if any(step.get("kind")!="propagation" for step in trace[1:-1]):errors.append(f"{fid} intermediate trace steps must be propagation")
+        for location in [*finding.get("root_causes",[]),*trace]:
+            if not target_file(target,str(location.get("file",""))):errors.append(f"{fid} source file does not exist: {location.get('file')}")
+        for source in finding.get("source_refs",[]):
+            if artifact(scan,str(source.get("artifact_ref",""))) is None:errors.append(f"{fid} unresolved source reference: {source.get('artifact_ref')}")
+            kind=str(source.get("kind"));source_id=str(source.get("source_id"));index_kind="secret" if kind=="secret" else kind
+            if kind in {"recon","sca","secret","sast","reproduction"} and (index_kind,source_id) not in evidence_sources:errors.append(f"{fid} source ID does not resolve in evidence index: {kind}:{source_id}")
+            if kind=="campaign" and source_id not in campaign_ids:errors.append(f"{fid} references unknown campaign: {source_id}")
+            if kind=="intrusion" and source_id not in intrusion_ids:errors.append(f"{fid} references unknown intrusion result: {source_id}")
+        for ref in [*(finding.get("verification") or {}).get("source_validation_refs",[]),*finding.get("graph_receipt_refs",[])]:
+            if artifact(scan,str(ref)) is None:errors.append(f"{fid} unresolved validation reference: {ref}")
+        for ref in finding.get("graph_receipt_refs",[]):
+            receipt_path=artifact(scan,str(ref));receipt=load(receipt_path,errors) if receipt_path else {}
+            context_path=receipt_path.with_name("context.json") if receipt_path else None
+            if not isinstance(receipt,dict) or not receipt.get("meaningful") or context_path is None or not context_path.is_file() or receipt.get("normalized_sha256")!=hashlib.sha256(context_path.read_bytes()).hexdigest():errors.append(f"{fid} cites invalid or non-meaningful graph receipt: {ref}")
+        steps=finding.get("primitive_steps",[])
+        if finding.get("finding_kind")=="chain":
+            if finding.get("origin")!="composite_chain" or len(steps)<2:errors.append(f"{fid} chain requires composite origin and at least two steps")
+            for step in steps:
+                if step.get("primitive_id") not in known|updates:errors.append(f"{fid} chain references unknown primitive {step.get('primitive_id')}")
+            for left,right in zip(steps,steps[1:]):
+                if str(left.get("output_capability","")).strip().casefold()!=str(right.get("input_capability","")).strip().casefold():errors.append(f"{fid} chain capability transition is not closed between {left.get('primitive_id')} and {right.get('primitive_id')}")
+        elif steps:errors.append(f"{fid} non-chain finding must not contain primitive steps")
+        dependency=finding.get("dependency");secret=finding.get("secret")
+        if finding.get("finding_kind")=="dependency":
+            if not isinstance(dependency,dict) or dependency.get("reachability")!="reachable":errors.append(f"{fid} dependency finding requires proven reachable affected use")
+        elif dependency is not None:errors.append(f"{fid} non-dependency finding must use dependency: null")
+        if finding.get("finding_kind")=="secret":
+            if not isinstance(secret,dict) or secret.get("redaction")!="<redacted>" or secret.get("validity") not in {"confirmed_format","likely"}:errors.append(f"{fid} secret finding requires exact redaction and supported validity")
+        elif secret is not None:errors.append(f"{fid} non-secret finding must use secret: null")
+        if finding.get("status")=="needs_environment" and (finding.get("verification") or {}).get("level")!="environment_required":errors.append(f"{fid} needs_environment status requires environment_required verification")
+    if len(ids)!=len(set(ids)):errors.append("synthesis finding IDs must be unique")
+def semantic_intrusion(scan:Path,target:Path,index:dict,results:dict,errors:list[str])->None:
+    known={str(x.get("id")) for x in index.get("primitives",[]) if isinstance(x,dict)}
+    for result in results.get("results",[]):
+        cid=str(result.get("campaign_id"));updates={str(x.get("id")) for x in result.get("primitive_updates",[]) if isinstance(x,dict)}
+        for update in result.get("primitive_updates",[]):
+            for ref in update.get("evidence_refs",[]) if isinstance(update,dict) else []:
+                if artifact(scan,str(ref)) is None:errors.append(f"{cid} new primitive has unresolved evidence: {ref}")
+        for candidate in result.get("candidates",[]):
+            candidate_id=str(candidate.get("id"));trace=candidate.get("trace",[])
+            if not trace or trace[0].get("kind")!="entrypoint" or trace[-1].get("kind")!="sink" or any(x.get("kind")!="propagation" for x in trace[1:-1]):errors.append(f"{candidate_id} intrusion trace is not ordered entrypoint-to-sink")
+            for location in [*candidate.get("root_causes",[]),*trace]:
+                if not target_file(target,str(location.get("file",""))):errors.append(f"{candidate_id} references missing target file: {location.get('file')}")
+            for ref in candidate.get("evidence_refs",[]):
+                if artifact(scan,str(ref)) is None:errors.append(f"{candidate_id} unresolved evidence reference: {ref}")
+            primitive_ids=[str(x) for x in candidate.get("primitive_ids",[])]
+            for primitive_id in primitive_ids:
+                if primitive_id not in known|updates:errors.append(f"{candidate_id} references unknown primitive: {primitive_id}")
+            if candidate.get("finding_kind")=="chain" and len(primitive_ids)<2:errors.append(f"{candidate_id} chain candidate requires at least two primitives")
+            if candidate.get("validation_level")=="environment_required":errors.append(f"{candidate_id} environment-required hypothesis cannot use candidate status")
+def main()->int:
+    p=argparse.ArgumentParser(); p.add_argument("harness_root",type=Path); p.add_argument("scan_base",type=Path); p.add_argument("phase",choices=tuple(PHASE_DIR)); a=p.parse_args(); root=a.harness_root.resolve(); scan=a.scan_base.resolve(); errors=[]
+    schema(root,"run-manifest.schema.json",scan/"run-manifest.json",errors); run=load(scan/"run-manifest.json",errors) or {}; context=load(Path(os.environ.get("VULNOPS_AUDIT_CONTEXT",root/".harness/audit-context.json")),errors) or {}; target=Path(str(context.get("repo_path","")))
+    if Path(str(context.get("scan_base",""))).resolve()!=scan:errors.append("audit context scan mismatch")
+    if context.get("run_id")!=run.get("run_id"):errors.append("audit context run mismatch")
+    if context.get("workflow")!="canonical-redteam-v2":errors.append("audit context is not the canonical greenfield workflow")
+    if not target.is_dir():errors.append("audit target is unavailable")
+    phase=a.phase
+    if phase=="recon":
+        for path in (scan/"repo-context/repo.md",):
+            if not path.is_file():errors.append(f"missing {path}")
+        schema(root,"repo-context.schema.json",scan/"repo-context/repo-context.json",errors,semantic="repo-context",target=target); schema(root,"security-surfaces.schema.json",scan/"repo-context/security-surfaces.json",errors,semantic="security-surfaces",target=target)
+        for name in ("overview.json","trust-boundaries.json","input-surfaces.json"):schema(root,"recon-research.schema.json",scan/"repo-context/research"/name,errors)
+    elif phase=="tool-collection":
+        schema(root,"sca-advisories.schema.json",scan/"tool-collection/sca-advisories.json",errors,semantic="sca-advisories",target=target); schema(root,"secrets-redacted.schema.json",scan/"tool-collection/secrets-redacted.json",errors,semantic="secrets-redacted",target=target); schema(root,"tool-collection.schema.json",scan/"tool-collection/collection.json",errors)
+        for name,artifact_name in (("wraith-receipt.json","sca-advisories.json"),("poltergeist-receipt.json","secrets-redacted.json")):
+            schema(root,"tool-receipt.schema.json",scan/"tool-collection"/name,errors); receipt=load(scan/"tool-collection"/name,errors)
+            if isinstance(receipt,dict) and (scan/"tool-collection"/artifact_name).is_file() and receipt.get("normalized_sha256")!=hashlib.sha256((scan/"tool-collection"/artifact_name).read_bytes()).hexdigest():errors.append(f"{name} normalized hash mismatch")
+    elif phase=="sast":
+        schema(root,"threat-model.schema.json",scan/"sast/threat-model.json",errors,semantic="threat-model",target=target); schema(root,"hunt-plan.schema.json",scan/"sast/hunt-plan.json",errors,semantic="hunt-plan",target=target); schema(root,"candidate-finding.schema.json",scan/"sast/raw-findings.json",errors,True,"candidate",target); schema(root,"validation-result.schema.json",scan/"sast/validation-results.json",errors,True,"validation-result",target); schema(root,"coverage-ledger.schema.json",scan/"sast/coverage-ledger.json",errors); schema(root,"wishlist.schema.json",scan/"sast/wishlist.json",errors)
+        for name in ("verified-findings.json","dropped-findings.json","dedup-clusters.json"):
+            if not isinstance(load(scan/"sast"/name,errors),list if name!="dedup-clusters.json" else dict):errors.append(f"sast/{name} has wrong shape")
+    elif phase=="campaign-planning":
+        schema(root,"evidence-index.schema.json",scan/"campaign-planning/evidence-index.json",errors); schema(root,"campaign-plan.schema.json",scan/"campaign-planning/campaign-plan.json",errors); index=load(scan/"campaign-planning/evidence-index.json",errors) or {}; plan=load(scan/"campaign-planning/campaign-plan.json",errors) or {}; semantic_campaign(scan,target,index,plan,errors)
+    elif phase=="intrusion":
+        schema(root,"intrusion-results.schema.json",scan/"intrusion/intrusion-results.json",errors); plan=load(scan/"campaign-planning/campaign-plan.json",errors) or {}; results=load(scan/"intrusion/intrusion-results.json",errors) or {}; expected=[x.get("id") for x in plan.get("campaigns",[])]; actual=[x.get("campaign_id") for x in results.get("results",[])];
+        if expected!=actual:errors.append("intrusion results must match campaign plan exactly and in order")
+        semantic_intrusion(scan,target,load(scan/"campaign-planning/evidence-index.json",errors) or {},results,errors)
+    elif phase=="synthesis":
+        schema(root,"synthesis-findings.schema.json",scan/"synthesis/findings.json",errors); doc=load(scan/"synthesis/findings.json",errors) or {}; index=load(scan/"campaign-planning/evidence-index.json",errors) or {}; intrusion=load(scan/"intrusion/intrusion-results.json",errors) or {}; semantic_synthesis(scan,target,doc,index,intrusion,str(run.get("model","")),errors)
+    elif phase=="final-verification":
+        schema(root,"final-findings.schema.json",scan/"final-verification/findings.json",errors);final_doc=load(scan/"final-verification/findings.json",errors) or {};synthesis_items=[]
+        for item in final_doc.get("findings",[]):
+            if isinstance(item,dict):synthesis_items.append({key:value for key,value in item.items() if key not in {"verdict","model_diversity","independent_verification_ref"}})
+        semantic_synthesis(scan,target,{"findings":synthesis_items},load(scan/"campaign-planning/evidence-index.json",errors) or {},load(scan/"intrusion/intrusion-results.json",errors) or {},str(run.get("model","")),errors)
+        for item in final_doc.get("findings",[]):
+            if artifact(scan,str(item.get("independent_verification_ref",""))) is None:errors.append(f"{item.get('id')} independent verification reference does not resolve")
+        for item in final_doc.get("rejections",[]):
+            if artifact(scan,str(item.get("independent_verification_ref",""))) is None:errors.append(f"{item.get('id')} rejection reference does not resolve")
+    elif phase=="report":schema(root,"report.schema.json",scan/"report/security-report.json",errors)
+    schema(root,"phase-manifest.schema.json",scan/PHASE_DIR[phase]/"phase-manifest.json",errors)
+    manifest(scan,phase,errors)
+    if target.is_dir():
+        result=subprocess.run([sys.executable,str(root/"scripts/target-fingerprint.py"),str(target)],capture_output=True,text=True,check=False)
+        if result.returncode or result.stdout.strip()!=run.get("target_fingerprint"):errors.append("target working tree changed during audit")
     if errors:
-        for error in errors:
-            print(f"[validate-phase-v2] ERROR: {error}", file=sys.stderr)
-        print(f"[validate-phase-v2] {phase} failed with {len(errors)} error(s)", file=sys.stderr)
+        for error in errors:print(f"[validate-phase-v2] ERROR: {error}",file=sys.stderr)
         return 1
-    print(f"[validate-phase-v2] {phase} artifacts valid")
-    return 0
-
-
-if __name__ == "__main__":
-    raise SystemExit(main())
+    print(f"[validate-phase-v2] {phase} valid");return 0
+if __name__=="__main__":raise SystemExit(main())

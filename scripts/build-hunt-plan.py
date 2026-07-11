@@ -52,8 +52,8 @@ def context_packet(threat: dict, subsystem: dict, attack_class: dict, scan: Path
         "attack_class": attack_class,
         "trust_boundaries": threat.get("trust_boundaries", []),
         "entrypoints": threat.get("entrypoints", []),
-        "sca_summary_ref": "sca/summary.md" if (scan / "sca/summary.md").is_file() else None,
-        "secrets_summary_ref": "secrets/summary.md" if (scan / "secrets/summary.md").is_file() else None,
+        "sca_evidence_ref": "tool-collection/sca-advisories.json" if (scan / "tool-collection/sca-advisories.json").is_file() else None,
+        "secrets_evidence_ref": "tool-collection/secrets-redacted.json" if (scan / "tool-collection/secrets-redacted.json").is_file() else None,
         "instructions": "Use the assigned VulnOps attack class and evidence gate. Return rabbit holes; do not repeat SCA or secret enumeration.",
     }
     rendered = json.dumps(packet, sort_keys=True, separators=(",", ":"))
@@ -114,11 +114,11 @@ def initial_plan(root: Path, scan: Path, context: dict, threat: dict) -> dict:
             reason = "scheduled for focused SAST hunting"
             evidence = list(dict.fromkeys([*subsystem.get("evidence_refs", []), *attack_class.get("evidence_refs", [])]))
             if owner in {"sca", "secrets"}:
-                tool_status = phase_status(scan, owner)
+                tool_status = phase_status(scan, "tool-collection")
                 if tool_status in {"ok", "degraded"}:
                     status = "tool_satisfied"
                     reason = f"owned by validated {owner.upper()} phase; SAST will not repeat enumeration"
-                    evidence.append(f"{owner}/phase-manifest.json")
+                    evidence.append("tool-collection/phase-manifest.json")
                 else:
                     status = "deferred"
                     reason = f"owning {owner.upper()} phase did not provide usable evidence"
@@ -140,29 +140,34 @@ def initial_plan(root: Path, scan: Path, context: dict, threat: dict) -> dict:
     schedulable = [cell for cell in cells if cell["owner"] == "sast" and cell["status"] == "planned"]
     reserve = max(1, limits["max_hunt_tasks"] // 4) if limits["max_gapfill_rounds"] else 0
     initial_cap = max(1, limits["max_hunt_tasks"] - reserve)
-    grouped: dict[tuple[str, str], list[dict]] = {}
+    grouped: dict[str, list[dict]] = {}
     for cell in schedulable:
-        grouped.setdefault((cell["subsystem"], cell["attack_class_id"]), []).append(cell)
-    for index, ((subsystem_id, attack_id), group) in enumerate(grouped.items(), start=1):
+        grouped.setdefault(cell["subsystem"], []).append(cell)
+    batches: list[tuple[str, list[dict]]] = []
+    for subsystem_id, group in grouped.items():
+        ordered = sorted(group, key=lambda item: (RISK_ORDER.get(item["priority"], 9), item["attack_class_id"], item["id"]))
+        batches.extend((subsystem_id, ordered[index:index + 4]) for index in range(0, len(ordered), 4))
+    for index, (subsystem_id, batch) in enumerate(batches, start=1):
         if len(tasks) >= initial_cap:
-            for cell in group:
+            for cell in batch:
                 cell["status"] = "deferred"
                 cell["disposition_reason"] = "reserved single-run budget for high-risk gapfill"
             continue
         subsystem = subsystems[subsystem_id]
-        attack_class = next(item for sub, item in selected if sub["id"] == subsystem_id and item["id"] == attack_id)
+        attack_classes = [next(item for sub, item in selected if sub["id"] == subsystem_id and item["id"] == cell["attack_class_id"]) for cell in batch]
+        primary_class = attack_classes[0]
         tasks.append({
-            "id": f"H{index:03d}-{slug(subsystem_id)}-{slug(attack_id)}",
-            "cell_ids": [cell["id"] for cell in group],
+            "id": f"H{index:03d}-{slug(subsystem_id)}",
+            "cell_ids": [cell["id"] for cell in batch],
             "subsystem": subsystem_id,
-            "attack_class_id": attack_id,
-            "domain": attack_class.get("domain", "general"),
-            "methodology_refs": methodology_refs(attack_class),
-            "lenses": specialist_lenses(attack_class),
+            "attack_class_ids": [cell["attack_class_id"] for cell in batch],
+            "domain": primary_class.get("domain", "general"),
+            "methodology_refs": list(dict.fromkeys(ref for item in attack_classes for ref in methodology_refs(item))),
+            "lenses": list(dict.fromkeys(lens for item in attack_classes for lens in specialist_lenses(item))),
             "files": subsystem["files"],
             "entrypoints": subsystem.get("entrypoints", []),
-            "context_packet": context_packet(threat, subsystem, attack_class, scan, limits["context_packet_bytes"]),
-            "evidence_refs": list(dict.fromkeys([*subsystem.get("evidence_refs", []), *attack_class.get("evidence_refs", [])])),
+            "context_packet": context_packet(threat, subsystem, {"id": "+".join(cell["attack_class_id"] for cell in batch), "title": "Batched compatible attack classes", "evidence_refs": []}, scan, limits["context_packet_bytes"]),
+            "evidence_refs": list(dict.fromkeys([*subsystem.get("evidence_refs", []), *(ref for item in attack_classes for ref in item.get("evidence_refs", []))])),
             "attempt": 1,
             "round": 0,
         })
@@ -170,7 +175,7 @@ def initial_plan(root: Path, scan: Path, context: dict, threat: dict) -> dict:
     return {
         "schema_version": "2.0",
         "run_id": context["run_id"],
-        "rationale": "Risk-prioritized subsystem x attack-class plan using the VulnOps v2 taxonomy; SCA and Secrets cells are tool-owned and never duplicated by SAST.",
+        "rationale": "Risk-prioritized subsystem plan batching up to four compatible attack classes; tool-owned enumeration is not repeated by SAST.",
         "budget": limits,
         "custom_attack_classes": custom,
         "cells": cells,
@@ -220,7 +225,7 @@ def gapfill(root: Path, plan: dict, scan: Path, threat: dict) -> dict:
             "id": f"H{task_count:03d}-{slug(cell['subsystem'])}-{slug(cell['attack_class_id'])}-g{current_round + 1}",
             "cell_ids": [cell["id"]],
             "subsystem": cell["subsystem"],
-            "attack_class_id": cell["attack_class_id"],
+            "attack_class_ids": [cell["attack_class_id"]],
             "domain": cell["domain"],
             "methodology_refs": methodology_refs(attack_class),
             "lenses": specialist_lenses(attack_class),
@@ -251,7 +256,7 @@ def gapfill(root: Path, plan: dict, scan: Path, threat: dict) -> dict:
             "id": f"H{task_count:03d}-{slug(cell['subsystem'])}-{slug(cell['attack_class_id'])}-g{current_round + 1}",
             "cell_ids": [cell["id"]],
             "subsystem": cell["subsystem"],
-            "attack_class_id": cell["attack_class_id"],
+            "attack_class_ids": [cell["attack_class_id"]],
             "domain": cell["domain"],
             "methodology_refs": methodology_refs(attack_class),
             "lenses": specialist_lenses(attack_class),
@@ -292,7 +297,7 @@ def gapfill(root: Path, plan: dict, scan: Path, threat: dict) -> dict:
                 "id": cell_id,
                 "surface_id": str((subsystem.get("security_surface_ids") or [subsystem_id])[0]),
                 "subsystem": subsystem_id,
-                "attack_class_id": attack_id,
+                "attack_class_ids": [attack_id],
                 "domain": attack_class.get("domain", "general"),
                 "status": "planned",
                 "priority": subsystem.get("risk", "medium"),
@@ -344,37 +349,6 @@ def main() -> int:
         plan = initial_plan(root, args.scan_base, context, threat)
     output.write_text(json.dumps(plan, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
-    compatibility = {
-        "schema_version": "2.0",
-        "rationale": plan["rationale"],
-        "chunks": [
-            {
-                "id": task["id"],
-                "risk_rank": next((cell["priority"] for cell in plan["cells"] if cell["id"] in task["cell_ids"]), "medium"),
-                "size": len(task["files"]),
-                "files": task["files"],
-                "focus_entry_points": task["entrypoints"],
-                "hypothesis": f"Attempt the {task['attack_class_id']} class against {task['subsystem']}",
-                "threat_id": task["attack_class_id"],
-                "lenses": task["lenses"],
-                "methodology_refs": task["methodology_refs"],
-                "related_advisories": [],
-                "evidence_refs": task["evidence_refs"],
-            }
-            for task in plan["tasks"]
-        ],
-        "warnings": plan["warnings"],
-        "errors": plan["errors"],
-    }
-    (args.scan_base / "sast/task-manifest.json").write_text(json.dumps(compatibility, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-    (args.scan_base / "sast/decompose.md").write_text(
-        "# VulnOps v2 Hunt Plan\n\n"
-        f"- Cells: {len(plan['cells'])}\n"
-        f"- Initial/current tasks: {len(plan['tasks'])}\n"
-        f"- Max tasks: {plan['budget']['max_hunt_tasks']}\n"
-        f"- Gapfill rounds: {plan['budget']['max_gapfill_rounds']}\n",
-        encoding="utf-8",
-    )
     print(output)
     return 0
 

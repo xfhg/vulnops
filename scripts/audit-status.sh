@@ -61,13 +61,11 @@ if not scan.exists():
 
 phase_dirs = [
     ("recon", "repo-context"),
-    ("sca", "sca"),
-    ("secrets", "secrets"),
+    ("tool-collection", "tool-collection"),
     ("sast", "sast"),
-    ("intelligence", "intelligence"),
-    ("triage", "triage"),
+    ("campaign-planning", "campaign-planning"),
     ("intrusion", "intrusion"),
-    ("final-reconciliation", "final-reconciliation"),
+    ("synthesis", "synthesis"),
     ("final-verification", "final-verification"),
     ("report", "report"),
 ]
@@ -90,8 +88,6 @@ def load_json(path: Path):
 phases = []
 run_manifest = load_json(scan / "run-manifest.json")
 is_v2 = isinstance(run_manifest, dict) and run_manifest.get("schema_version") == "2.0"
-if not is_v2:
-    phase_dirs = [item for item in phase_dirs if item[0] != "final-verification"]
 for phase, dirname in phase_dirs:
     path = scan / dirname / "phase-manifest.json"
     manifest = load_json(path)
@@ -113,7 +109,7 @@ validation = subprocess.run(
 
 report_md = scan / "report" / "security-report.md"
 report_json = scan / "report" / "security-report.json"
-enrichment = scan / "intrusion" / "enrichment.json"
+intrusion_results = scan / "intrusion" / "intrusion-results.json"
 summary = {}
 report = load_json(report_json)
 if isinstance(report, dict) and isinstance(report.get("summary"), dict):
@@ -128,6 +124,11 @@ print(f"- State: {'complete' if complete else 'not complete'}")
 if is_v2:
     print(f"- Run ID: {run_manifest.get('run_id', 'unknown')}")
     print(f"- Run manifest: {run_manifest.get('status', 'unknown')}")
+    primary_model = run_manifest.get("model", "unknown")
+    verifier_model = run_manifest.get("verifier_model", "missing")
+    print(f"- Primary model: {primary_model}")
+    print(f"- Verifier model: {verifier_model}")
+    print(f"- Model diversity: {str(primary_model != verifier_model).lower()}")
     print(f"- Reproduction: {run_manifest.get('reproduction_mode', 'off')}")
 for item in phases:
     print(f"- {item['phase']}: {item['status']}")
@@ -142,7 +143,7 @@ if summary:
         print(f"- Severity: {', '.join(counts)}")
 print(f"- Final report: {rel(report_md)}")
 print(f"- JSON report: {rel(report_json)}")
-print(f"- Intrusion enrichment: {rel(enrichment)}")
+print(f"- Intrusion results: {rel(intrusion_results)}")
 if validation.returncode == 0:
     print("- Validation: ok")
 else:

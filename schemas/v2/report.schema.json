@@ -1,59 +1,25 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "title": "VulnOps v2 Sanitized Security Report",
-  "type": "object",
-  "additionalProperties": false,
+  "title": "VulnOps v2 Sanitized Report",
+  "type": "object", "additionalProperties": false,
   "required": ["schema_version", "run_id", "repository", "commit", "date", "summary", "findings", "hardening_notes", "positive_patterns", "coverage", "limitations", "scans"],
   "properties": {
-    "schema_version": {"const": "2.0"},
-    "run_id": {"type": "string", "minLength": 1},
-    "repository": {"type": "string", "minLength": 1},
-    "commit": {"type": "string", "minLength": 1},
-    "date": {"type": "string", "minLength": 1},
-    "summary": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["total", "critical", "high", "medium", "low", "informational", "source_verified", "dynamic_verified", "needs_environment", "rejected"],
-      "properties": {
-        "total": {"type": "integer", "minimum": 0},
-        "critical": {"type": "integer", "minimum": 0},
-        "high": {"type": "integer", "minimum": 0},
-        "medium": {"type": "integer", "minimum": 0},
-        "low": {"type": "integer", "minimum": 0},
-        "informational": {"type": "integer", "minimum": 0},
-        "source_verified": {"type": "integer", "minimum": 0},
-        "dynamic_verified": {"type": "integer", "minimum": 0},
-        "needs_environment": {"type": "integer", "minimum": 0},
-        "rejected": {"type": "integer", "minimum": 0}
-      }
-    },
+    "schema_version": {"const": "2.0"}, "run_id": {"type": "string", "minLength": 1}, "repository": {"type": "string", "minLength": 1}, "commit": {"type": "string", "minLength": 1}, "date": {"type": "string", "minLength": 1},
+    "summary": {"type": "object"},
     "findings": {
       "type": "array",
       "items": {
-        "type": "object",
-        "additionalProperties": false,
-        "required": ["id", "title", "finding_kind", "severity", "confidence", "verdict", "verification_level", "description", "impact", "remediation", "evidence_refs", "test_ref", "patch_ref"],
+        "type": "object", "additionalProperties": false,
+        "required": ["id", "title", "finding_kind", "origin", "severity", "risk_score", "confidence", "verdict", "description", "impact", "remediation", "evidence_refs"],
         "properties": {
-          "id": {"type": "string", "minLength": 1},
-          "title": {"type": "string", "minLength": 1},
-          "finding_kind": {"enum": ["code", "dependency", "secret"]},
-          "severity": {"enum": ["informational", "low", "medium", "high", "critical"]},
-          "confidence": {"enum": ["low", "medium", "high"]},
-          "verdict": {"enum": ["confirmed", "needs_environment"]},
-          "verification_level": {"enum": ["source_verified", "dynamic_verified", "environment_required"]},
-          "description": {"type": "string", "minLength": 1},
-          "impact": {"type": "string", "minLength": 1},
-          "remediation": {"type": "string", "minLength": 1},
-          "evidence_refs": {"type": "array", "items": {"type": "string"}, "minItems": 1},
-          "test_ref": {"type": ["string", "null"]},
-          "patch_ref": {"type": ["string", "null"]}
+          "id": {"type": "string", "pattern": "^F-[0-9]{3}$"}, "title": {"type": "string", "minLength": 1},
+          "finding_kind": {"enum": ["code", "dependency", "secret", "chain"]}, "origin": {"type": "string", "minLength": 1},
+          "severity": {"type": "string", "minLength": 1}, "risk_score": {"type": "integer"}, "confidence": {"type": "string", "minLength": 1},
+          "verdict": {"type": "string", "minLength": 1}, "description": {"type": "string", "minLength": 1}, "impact": {"type": "string", "minLength": 1},
+          "remediation": {"type": "string", "minLength": 1}, "evidence_refs": {"type": "array", "items": {"type": "string"}}
         }
       }
     },
-    "hardening_notes": {"type": "array", "items": {"type": "object"}},
-    "positive_patterns": {"type": "array", "items": {"type": "object"}},
-    "coverage": {"type": "object"},
-    "limitations": {"type": "array", "items": {"type": "string"}},
-    "scans": {"type": "object"}
+    "hardening_notes": {"type": "array"}, "positive_patterns": {"type": "array"}, "coverage": {"type": "object"}, "limitations": {"type": "array", "items": {"type": "string"}}, "scans": {"type": "object"}
   }
 }

@@ -544,7 +544,7 @@ Tools:
   poltergeist   Secrets/credentials scanner
   osv-scanner   OSV database scanner used by wraith
   omp           Oh My Pi orchestrator
-  codegraph     Parallel AST toolkit for intelligence/intrusion
+  codegraph     Offline AST navigation toolkit for campaign intrusion
   all           Install all tools (default)
 
 Options:

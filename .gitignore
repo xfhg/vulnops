@@ -39,6 +39,8 @@ scans/**/*.lock
 *.swo
 *~
 codedb.snapshot
+__pycache__/
+*.pyc
 
 # Local
 .env

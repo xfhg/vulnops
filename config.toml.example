@@ -11,11 +11,16 @@ base_url = ""
 # API key — empty string if no auth required
 api_key = ""
 
-# OMP model selector used by every harness role, phase, and subtask.
+# OMP model selector used by discovery, validation, and all non-verifier roles.
 selector = "openai-codex/gpt-5.5:xhigh"
 
-# Model ID retained for custom-provider metadata and fallback generation.
+# Model ID retained only for custom-provider metadata consistency.
 model = "gpt-5.5:xhigh"
+
+# Independent verification may use a different model/provider. Empty inherits
+# llm.selector.
+[llm.verification]
+selector = ""
 
 # Provider metadata (used by scripts/bootstrap-omp.sh to generate
 # .harness/home/.omp/agent/models.yml)
@@ -47,40 +52,10 @@ discovery = "proxy"
 #   "full"      — 64 hunt tasks, 3 gapfill rounds
 default_depth = "balanced"
 
-[harness.runtime]
-# audit_offline: audit runtime must not perform internet bootstrap work.
-# The configured [llm].base_url is still allowed as the on-prem model endpoint.
-audit_offline = true
-allow_configured_llm_endpoint = true
-# Keep tool homes, temp files, caches, logs, and agent outputs inside this repo.
-contained = true
-approved_write_roots = ["scans", ".harness", "work", "bins"]
-# OMP session tool allowlist (--tools), --approval-mode, and --advisor are
-# single-sourced in run.sh (the OMP launch script); not duplicated here.
-
-[harness.scans.sca]
-# Path to wraith binary (relative to harness root)
-binary = "bins/wraith"
-# Extra CLI flags passed to wraith
-#   "--offline" — use local OSV database, no network calls
-extra_flags = ["--offline"]
-
 [harness.scans.sast]
 # Maximum UTF-8 size of the architecture/evidence packet injected into one
 # hunter. Agents may read additional source through tools.
 context_packet_bytes = 65536
-
-[harness.scans.sast.fanout.quick]
-deepdive_chunks = 4
-verify_findings = 4
-
-[harness.scans.sast.fanout.balanced]
-deepdive_chunks = 8
-verify_findings = 8
-
-[harness.scans.sast.fanout.full]
-deepdive_chunks = 16
-verify_findings = 12
 
 [harness.scans.sast.budget.quick]
 max_hunt_tasks = 12
@@ -110,47 +85,3 @@ max_output_kb = 256
 max_parallel = 1
 # Sanitized regression tests and draft patches are retained under the run.
 # Exact proof tokens and raw command output are never rendered into reports.
-
-[harness.scans.secrets]
-# Path to poltergeist binary (relative to harness root)
-binary = "bins/poltergeist"
-# Extra CLI flags passed to poltergeist
-extra_flags = []
-
-[harness.scans.intelligence]
-# Intelligence is a required evidence-preservation layer.
-
-[harness.scans.intrusion]
-# Intrusion is required, but a run with no verified seeds may have zero graph
-# scopes. Every planned scope must use the required offline AST backend.
-
-[harness.scans.reconciliation]
-# Reconcile triage findings with intrusion enrichment before report generation.
-enabled = true
-
-# ── Output ────────────────────────────────────────────────────────────
-[output]
-# Directory for all scan results (relative to harness root)
-scan_dir = "scans"
-# Report output format
-#   "markdown" — human-readable .md report only
-#   "json"     — machine-readable .json report only
-#   "both"     — generate both markdown and json
-format = "both"
-# Include raw tool stdout/stderr in the report
-#   true  — full tool output appended to report
-#   false — summary only, raw output in scans/<tool>/raw/ for reference
-include_raw = false
-
-# ── Logging ───────────────────────────────────────────────────────────
-[logging]
-# Log verbosity
-#   "debug" — full trace output (verbose)
-#   "info"  — progress and milestones (default)
-#   "warn"  — warnings and errors only
-#   "error" — errors only
-level = "info"
-# Directory for harness log files (relative to harness root)
-dir = ".harness/logs"
-# Number of recent scan log sets to retain (older logs are pruned)
-retain = 5

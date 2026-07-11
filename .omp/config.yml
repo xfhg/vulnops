@@ -16,6 +16,8 @@ modelRoles:
   designer: 'openai-codex/gpt-5.5:xhigh'
   commit: 'openai-codex/gpt-5.5:xhigh'
   tiny: 'openai-codex/gpt-5.5:xhigh'
+  primary: 'openai-codex/gpt-5.5:xhigh'
+  verifier: 'openai-codex/gpt-5.5:xhigh'
 
 memory:
   enabled: false

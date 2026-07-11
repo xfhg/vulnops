@@ -1,557 +1,112 @@
 #!/usr/bin/env bash
-# Validate that the harness can run an audit without bootstrap/network setup.
-
+# Greenfield V2 readiness gate: configuration, generated roles, contracts, and
+# real contained tool probes must all succeed before an audit starts.
 set -euo pipefail
-
 HARNESS_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 # shellcheck source=scripts/harness-lib.sh
 source "${HARNESS_ROOT}/scripts/harness-lib.sh"
-
-errors=0
-warnings=0
-MIN_OSV_DB_FILES=3
-MIN_OSV_DB_SIZE_KB=51200
-
-err() {
-    echo "[validate-config] ERROR: $*" >&2
-    errors=$((errors + 1))
-}
-
-ok() {
-    echo "[validate-config] OK: $*"
-}
-
-warn() {
-    echo "[validate-config] WARN: $*" >&2
-    warnings=$((warnings + 1))
-}
-
-check_exec_or_warn() {
-    local path="$1"
-    local label="$2"
-    if [ -x "$path" ]; then
-        echo "[validate-config] OK: $label"
-    else
-        warn "$label missing or not executable: $path"
-    fi
-}
-
-check_codegraph_init() {
-    local cg_index="${CODEGRAPH_INDEX_DIR:-${VULNOPSV3_SCANS:-${HARNESS_ROOT}/scans}/.codegraph}"
-    local marker="${cg_index}/.codegraph-init-marker"
-    if [ ! -x "${HARNESS_ROOT}/bins/codegraph" ]; then
-        err "codegraph binary missing or not executable: ${HARNESS_ROOT}/bins/codegraph"
-    elif [ ! -f "$marker" ]; then
-        warn "codegraph not yet initialized (marker absent: $marker). It is indexed on the next audit run via scripts/setup-codegraph.sh; the binary check above is the hard gate, and phase gates enforce real codegraph output."
-    fi
-}
-
-check_file() {
-    local path="$1"
-    local label="$2"
-    if [ -f "$path" ]; then
-        ok "$label"
-    else
-        err "$label missing: $path"
-    fi
-}
-
-check_exec() {
-    local path="$1"
-    local label="$2"
-    if [ -x "$path" ]; then
-        ok "$label"
-    else
-        err "$label missing or not executable: $path"
-    fi
-}
-
-check_version_command() {
-    local path="$1"
-    local label="$2"
-    local version
-    if [ ! -x "$path" ]; then
-        return
-    fi
-    version="$("$path" --version 2>/dev/null | head -n 1 || true)"
-    if [ -n "$version" ]; then
-        ok "${label} version: ${version}"
-    else
-        err "${label} --version produced no output"
-    fi
-}
-
-check_nonempty_dir() {
-    local path="$1"
-    local label="$2"
-    if [ -d "$path" ] && [ -n "$(find "$path" -mindepth 1 -print -quit 2>/dev/null)" ]; then
-        ok "$label"
-    else
-        err "$label missing or empty: $path"
-    fi
-}
-
-
-check_osv_db() {
-    local path="$1"
-    local count size
-    if [ ! -d "$path" ]; then
-        err "OSV local database missing: $path"
-        return
-    fi
-    count="$(find "$path" -type f | wc -l | tr -d ' ')"
-    size="$(du -sk "$path" 2>/dev/null | awk '{print $1}')"
-    if [ "${count}" -ge "${MIN_OSV_DB_FILES}" ] && [ "${size}" -ge "${MIN_OSV_DB_SIZE_KB}" ]; then
-        ok "OSV local database"
-    else
-        err "OSV local database incomplete: ${count} files, ${size:-0}KB; run: bash scripts/fetch-osv-db.sh"
-    fi
-}
-
-check_env_path_inside() {
-    local name="$1"
-    local value="${!name:-}"
-    if [ -z "$value" ]; then
-        return 0
-    fi
-    case "$value" in
-        "$HARNESS_ROOT"|"$HARNESS_ROOT"/*) ok "$name contained" ;;
-        *) err "$name escapes harness root: $value" ;;
-    esac
-}
-
-check_scan_tool_config() {
-    local py
-    py="$(command -v python3 2>/dev/null || true)"
-    if [ -z "$py" ]; then
-        err "python3 not found for config consistency checks"
-        return
-    fi
-    "$py" - "${HARNESS_ROOT}/config.toml" <<'PY' || err "scan tool config inconsistent"
-from __future__ import annotations
-
-import sys
-from pathlib import Path
-
-try:
-    import tomllib
-except ModuleNotFoundError:
-    print("tomllib unavailable", file=sys.stderr)
-    raise SystemExit(1)
-
-path = Path(sys.argv[1])
-with path.open("rb") as handle:
-    cfg = tomllib.load(handle)
-
-scans = cfg.get("harness", {}).get("scans", {})
-errors: list[str] = []
-
-sca = scans.get("sca", {})
-if sca.get("binary") != "bins/wraith":
-    errors.append("[harness.scans.sca].binary must be 'bins/wraith'")
-sca_flags = sca.get("extra_flags", [])
-if "--offline" not in sca_flags:
-    errors.append("[harness.scans.sca].extra_flags must include '--offline'")
-
-secrets = scans.get("secrets", {})
-if secrets.get("binary") != "bins/poltergeist":
-    errors.append("[harness.scans.secrets].binary must be 'bins/poltergeist'")
-if secrets.get("extra_flags", []) != []:
-    errors.append("[harness.scans.secrets].extra_flags must be []")
-
-if errors:
-    for error in errors:
-        print(error, file=sys.stderr)
-    raise SystemExit(1)
-PY
-    ok "scan tool config matches wrapper defaults"
-}
-
-check_model_roles() {
-    local path="$1"
-    local label="$2"
-    local py
-    py="$(command -v python3 2>/dev/null || true)"
-    if [ -z "$py" ]; then
-        err "python3 not found for OMP model role checks"
-        return
-    fi
-    if "$py" - "$path" "${OMP_MODEL_SELECTOR:-}" <<'PY'; then
-from __future__ import annotations
-
-import sys
-from pathlib import Path
-
-path = Path(sys.argv[1])
-expected = sys.argv[2]
-required = [
-    "default",
-    "task",
-    "slow",
-    "smol",
-    "plan",
-    "advisor",
-    "vision",
-    "designer",
-    "commit",
-    "tiny",
-]
-
-roles: dict[str, str] = {}
-in_roles = False
-for raw in path.read_text().splitlines():
-    if raw.startswith("modelRoles:"):
-        in_roles = True
-        continue
-    if in_roles and raw and not raw.startswith((" ", "	")):
-        in_roles = False
-        continue
-    if not in_roles:
-        continue
-    stripped = raw.strip()
-    if not stripped or stripped.startswith("#") or ":" not in stripped:
-        continue
-    key, value = stripped.split(":", 1)
-    roles[key.strip()] = value.strip().strip("'\"")
-
-missing = [role for role in required if role not in roles]
-wrong = [f"{role}={roles.get(role)!r}" for role in required if roles.get(role) != expected]
-if missing or wrong:
-    if missing:
-        print("missing roles: " + ", ".join(missing), file=sys.stderr)
-    if wrong:
-        print("wrong roles: " + ", ".join(wrong), file=sys.stderr)
-    raise SystemExit(1)
-PY
-        ok "${label} model roles use ${OMP_MODEL_SELECTOR}"
-    else
-        err "${label} model roles must all use ${OMP_MODEL_SELECTOR}"
-    fi
-}
-
-
 harness_setup_containment "$HARNESS_ROOT"
+errors=0
+ok(){ echo "[validate-config] OK: $*"; }
+err(){ echo "[validate-config] ERROR: $*" >&2; errors=$((errors+1)); }
+check_file(){ [ -f "$1" ] && ok "$2" || err "$2 missing: $1"; }
+check_exec(){ [ -x "$1" ] && ok "$2" || err "$2 missing or not executable: $1"; }
 
 check_file "${HARNESS_ROOT}/config.toml" "config.toml"
-check_file "${HARNESS_ROOT}/scripts/load-config.sh" "load-config script"
-check_exec "${HARNESS_ROOT}/scripts/bootstrap-omp.sh" "OMP bootstrap script"
-check_exec "${HARNESS_ROOT}/scripts/audit-status.sh" "audit status script"
-check_exec "${HARNESS_ROOT}/scripts/build-intelligence.py" "intelligence builder script"
-check_exec "${HARNESS_ROOT}/scripts/validate-phase.sh" "phase validation script"
-check_exec "${HARNESS_ROOT}/scripts/wait-phase.sh" "phase wait script"
-
 eval "$("${HARNESS_ROOT}/scripts/load-config.sh")"
 
-if [ "${OMP_MODEL_SELECTOR:-}" = "openai-codex/gpt-5.5:xhigh" ]; then
-    ok "OMP model selector configured (${OMP_MODEL_SELECTOR})"
-else
-    err "llm.selector must be openai-codex/gpt-5.5:xhigh"
-fi
+python3 - "${HARNESS_ROOT}/config.toml" <<'PY' || err "canonical configuration is invalid"
+import re,sys,tomllib
+from pathlib import Path
+cfg=tomllib.loads(Path(sys.argv[1]).read_text())
+def only(mapping,allowed,label):
+    extra=set(mapping)-set(allowed)
+    if extra:raise SystemExit(f"unknown {label} option(s): {', '.join(sorted(extra))}")
+only(cfg,{"llm","harness"},"top-level")
+llm=cfg.get("llm",{}); selector=str(llm.get("selector","")).strip(); verifier=str(llm.get("verification",{}).get("selector","")).strip() or selector
+only(llm,{"base_url","api_key","selector","model","verification","provider"},"llm")
+only(llm.get("verification",{}),{"selector"},"llm.verification")
+pattern=re.compile(r"^[^/\s]+/[^\s]+$")
+if not pattern.fullmatch(selector) or not pattern.fullmatch(verifier):raise SystemExit("selectors must use provider/model syntax")
+provider=llm.get("provider",{}); custom=str(provider.get("name","on-prem")); selected=[x for x in (selector,verifier) if x.startswith(custom+"/")]
+only(provider,{"name","api","auth","discovery","models"},"llm.provider")
+for index,item in enumerate(provider.get("models",[])):
+    only(item,{"id","name","context_window","max_tokens","contextWindow","maxTokens"},f"llm.provider.models[{index}]")
+if selected and not str(llm.get("base_url","")).strip():raise SystemExit("selected custom provider requires llm.base_url")
+if selected and provider.get("auth","api-key")!="none" and not str(llm.get("api_key","")).strip():raise SystemExit("selected custom provider requires llm.api_key")
+harness=cfg.get("harness",{});only(harness,{"default_depth","scans","reproduction"},"harness")
+if harness.get("default_depth") not in {"quick","balanced","full"}:raise SystemExit("harness.default_depth is invalid")
+scans=harness.get("scans",{});only(scans,{"sast"},"harness.scans");sast=scans.get("sast",{});only(sast,{"context_packet_bytes","budget"},"harness.scans.sast")
+if int(sast.get("context_packet_bytes",65536))<1024:raise SystemExit("SAST context_packet_bytes must be at least 1024")
+for depth,item in sast.get("budget",{}).items():
+    if depth not in {"quick","balanced","full"}:raise SystemExit(f"unknown SAST budget depth: {depth}")
+    only(item,{"max_hunt_tasks","max_gapfill_rounds","max_attempts"},f"SAST {depth} budget")
+    if int(item.get("max_hunt_tasks",0))<1 or int(item.get("max_attempts",0))<1 or int(item.get("max_gapfill_rounds",-1))<0:raise SystemExit(f"invalid SAST {depth} budget")
+reproduction=harness.get("reproduction",{});only(reproduction,{"mode","sandbox","timeout_seconds","cpu_seconds","memory_mb","max_processes","max_output_kb","max_parallel"},"harness.reproduction")
+if reproduction.get("mode","off") not in {"off","safe"} or reproduction.get("sandbox","auto") not in {"auto","bubblewrap"}:raise SystemExit("reproduction mode or sandbox is invalid")
+for key in ("timeout_seconds","cpu_seconds","memory_mb","max_processes","max_output_kb","max_parallel"):
+    if int(reproduction.get(key,1))<1:raise SystemExit(f"harness.reproduction.{key} must be positive")
+text=Path(sys.argv[1]).read_text()
+for obsolete in ("include_raw","scans.intelligence","scans.reconciliation"):
+    if obsolete in text:raise SystemExit(f"obsolete configuration is forbidden: {obsolete}")
+PY
 
-if [[ "${OMP_MODEL_SELECTOR:-}" = openai-codex/* ]]; then
-    ok "custom LLM endpoint not required for selected built-in provider"
-elif [ -n "${ON_PREM_LLM_BASE_URL:-}" ]; then
-    ok "LLM endpoint configured (${ON_PREM_LLM_BASE_URL%%://*}://...)"
-else
-    err "llm.base_url is empty"
-fi
+for binary in omp wraith poltergeist osv-scanner codegraph; do check_exec "${HARNESS_ROOT}/bins/${binary}" "binary ${binary}"; done
+for script in run-audit.sh validate-phase.sh validate-scan.sh init-run.py resume-run.py update-run-state.py dependency_contract.py finalize-recon.py build-hunt-plan.py finalize-sast.py collect-tools.py run-wraith.sh run-poltergeist.sh normalize-wraith.py normalize-poltergeist.py setup-codegraph.sh codegraph-adapter.py build-evidence-index.py build-campaign-plan.py finalize-intrusion.py empty-synthesis.py finalize-synthesis.py finalize-verification.py render-report.py probe-bubblewrap.sh probe-toolchain.sh; do check_exec "${HARNESS_ROOT}/scripts/${script}" "runtime ${script}"; done
+for schema in run-manifest task-ledger phase-manifest recon-research repo-context security-surfaces sca-advisories secrets-redacted tool-receipt tool-collection threat-model hunt-plan hunt-result candidate-finding validation-result reproduction-result coverage-ledger wishlist evidence-index campaign-plan intrusion-results synthesis-findings independent-verification-result final-findings report; do check_file "${HARNESS_ROOT}/schemas/v2/${schema}.schema.json" "schema ${schema}"; done
+for agent in recon recon-overview recon-trust recon-inputs sast-lead threatmodel deepdive-chunk verify-one reproduce-one campaign-planning intrusion intrusion-campaign synthesis final-verification independent-verify-one; do check_file "${HARNESS_ROOT}/.omp/agents/vulnops-${agent}.md" "OMP agent ${agent}"; done
+if grep -F -q 'scripts/finalize-recon.py' "${HARNESS_ROOT}/.omp/agents/vulnops-recon.md"; then ok "Recon uses deterministic finalization"; else err "Recon must use deterministic finalization"; fi
+if grep -F -q 'from dependency_contract import' "${HARNESS_ROOT}/scripts/collect-tools.py" && grep -F -q 'discover_dependency_files' "${HARNESS_ROOT}/scripts/validate-json.py"; then ok "dependency handoff is single-sourced and semantically enforced"; else err "dependency handoff contract is not enforced end to end"; fi
 
-if [ -n "${ON_PREM_MODEL_NAME:-}" ]; then
-    ok "LLM model configured"
-else
-    err "llm.model is empty"
-fi
+for forbidden in "${HARNESS_ROOT}/config/harness.yaml" "${HARNESS_ROOT}/config/scan-criteria.yaml" "${HARNESS_ROOT}/V2UPGRADE.md" "${HARNESS_ROOT}/.omp/agents/vulnops-intelligence.md" "${HARNESS_ROOT}/.omp/agents/vulnops-triage.md" "${HARNESS_ROOT}/.omp/agents/vulnops-reconcile.md" "${HARNESS_ROOT}/.omp/agents/vulnops-decompose.md" "${HARNESS_ROOT}/.omp/agents/vulnops-tool-collection.md" "${HARNESS_ROOT}/.omp/agents/vulnops-sca.md" "${HARNESS_ROOT}/.omp/agents/vulnops-secrets.md"; do [ ! -e "$forbidden" ] && ok "obsolete artifact absent: ${forbidden#${HARNESS_ROOT}/}" || err "obsolete artifact must be removed: $forbidden"; done
+if grep -R -n -E '(^|[[:space:]])(web_search|browser)([[:space:]]|$)' "${HARNESS_ROOT}/.omp/agents" >/dev/null 2>&1; then err "audit agents may not enable web or browser tools"; else ok "audit agents are offline-only"; fi
+if [ -e "${HARNESS_ROOT}/.omp/agents/vulnops-reporter.md" ]; then err "model-authored reporting agent is forbidden"; else ok "reporting remains deterministic"; fi
 
-
-OMP_PROVIDER_NAME="${ON_PREM_PROVIDER_NAME:-on-prem}"
-
-check_exec "${HARNESS_ROOT}/bins/omp" "OMP binary"
-check_exec "${HARNESS_ROOT}/bins/wraith" "Wraith binary"
-check_exec "${HARNESS_ROOT}/bins/poltergeist" "Poltergeist binary"
-check_exec "${HARNESS_ROOT}/bins/osv-scanner" "OSV scanner binary"
-check_exec "${HARNESS_ROOT}/bins/codegraph" "codegraph AST toolkit (required)"
-check_version_command "${HARNESS_ROOT}/bins/omp" "OMP binary"
-check_version_command "${HARNESS_ROOT}/bins/wraith" "Wraith binary"
-check_version_command "${HARNESS_ROOT}/bins/poltergeist" "Poltergeist binary"
-check_version_command "${HARNESS_ROOT}/bins/osv-scanner" "OSV scanner binary"
-check_version_command "${HARNESS_ROOT}/bins/codegraph" "codegraph AST toolkit"
-check_scan_tool_config
-check_codegraph_init
-check_osv_db "${HARNESS_ROOT}/.harness/osv-db"
-
-for agent in recon sca sast secrets intelligence triage intrusion reconcile; do
-    check_file "${HARNESS_ROOT}/config/agents/${agent}.md" "agent prompt: ${agent}"
+for selector_name in OMP_MODEL_SELECTOR OMP_VERIFIER_MODEL_SELECTOR; do
+    value="${!selector_name:-}"; [[ "$value" =~ ^[^/[:space:]]+/[^[:space:]]+$ ]] && ok "$selector_name syntax" || err "$selector_name syntax invalid"
 done
 
-check_file "${HARNESS_ROOT}/.omp/main/vulnops-main.md" "OMP main prompt"
+python3 - "${PI_CODING_AGENT_DIR}/config.yml" "${OMP_MODEL_SELECTOR:-}" "${OMP_VERIFIER_MODEL_SELECTOR:-}" <<'PY' || err "generated model roles do not match selectors"
+import sys
+from pathlib import Path
+path=Path(sys.argv[1]); primary=sys.argv[2]; verifier=sys.argv[3]
+if not path.is_file():raise SystemExit("generated OMP config missing")
+roles={};active=False
+for line in path.read_text().splitlines():
+    if line.startswith("modelRoles:"):active=True;continue
+    if active and line and not line.startswith((" ","\t")):active=False
+    if active and ":" in line:
+        k,v=line.strip().split(":",1);roles[k]=v.strip().strip("'\"")
+for role in ("default","task","slow","smol","plan","advisor","vision","designer","commit","tiny","primary"):
+    if roles.get(role)!=primary:raise SystemExit(f"{role} mismatch")
+if roles.get("verifier")!=verifier:raise SystemExit("verifier role mismatch")
+PY
 
-if [ -e "${HARNESS_ROOT}/.omp/agents/vulnops-lead.md" ]; then
-    err "vulnops-lead must be a main-process prompt, not a subagent"
-else
-    ok "vulnops-lead subagent absent"
-fi
-
-for obsolete_reporter in \
-    "${HARNESS_ROOT}/.omp/agents/vulnops-reporter.md" \
-    "${HARNESS_ROOT}/config/agents/reporter.md"; do
-    if [ -e "$obsolete_reporter" ]; then
-        err "model-authored reporter must be absent: $obsolete_reporter"
-    else
-        ok "model-authored reporter absent"
-    fi
+custom_provider="${ON_PREM_PROVIDER_NAME:-on-prem}"
+custom_models=()
+for selector in "${OMP_MODEL_SELECTOR:-}" "${OMP_VERIFIER_MODEL_SELECTOR:-}"; do
+    if [[ "$selector" = "${custom_provider}/"* ]]; then custom_models+=("${selector#*/}"); fi
 done
-
-for agent in \
-    vulnops-recon \
-    vulnops-recon-overview \
-    vulnops-recon-trust \
-    vulnops-recon-inputs \
-    vulnops-sca \
-    vulnops-secrets \
-    vulnops-sast-lead \
-    vulnops-threatmodel \
-    vulnops-decompose \
-    vulnops-deepdive-chunk \
-    vulnops-verify-one \
-    vulnops-reproduce-one \
-    vulnops-intelligence \
-    vulnops-triage \
-    vulnops-intrusion \
-    vulnops-reconcile \
-    vulnops-final-verification \
-    vulnops-independent-verify-one; do
-    check_file "${HARNESS_ROOT}/.omp/agents/${agent}.md" "OMP agent: ${agent}"
-done
-
-for skill in \
-    vulnops-exclusion-rules \
-    vulnops-self-verification \
-    vulnops-severity-guidance \
-    vulnops-access-control \
-    vulnops-iac \
-    vulnops-batch-etl \
-    vulnops-logic-bug \
-    vulnops-deserialization \
-    vulnops-crypto; do
-    check_file "${HARNESS_ROOT}/.omp/skills/${skill}/SKILL.md" "OMP skill: ${skill}"
-done
-
-for skill in \
-    vulnops-audit-core \
-    vulnops-attack-general \
-    vulnops-attack-ai-llm \
-    vulnops-attack-http-auth \
-    vulnops-attack-client \
-    vulnops-attack-native \
-    vulnops-attack-mobile; do
-    check_file "${HARNESS_ROOT}/.omp/skills/${skill}/SKILL.md" "OMP v2 skill: ${skill}"
-done
-
-agent_tool_report="${TMPDIR}/vulnops-omp-agent-web-tools.txt"
-if grep -R -n -E '^[[:space:]]*-[[:space:]]*(web_search|browser)[[:space:]]*$' "${HARNESS_ROOT}/.omp/agents"/vulnops-*.md >"$agent_tool_report" 2>/dev/null; then
-    err "OMP audit agents must not enable web_search or browser tools"
-    sed 's/^/[validate-config]   /' "$agent_tool_report" >&2
-else
-    ok "OMP audit agents exclude web/browser tools"
-fi
-
-agent_irc_report="${TMPDIR}/vulnops-omp-agent-missing-irc.txt"
-grep -L -E '^[[:space:]]*-[[:space:]]*irc[[:space:]]*$' "${HARNESS_ROOT}/.omp/agents"/vulnops-*.md >"$agent_irc_report" 2>/dev/null || true
-if [ -s "$agent_irc_report" ]; then
-    err "OMP audit agents must enable irc for live progress"
-    sed 's/^/[validate-config]   /' "$agent_irc_report" >&2
-else
-    ok "OMP audit agents enable irc"
-fi
-
-if grep -q -- '--tools "[^"]*irc' "${HARNESS_ROOT}/run.sh"; then
-    ok "run.sh exposes irc tool"
-else
-    err "run.sh --tools must include irc"
-fi
-
-lead_launch_report="${TMPDIR}/vulnops-lead-launch.txt"
-if grep -R -n -E 'agent:[[:space:]]*"vulnops-lead"|task\([^)]*vulnops-lead' "${HARNESS_ROOT}/AGENTS.md" "${HARNESS_ROOT}/.omp/main" >"$lead_launch_report" 2>/dev/null; then
-    err "Main/docs must not launch vulnops-lead as a subagent"
-    sed 's/^/[validate-config]   /' "$lead_launch_report" >&2
-else
-    ok "no active vulnops-lead subagent launch instruction"
-fi
-
-main_polling_report="${TMPDIR}/vulnops-main-polling.txt"
-if grep -R -n -E 'sleep[[:space:]]+[0-9]|find[[:space:]].*scans|ls[[:space:]].*scans|wait and check files|wait-phase\.sh[[:space:]].*(1800|3600)' "${HARNESS_ROOT}/AGENTS.md" "${HARNESS_ROOT}/.omp/main" >"$main_polling_report" 2>/dev/null; then
-    err "Main/docs contain active Bash polling orchestration patterns"
-    sed 's/^/[validate-config]   /' "$main_polling_report" >&2
-else
-    ok "Main/docs avoid Bash polling orchestration patterns"
-fi
-
-history_uri_report="${TMPDIR}/vulnops-history-uri.txt"
-if grep -R -n -E 'agent://|history://' "${HARNESS_ROOT}/.omp/main" >"$history_uri_report" 2>/dev/null; then
-    err "Main prompt must not use agent:// or history:// transcript URIs; use OMP yield, IRC, and validation artifacts"
-    sed 's/^/[validate-config]   /' "$history_uri_report" >&2
-else
-    ok "Main prompt avoids transcript URI tool-call hazards"
-fi
-
-check_file "${HARNESS_ROOT}/schemas/phase-manifest.schema.json" "phase manifest schema"
-check_file "${HARNESS_ROOT}/schemas/finding.schema.json" "finding schema"
-check_file "${HARNESS_ROOT}/schemas/report.schema.json" "report schema"
-check_file "${HARNESS_ROOT}/schemas/threat-model.schema.json" "threat model schema"
-check_file "${HARNESS_ROOT}/schemas/task-manifest.schema.json" "task manifest schema"
-check_file "${HARNESS_ROOT}/schemas/sast-raw-finding.schema.json" "SAST raw finding schema"
-check_file "${HARNESS_ROOT}/schemas/sast-verified-finding.schema.json" "SAST verified finding schema"
-check_file "${HARNESS_ROOT}/schemas/dropped-finding.schema.json" "dropped finding schema"
-check_file "${HARNESS_ROOT}/schemas/agent-yield.schema.json" "agent yield schema"
-
-for schema in \
-    run-manifest task-ledger recon-research repo-context security-surfaces \
-    sca-advisories secrets-redacted \
-    threat-model hunt-plan hunt-result \
-    candidate-finding validation-result reproduction-result coverage-ledger \
-    wishlist independent-verification-result final-findings report; do
-    check_file "${HARNESS_ROOT}/schemas/v2/${schema}.schema.json" "v2 schema: ${schema}"
-done
-
-for script in \
-    validate-json.py validate-phase-v2.py validate-scan-v2.py \
-    target-fingerprint.py init-run.py update-run-state.py build-hunt-plan.py \
-    finalize-sast.py run-safe-reproduction.sh redact-output.py \
-    finalize-verification.py render-report.py; do
-    check_exec "${HARNESS_ROOT}/scripts/${script}" "v2 runtime: ${script}"
-done
-
-case "${VULNOPS_DEFAULT_DEPTH:-quick}" in
-    quick|balanced|full) ok "default audit depth is valid" ;;
-    *) err "harness.default_depth must be quick, balanced, or full" ;;
-esac
-case "${VULNOPS_REPRODUCTION_MODE:-off}" in
-    off|safe) ok "reproduction mode is valid" ;;
-    *) err "harness.reproduction.mode must be off or safe" ;;
-esac
-case "${VULNOPS_REPRODUCTION_SANDBOX:-auto}" in
-    auto|bubblewrap) ok "reproduction sandbox setting is valid" ;;
-    *) err "harness.reproduction.sandbox must be auto or bubblewrap" ;;
-esac
-for numeric_var in \
-    VULNOPS_REPRODUCTION_TIMEOUT_SECONDS \
-    VULNOPS_REPRODUCTION_CPU_SECONDS \
-    VULNOPS_REPRODUCTION_MEMORY_MB \
-    VULNOPS_REPRODUCTION_MAX_PROCESSES \
-    VULNOPS_REPRODUCTION_MAX_OUTPUT_KB \
-    VULNOPS_REPRODUCTION_MAX_PARALLEL \
-    VULNOPS_SAST_CONTEXT_PACKET_BYTES \
-    VULNOPS_SAST_QUICK_MAX_HUNT_TASKS VULNOPS_SAST_QUICK_MAX_ATTEMPTS \
-    VULNOPS_SAST_BALANCED_MAX_HUNT_TASKS VULNOPS_SAST_BALANCED_MAX_ATTEMPTS \
-    VULNOPS_SAST_FULL_MAX_HUNT_TASKS VULNOPS_SAST_FULL_MAX_ATTEMPTS; do
-    numeric_value="${!numeric_var:-}"
-    if [[ "$numeric_value" =~ ^[1-9][0-9]*$ ]]; then
-        ok "${numeric_var} is a positive integer"
-    else
-        err "${numeric_var} must be a positive integer"
-    fi
-done
-for rounds_var in \
-    VULNOPS_SAST_QUICK_MAX_GAPFILL_ROUNDS \
-    VULNOPS_SAST_BALANCED_MAX_GAPFILL_ROUNDS \
-    VULNOPS_SAST_FULL_MAX_GAPFILL_ROUNDS; do
-    rounds_value="${!rounds_var:-}"
-    if [[ "$rounds_value" =~ ^[0-9]+$ ]]; then
-        ok "${rounds_var} is a non-negative integer"
-    else
-        err "${rounds_var} must be a non-negative integer"
-    fi
-done
-
-if [ "${VULNOPS_REPRODUCTION_MODE:-off}" = "safe" ]; then
-    if bash "${HARNESS_ROOT}/scripts/run-safe-reproduction.sh" "${HARNESS_ROOT}/scans" readiness detect >/dev/null 2>&1; then
-        ok "safe reproduction sandbox available"
-    else
-        warn "safe reproduction requested but no proven sandbox is currently available; runtime findings will be environment-required"
-    fi
-fi
-
-check_file "${HARNESS_ROOT}/.omp/config.yml" "project OMP config"
-check_file "${PI_CODING_AGENT_DIR}/config.yml" "harness-local OMP config"
-check_file "${PI_CODING_AGENT_DIR}/models.yml" "harness-local OMP models"
-
-if [ -f "${PI_CODING_AGENT_DIR}/config.yml" ]; then
-    if grep -q '^setupVersion:[[:space:]]*1[[:space:]]*$' "${PI_CODING_AGENT_DIR}/config.yml" &&
-        grep -q '^[[:space:]]*setupWizard:[[:space:]]*false[[:space:]]*$' "${PI_CODING_AGENT_DIR}/config.yml"; then
-        ok "OMP onboarding disabled in harness-local config"
-    else
-        err "harness-local OMP config must disable setup wizard and set setupVersion: 1"
-    fi
-    missing_roles=()
-    for role in default task slow smol plan advisor; do
-        if ! grep -q "^[[:space:]]*${role}:[[:space:]]*[^[:space:]]" "${PI_CODING_AGENT_DIR}/config.yml"; then
-            missing_roles+=("$role")
-        fi
+models_file="${PI_CODING_AGENT_DIR}/models.yml"
+if [ "${#custom_models[@]}" -gt 0 ]; then
+    check_file "$models_file" "generated custom model registry"
+    if [ -f "$models_file" ] && grep -F -q "  ${custom_provider}:" "$models_file"; then ok "configured custom provider registered"; else err "configured custom provider missing from models.yml"; fi
+    for model_id in "${custom_models[@]}"; do
+        if [ -f "$models_file" ] && grep -F -q -- "- id: '${model_id}'" "$models_file"; then ok "custom model registered: ${custom_provider}/${model_id}"; else err "selected custom model missing from models.yml: ${custom_provider}/${model_id}"; fi
     done
-    if [ "${#missing_roles[@]}" -eq 0 ]; then
-        ok "harness-local OMP config has non-empty model roles"
-    else
-        err "harness-local OMP config missing model role(s): ${missing_roles[*]}"
-    fi
-    check_model_roles "${PI_CODING_AGENT_DIR}/config.yml" "harness-local OMP config"
+elif [ -f "$models_file" ] && grep -F -q "  ${custom_provider}:" "$models_file"; then
+    err "stale custom provider remains in models.yml"
+else
+    ok "built-in selectors require no generated custom provider"
 fi
 
-if [ -f "${HARNESS_ROOT}/.omp/config.yml" ]; then
-    check_model_roles "${HARNESS_ROOT}/.omp/config.yml" "project OMP config"
+if [ ! -d "${HARNESS_ROOT}/.harness/osv-db" ]; then err "local OSV database missing"; else ok "local OSV database present"; fi
+if [ "${VULNOPS_SKIP_FUNCTIONAL_PROBES:-0}" = "1" ]; then
+    ok "functional probes explicitly skipped for fixture testing"
+elif bash "${HARNESS_ROOT}/scripts/probe-toolchain.sh"; then ok "contained toolchain functional probe"; else err "contained toolchain functional probe failed"; fi
+if [ "${VULNOPS_REPRODUCTION_MODE:-off}" = "safe" ]; then
+    if "${HARNESS_ROOT}/scripts/probe-bubblewrap.sh" >/dev/null 2>&1; then ok "bubblewrap isolation probe"; else echo "[validate-config] WARN: safe reproduction unavailable; findings will require environment evidence" >&2; fi
 fi
 
-if [ -f "${PI_CODING_AGENT_DIR}/models.yml" ]; then
-    if [[ "${OMP_MODEL_SELECTOR:-}" = openai-codex/* ]]; then
-        if grep -F -q "claude-opus-4-6" "${PI_CODING_AGENT_DIR}/models.yml" ||
-            grep -F -q "  on-prem:" "${PI_CODING_AGENT_DIR}/models.yml"; then
-            err "harness-local OMP models contain stale custom provider state for built-in selector"
-        else
-            ok "harness-local OMP models neutral for built-in selector"
-        fi
-    else
-        if grep -F -q "  ${OMP_PROVIDER_NAME}:" "${PI_CODING_AGENT_DIR}/models.yml" &&
-            grep -F -q "baseUrl:" "${PI_CODING_AGENT_DIR}/models.yml" &&
-            grep -F -q "${ON_PREM_MODEL_NAME:-}" "${PI_CODING_AGENT_DIR}/models.yml"; then
-            ok "harness-local OMP models include configured custom provider/model"
-        else
-            err "harness-local OMP models missing configured custom provider/model"
-        fi
-        if grep -q 'apiKey:' "${PI_CODING_AGENT_DIR}/models.yml" || [ "${ON_PREM_PROVIDER_AUTH:-api-key}" = "none" ]; then
-            ok "harness-local OMP models include auth material or no-auth mode"
-        else
-            err "harness-local OMP models missing apiKey for authenticated provider"
-        fi
-    fi
-fi
-
-for dir in \
-    "$TMPDIR" \
-    "$XDG_CACHE_HOME" \
-    "$XDG_CONFIG_HOME" \
-    "$XDG_DATA_HOME" \
-    "$PIP_CACHE_DIR" \
-    "$NPM_CONFIG_CACHE" \
-    "$CARGO_HOME" \
-    "$GOMODCACHE" \
-    "$GOCACHE" \
-    "$OMP_AGENT_HOME" \
-    "$PI_CODING_AGENT_DIR" \
-    "$PI_CONFIG_DIR"; do
-    harness_require_inside_root "$HARNESS_ROOT" "$dir" "containment path" || errors=$((errors + 1))
-done
-
-for env_name in TMPDIR TMP TEMP XDG_CACHE_HOME XDG_CONFIG_HOME XDG_DATA_HOME PIP_CACHE_DIR NPM_CONFIG_CACHE CARGO_HOME GOMODCACHE GOCACHE OMP_AGENT_HOME PI_CODING_AGENT_DIR PI_CONFIG_DIR HOME; do
-    check_env_path_inside "$env_name"
-done
-
-if [ "$errors" -gt 0 ] || [ "$warnings" -gt 0 ]; then
-    if [ "$errors" -gt 0 ]; then
-        echo "[validate-config] failed with ${errors} error(s), ${warnings} warning(s)" >&2
-        exit 1
-    fi
-    echo "[validate-config] ready for audit runtime with ${warnings} warning(s)"
-fi
-
-if [ "$errors" -eq 0 ] && [ "$warnings" -eq 0 ]; then
-    echo "[validate-config] ready for audit runtime"
-fi
+if [ "$errors" -gt 0 ]; then echo "[validate-config] failed with ${errors} error(s)" >&2; exit 1; fi
+echo "[validate-config] ready for canonical V2 audit runtime"

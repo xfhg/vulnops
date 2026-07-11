@@ -1,404 +1,696 @@
-# vulnops — Security Audit Harness
+# vulnops — Canonical V2 Security Audit Harness
 
-## How to Run
+This file is the executable runbook for the main OMP audit lead and every VulnOps
+phase. Product positioning belongs in `README.md`; design rationale belongs in
+`ARCHITECTURE.md`; operational behavior belongs here.
 
-The user clones a repo into `target/` manually, then says:
-> "audit the target repo"
+## 1. Mission and authority
 
-The main OMP process is the audit lead. Do not spawn a lead subagent. Phase subagents are workers only.
+The user places exactly one Git repository beneath `target/` and asks for an
+audit. The main OMP process is the audit lead. Never spawn another lead and never
+delegate ownership of the overall workflow.
 
-### Step 0: Detect Target
+The lead is responsible for:
 
-```bash
-bash scripts/run-audit.sh [depth]
-```
+- initializing or resuming the compatible run;
+- launching canonical OMP phase tasks in order;
+- executing deterministic phases directly;
+- validating every yielded phase;
+- synchronizing phase manifests and task outcomes into run state;
+- stopping on validation failure;
+- performing final whole-scan validation; and
+- returning only final report paths, counts, and material limitations.
 
-This finds the repo inside `target/`, computes an exact working-tree
-fingerprint, creates an isolated `scans/<repo-id>/runs/<run-id>/` directory,
-and writes `.harness/audit-context.json`. Read that file for every path you
-need. Only the current incomplete run may resume, and only when repository,
-commit, depth, fingerprint, and reproduction mode all match. Completed and
-failed runs are never audit input.
+The lead may spawn only the phase agents documented below. Phase coordinators may
+spawn only their declared workers with bounded concurrency.
 
-Depth is `quick`, `balanced`, or `full`; omission uses
-`harness.default_depth` (`balanced` in the example config).
+## 2. Non-negotiable invariants
 
-### Configuration
+1. Treat the target as read-only input. Never write, format, build, test, install,
+   initialize Codegraph, or generate files inside it.
+2. Use the exact target fingerprint in audit context. A mismatch fails every phase
+   and the whole scan.
+3. Keep durable audit artifacts under `scans/` and runtime state under `.harness/`.
+4. Keep audit execution offline except for the configured LLM endpoint.
+5. Read `.harness/audit-context.json` before every phase and use its absolute
+   paths, selectors, fingerprint, depth, and reproduction policy as the only path
+   and identity authority.
+6. Never persist raw scanner output, raw proof output, secret values, partial
+   identifiers, entropy material, or proof tokens.
+7. Never execute target code directly. Use opt-in functional bubblewrap
+   containment only.
+8. Treat advisory, scanner, graph, and model output as inputs to investigation,
+   never as vulnerability proof by themselves.
+9. Require source-backed attacker access, crossed boundary, root cause, ordered
+   trace, conditions, and concrete impact for reportable findings.
+10. Keep fanout depth-bounded. Queue overflow; never drop it silently.
+11. Give every evidence record and campaign a terminal disposition.
+12. Never rewrite an upstream phase artifact from a downstream phase.
+13. Use Synthesis as the sole pre-verification finding authority.
+14. Render reports only from final independently verified findings.
+15. Accept only schema version `2.0` and workflow `canonical-redteam-v2`. There is
+    one reader, writer, and phase dispatch, with no compatibility path.
 
-All settings live in `config.toml` at the harness root:
-- **[llm]** — gateway URL, API key, model name
-- **[harness]** — scan settings, tool paths (codegraph index, scan fanout)
-- **[output]** / **[logging]** — output format and log retention
+## 3. Entry points
 
-Run `bash scripts/load-config.sh` to see exported env vars.
-Run `bash scripts/validate-config.sh` before audit runtime.
-Run `bash scripts/audit-status.sh` for read-only status checks. If it reports the scan complete, answer once and stop; do not re-run phases or keep re-stating the same status after compaction.
-
-Audit runtime is offline except for the configured LLM endpoint. Bootstrap commands such as dependency setup, tool install, OSV DB fetch, and target cloning are outside audit runtime.
-
-codegraph is the sole graph backend and a required binary (`bins/codegraph`, validated by `validate-config.sh`). Audit runtime needs no Python virtual environment — the deterministic builders (`build-intelligence.py`, `build-intrusion-plan.py`, `finalize-intrusion.py`) run on system `python3` with stdlib only. Graph evidence is AST-only, offline, and scoped per planned intelligence/intrusion scope (`codegraph-runs/<sid>/codegraph-out/context.json`).
-
-### Main Process Controller
-
-`run.sh` injects `.omp/main/vulnops-main.md` into the main OMP process with `--append-system-prompt`. Main is responsible for orchestration:
-
-1. Run `bash scripts/run-audit.sh [depth]`.
-2. Read `.harness/audit-context.json`.
-3. Mark the run, phase, and top-level task lifecycle through
-   `scripts/update-run-state.py`; synchronize terminal state from the validated
-   phase manifest.
-4. Spawn phase subagents directly.
-5. Use OMP task completion/yield as the terminal phase signal.
-6. Run final validation, then mark the run complete or failed.
-
-Live feedback comes from OMP's native task/subagent cards and IRC. Main uses `irc op=list`, `irc op=wait`, and `irc op=inbox` for live phase presence and progress; `validate-phase.sh` validates after yield; `wait-phase.sh` is only for manual recovery, CI, or non-OMP automation.
-
-Do not use Bash progress probes while a phase subagent is still running. Bash is for setup, short validation gates, and controlled wrapper tools, not for pretending to be OMP's scheduler.
-
-Do not inspect subagent transcripts with `agent://...` or `history://...` URIs. They can be mis-emitted as malformed tool calls (`function.name = ""`) against OpenAI-compatible gateways. Use OMP task yield, IRC progress, and filesystem validation artifacts.
-
-### OMP Project Agents
-
-Project-local OMP agents live in `.omp/agents/`. Use named phase agents, not generic `task` roles:
-
-#### Main-spawned phase tasks
-
-- `vulnops-recon`
-- `vulnops-sca`
-- `vulnops-secrets`
-- `vulnops-sast-lead`
-- `vulnops-intelligence`
-- `vulnops-triage`
-- `vulnops-intrusion`
-- `vulnops-reconcile`
-- `vulnops-final-verification`
-
-#### Recon sub-pipeline
-
-- `vulnops-recon-overview`
-- `vulnops-recon-trust`
-- `vulnops-recon-inputs`
-
-#### SAST sub-pipeline (spawned by `vulnops-sast-lead` via `task`)
-
-- `vulnops-threatmodel`
-- `vulnops-decompose`
-- `vulnops-deepdive-chunk`
-- `vulnops-verify-one`
-- `vulnops-reproduce-one`
-
-#### Final verification sub-pipeline
-
-- `vulnops-independent-verify-one`
-
-OMP skills live in `.omp/skills/`. Audit agents should use the shared exclusion, self-verification, severity, and specialist lens skills through `skill://...` when relevant.
-
-### Step 1: Reconnaissance
-
-Main runs `vulnops-recon` as task ID `Recon`.
-
-Required outputs:
-- `<paths.repo_md>`
-- `<paths.repo_context_json>`
-- `<paths.security_surfaces_json>`
-- `<paths.repo_context>/research/overview.json`
-- `<paths.repo_context>/research/trust-boundaries.json`
-- `<paths.repo_context>/research/input-surfaces.json`
-- `<paths.repo_context>/phase-manifest.json`
-
-After the recon task yields, run:
+Before opening an audit session, prepare `config.toml`, install the bundled tools,
+and populate the local OSV database. Then run:
 
 ```bash
-bash scripts/validate-phase.sh <scan_base> recon
+bash scripts/validate-config.sh
 ```
 
-If recon fails, stop.
-
-### Step 2: Parallel Security Scans
-
-Main spawns these agents in one OMP task batch with stable IDs:
-
-- `SCA` -> `vulnops-sca`
-- `Secrets` -> `vulnops-secrets`
-
-SCA required outputs:
-- `<paths.sca>/summary.md`
-- `<paths.sca_raw_advisories>`
-- `<paths.sca>/phase-manifest.json`
-
-Secrets required outputs:
-- `<paths.secrets>/summary.md`
-- `<paths.secrets_redacted_candidates>`
-- `<paths.secrets>/phase-manifest.json`
-
-After SCA and Secrets both yield and validate, Main runs `SASTLead` ->
-`vulnops-sast-lead`. SAST consumes their evidence so code hunters never repeat
-dependency or secret enumeration. SAST is internally sequential with bounded
-fanout:
-
-1. `vulnops-threatmodel` writes:
-   - `<paths.sast_threat_model>`
-   - `<paths.sast_threat_model_md>`
-2. `vulnops-decompose` writes:
-   - `<paths.sast_task_manifest>`
-   - `<paths.sast_hunt_plan>`
-   - `<paths.sast_decompose_md>`
-3. `vulnops-sast-lead` fans out one subsystem/attack-class hunt task:
-   - `quick`: max 4 concurrent chunks
-   - `balanced`: max 8 concurrent chunks
-   - `full`: max 16 concurrent chunks
-   - overflow chunks are queued, not dropped
-4. Deterministic aggregation validates source traces, deduplicates by root
-   cause location, merges provenance, builds the coverage ledger, and loops
-   through capped high-risk gapfill until no new work or a cap is reached.
-5. `vulnops-sast-lead` fans out `vulnops-verify-one` by deduplicated candidate:
-   - `quick`: max 4 concurrent findings
-   - `balanced`: max 8 concurrent findings
-   - `full`: max 12 concurrent findings
-   - overflow findings are queued, not dropped
-   - if a preferred dedup trace is rejected, the next distinct trace in that
-     root-cause cluster is verified; a surviving root cause is not rechecked
-6. When config enables safe reproduction, source-verified candidates may run
-   only through `scripts/run-safe-reproduction.sh`; test and draft patch
-   artifacts stay under the scan.
-7. Verify/finalize writes:
-   - `<paths.sast_verified_findings>`
-   - `<paths.sast_dropped_findings>`
-8. SAST final outputs also include:
-   - `<paths.sast_coverage_ledger>`
-   - `<paths.sast_validation_results>`
-   - `<paths.sast_dedup_clusters>`
-   - `<paths.sast_wishlist>`
-   - `<paths.sast>/summary.md`
-   - `<paths.sast>/phase-manifest.json`
-
-Main lets OMP's subagent UI and IRC messages show live progress. Validate SCA
-and Secrets after their parallel batch, then validate SAST after its separate
-task yields:
+Start OMP through the contained launcher:
 
 ```bash
-bash scripts/validate-phase.sh <scan_base> sca
-bash scripts/validate-phase.sh <scan_base> secrets
-bash scripts/validate-phase.sh <scan_base> sast
+./run.sh "audit the target repository"
 ```
 
-Raw SAST findings are not final candidates until verified. Source-verified,
-dynamically verified, and environment-required candidates retain distinct
-tiers; environment-required is never treated as confirmed.
-
-### Step 3: Intelligence Fusion
-
-Main runs `vulnops-intelligence` as task ID `Intelligence` after SCA, Secrets,
-and SAST have all yielded and validated.
-
-Required outputs:
-- `<paths.intelligence_evidence_corpus>`
-- `<paths.intelligence_attack_surface_map>`
-- `<paths.intelligence_intel_plan>`
-- `<paths.intelligence_cards>`
-- `<paths.intelligence_coverage_gaps>`
-- `<paths.intelligence_rule_gaps>`
-- `<paths.intelligence>/summary.md`
-- `<paths.intelligence>/phase-manifest.json`
-
-After intelligence yields, run:
+Inside the audit session, initialize the requested depth exactly once:
 
 ```bash
-bash scripts/validate-phase.sh <scan_base> intelligence
+bash scripts/run-audit.sh [quick|balanced|full]
 ```
 
-Intelligence Fusion preserves evidence across phase boundaries. It may create new hypotheses from tool evidence, graph inference, agent exploration, or coverage gaps, but those hypotheses cannot become final findings without triage or intrusion evidence-gate promotion. codegraph is the sole graph backend (AST-only, offline); it runs scoped per planned intelligence scope.
+`run-audit.sh` performs the functional toolchain probe, discovers the one target,
+computes identity and fingerprint, selects a compatible incomplete run or creates a
+new one, creates run directories, builds the run-local Codegraph snapshot, writes
+the run manifest and task ledger, and updates `.harness/audit-context.json`.
 
-### Step 4: Triage
+Do not call it repeatedly as a scheduler. If it selects an existing compatible
+incomplete run, continue from validated run state.
 
-Main runs `vulnops-triage` as task ID `Triage`.
+## 4. Audit context
 
-Triage reads Intelligence Fusion outputs, SCA, secrets, and only `<paths.sast_verified_findings>` for SAST.
+Read `.harness/audit-context.json` immediately after initialization. At minimum,
+bind:
 
-Required outputs:
-- `<paths.triage>/consolidated.md`
-- `<paths.triage>/findings.json`
-- `<paths.intrusion_seeds>`
-- `<paths.triage>/phase-manifest.json`
+```text
+run_id
+depth
+repo_path
+scan_base
+target_fingerprint
+reproduction_mode
+model
+verifier_model
+model_diversity
+paths.*
+tools.*
+```
 
-After triage yields, run:
+Never reconstruct a path with assumptions when `paths.*` provides it. Never use a
+bare relative artifact such as `sast/findings.json` as the path authority. Artifact
+references inside JSON remain target- or scan-relative as defined by their schema;
+filesystem operations use the context's absolute paths.
+
+Resume only the incomplete run selected by `run-audit.sh`. Resume identity requires
+the same repository path, commit, exact fingerprint, depth, reproduction mode,
+primary selector, verifier selector, and workflow. Never consume completed or
+failed runs as input.
+
+## 5. Run-state protocol
+
+Use `scripts/update-run-state.py`; do not edit manifests or the task ledger by
+hand.
+
+The state updater enforces canonical phase order, exactly one running top-level
+phase/task, a maximum of two attempts per stable task ID, immutable successful
+phases, scan-relative successful artifacts, and null artifacts for failures. Do not
+work around a rejected state transition.
+
+At the start of active work:
 
 ```bash
-bash scripts/validate-phase.sh <scan_base> triage
+python3 scripts/update-run-state.py <scan_base> --run-status running
 ```
 
-Triage must not promote rejected, dropped, or deferred SAST findings. It may
-carry an explicitly environment-required item forward only with that tier and
-its missing-evidence reason intact.
-
-### Step 5: Intrusion Analysis
-
-Main runs `vulnops-intrusion` as task ID `Intrusion` after triage.
-
-Required outputs:
-- `<paths.intrusion>/summary.md`
-- `<paths.intrusion_enrichment>`
-- `<paths.intrusion_plan>`
-- `<paths.intrusion>/phase-manifest.json`
-
-After intrusion yields terminal status, run:
+Before a top-level task starts, record the task and phase as running. Increment the
+attempt only when a real attempt begins:
 
 ```bash
-bash scripts/validate-phase.sh <scan_base> intrusion
+python3 scripts/update-run-state.py <scan_base> \
+  --phase <phase> --phase-status running \
+  --task <TaskID> --task-phase <phase> --task-status running \
+  --increment-attempt
 ```
 
-Intrusion is terminal only when `intrusion/phase-manifest.json` status is `ok`, `intrusion/enrichment.json` exists, `intrusion/intrusion-plan.json` exists, and required `intrusion/codegraph-runs/<sid>/codegraph-out/context.json` are non-empty (nodes + edges > 0). Reconciliation must not start before terminal intrusion state. codegraph is AST-only by design.
+After the task yields or the deterministic phase finishes:
 
-### Step 6: Final Reconciliation
-
-Main runs `vulnops-reconcile` as task ID `Reconcile` only after intrusion is terminal.
-
-Required outputs:
-- `<paths.final_reconciliation_candidates>`
-- `<paths.final_reconciliation>/summary.md`
-- `<paths.final_reconciliation>/phase-manifest.json`
-
-After final reconciliation yields, run:
+1. run the phase validator;
+2. stop immediately if validation fails;
+3. synchronize the validated phase manifest; and
+4. record the task artifact and terminal task status.
 
 ```bash
-bash scripts/validate-phase.sh <scan_base> final-reconciliation
+bash scripts/validate-phase.sh <scan_base> <phase>
+
+python3 scripts/update-run-state.py <scan_base> \
+  --phase <phase> \
+  --phase-manifest <phase-directory>/phase-manifest.json \
+  --task <TaskID> --task-phase <phase> \
+  --artifact <canonical-phase-artifact>
 ```
 
-Final reconciliation applies intrusion upgrades/downgrades only when enrichment has evidence references. It must not promote unverified findings.
+`--phase-manifest` infers the task status. A skipped phase maps to an `ok` task;
+degraded remains degraded. On an unrecoverable task or validation error, record the
+error and mark the run failed. Do not advance to the next phase.
 
-### Step 7: Independent Final Verification
+If a task yields without valid terminal output, close that attempt as failed before
+retrying the same stable task ID. Retry only once. IRC messages after yield do not
+change task state and cannot repair an attempt. Never create repair/replacement
+top-level tasks. When stopping, pass the failed phase, stable task, sanitized error,
+and `--run-status failed` together so no phase or task remains running.
 
-Main runs `vulnops-final-verification` as task ID `FinalVerification`.
-
-Required outputs:
-- `<paths.final_verified_findings>`
-- `<paths.final_verification>/summary.md`
-- `<paths.final_verification>/phase-manifest.json`
-
-After it yields, run:
+Only after report validation and whole-scan validation succeed:
 
 ```bash
-bash scripts/validate-phase.sh <scan_base> final-verification
+python3 scripts/update-run-state.py <scan_base> --run-status complete
 ```
 
-Every reconciled candidate must have exactly one fresh-context verifier result.
-Corrections must provide a complete strict finding; missing, duplicate, orphan,
-or malformed results fail the phase.
+## 6. Canonical top-level sequence
 
-### Step 8: Deterministic Report
+Run exactly this order:
 
-Run `python3 scripts/render-report.py <scan_base>`. It reads
-`<paths.final_verified_findings>` as the only finding source of truth.
-The renderer redacts secrets and technical proof tokens; exact proof inputs
-remain only in access-controlled local artifacts, while the report retains
-safe evidence, test, and draft-patch references.
+| Order | Task ID | Execution | Phase name |
+|---:|---|---|---|
+| 1 | `Recon` | `vulnops-recon` | `recon` |
+| 2 | `ToolCollection` | `python3 scripts/collect-tools.py <scan_base>` | `tool-collection` |
+| 3 | `SASTLead` | `vulnops-sast-lead` | `sast` |
+| 4 | `CampaignPlanning` | `vulnops-campaign-planning` | `campaign-planning` |
+| 5 | `Intrusion` | `vulnops-intrusion`, or deterministic empty finalization | `intrusion` |
+| 6 | `Synthesis` | `vulnops-synthesis`, or deterministic empty synthesis | `synthesis` |
+| 7 | `FinalVerification` | `vulnops-final-verification`, or deterministic empty finalization | `final-verification` |
+| 8 | `Report` | `python3 scripts/render-report.py <scan_base>` | `report` |
 
-Required outputs:
-- `<paths.final_report_md>`
-- `<paths.final_report_json>`
-- `<paths.report>/phase-manifest.json`
+Every row is a ledger task, including deterministic and empty paths. Never start a
+downstream task before the preceding phase validates.
 
-After rendering, run:
+## 7. Phase runbooks
+
+### 7.1 Recon
+
+Launch top-level task `Recon` with agent `vulnops-recon`.
+
+The coordinator launches these workers in one parallel batch:
+
+| Worker task ID | Agent | Purpose |
+|---|---|---|
+| `Overview` | `vulnops-recon-overview` | Projects, languages, build/dependency structure |
+| `Trust` | `vulnops-recon-trust` | Assets, privilege changes, and trust boundaries |
+| `Inputs` | `vulnops-recon-inputs` | Entrypoints, attacker-controlled inputs, parsers, protocols |
+
+Workers return evidence and do not write artifacts. The coordinator writes only
+under `paths.repo_context`:
+
+```text
+repo-context/repo.md
+repo-context/repo-context.json
+repo-context/security-surfaces.json
+repo-context/research/overview.json
+repo-context/research/trust-boundaries.json
+repo-context/research/input-surfaces.json
+repo-context/phase-manifest.json
+```
+
+Every project, file, entrypoint, ignore pattern, surface, and boundary must resolve
+to target evidence. The coordinator must not invent architecture to complete the
+schema. After validation, treat `repo-context.json` and
+`security-surfaces.json` as immutable for the rest of the run.
+
+Canonical task artifact: `repo-context/repo-context.json`.
+
+### 7.2 Tool Collection
+
+Do not launch a model agent. Record `ToolCollection` running and execute:
 
 ```bash
-bash scripts/validate-phase.sh <scan_base> report
+python3 scripts/collect-tools.py <scan_base>
 ```
 
-Markdown is presentation only. JSON controls metrics and finding status.
+The collector reads dependency files only from validated Recon output, runs all
+Wraith invocations and one Poltergeist scan concurrently with a maximum of four
+processes, validates invocation receipts, merges Wraith results, finalizes the
+phase, and removes successful temporary work.
 
-### Step 9: Validate
+`projects[].dependency_files` accepts only target-relative paths approved by
+`scripts/dependency_contract.py`. It is not a general build-file inventory.
+Tool Collection revalidates Recon immediately before scanning and stages every
+normalized output under `.harness/`; canonical files are published only after all
+scanner, schema, count, and hash checks pass. Any failure writes a failed phase
+manifest with bounded sanitized errors and no canonical task artifact.
 
-Run:
+Required artifacts:
+
+```text
+tool-collection/sca-advisories.json
+tool-collection/wraith-receipt.json
+tool-collection/secrets-redacted.json
+tool-collection/poltergeist-receipt.json
+tool-collection/collection.json
+tool-collection/summary.md
+tool-collection/phase-manifest.json
+```
+
+Accept clean and findings-present scanner outcomes only through their wrappers.
+Require parse success, count consistency, and normalized hashes. A Wraith advisory
+is a reachability candidate. A Poltergeist record must contain exact `<redacted>`
+and no recoverable part of the detected value.
+
+Canonical task artifact: `tool-collection/collection.json`.
+
+### 7.3 SAST
+
+Launch top-level task `SASTLead` with agent `vulnops-sast-lead`.
+
+Required sequence inside the coordinator:
+
+1. Launch `ThreatModel` with `vulnops-threatmodel` and validate its yield.
+2. Run `python3 scripts/build-hunt-plan.py <repo_path> <scan_base>`.
+3. Launch one `vulnops-deepdive-chunk` task per hunt task.
+4. Run `python3 scripts/finalize-sast.py <repo_path> <scan_base>`.
+5. Execute bounded gapfill: build new tasks with `--gapfill`, run only new tasks,
+   aggregate them, and repeat until no new task or budget exhaustion.
+6. Launch `vulnops-verify-one` per deduplicated validation-queue candidate.
+7. Aggregate verifier result JSON and run finalization with
+   `--advance-alternates`; verify newly advanced alternates until the command
+   reports zero.
+8. When reproduction mode is `safe`, launch `vulnops-reproduce-one` only for
+   eligible source-verified candidates and only through the safe wrapper.
+9. Run `python3 scripts/finalize-sast.py <repo_path> <scan_base> --finalize`.
+10. Validate `sast` before yielding.
+
+Fanout limits:
+
+| Depth | Deep-dive concurrency | Verification concurrency | Hunt-task ceiling | Gapfill rounds |
+|---|---:|---:|---:|---:|
+| `quick` | 4 | 4 | 12 | 1 |
+| `balanced` | 8 | 8 | 32 | 2 |
+| `full` | 16 | 12 | 64 | 3 |
+
+Batch up to four compatible attack-class cells for one subsystem, but retain a
+disposition for every cell. Do not repeat dependency or secret enumeration owned
+by Tool Collection. Queue overflow and rabbit-hole work within the same total
+budget.
+
+Required canonical artifacts include:
+
+```text
+sast/threat-model.json
+sast/hunt-plan.json
+sast/raw-findings.json
+sast/validation-results.json
+sast/verified-findings.json
+sast/dropped-findings.json
+sast/dedup-clusters.json
+sast/coverage-ledger.json
+sast/wishlist.json
+sast/phase-manifest.json
+```
+
+`sast/deepdive/`, `sast/verify/`, `sast/reproduction/`, and `sast/fixes/` contain
+bounded supporting artifacts. Source-verified candidates may be promoted;
+environment-required candidates remain unconfirmed.
+
+Canonical task artifact: `sast/verified-findings.json`.
+
+### 7.4 Campaign Planning
+
+Launch top-level task `CampaignPlanning` with agent
+`vulnops-campaign-planning`.
+
+The agent must first run:
+
+```bash
+python3 scripts/build-evidence-index.py <scan_base>
+python3 scripts/build-campaign-plan.py <scan_base>
+```
+
+It then reads every evidence disposition and relevant source location and may
+refine hypothesis text, typed graph questions, validation methods, stop conditions,
+and expected added value. It may not change stable IDs, canonical references, or
+lane budgets.
+
+Required artifacts:
+
+```text
+campaign-planning/evidence-index.json
+campaign-planning/campaign-plan.json
+campaign-planning/summary.md
+campaign-planning/phase-manifest.json
+```
+
+The evidence index must include promoted, closed, rejected, environment-required,
+and unresolved records where present. Known findings are first-class attack
+primitives. Explicitly plan for what a primitive grants, what consumes the gained
+capability, whether a control is bypassed, and whether multiple primitives compose.
+Novelty is not a seed requirement.
+
+Use the bounded lanes `primitive_led`, `gap_driven`, and `direct_validation`.
+Never fabricate work to fill a ceiling. Preserve a valid zero-campaign plan.
+
+Canonical task artifact: `campaign-planning/campaign-plan.json`.
+
+### 7.5 Intrusion
+
+Read and validate the campaign count before launching workers.
+
+If campaigns exist, launch top-level task `Intrusion` with agent
+`vulnops-intrusion`. It launches exactly one `vulnops-intrusion-campaign` per
+campaign using stable campaign IDs and depth-bounded concurrency. Queue overflow.
+
+Each worker must:
+
+- read all cited evidence and complete source paths;
+- execute every planned graph question through `scripts/run-codegraph.sh` against
+  `paths.codegraph_project`;
+- store `context.json` and `receipt.json` at
+  `intrusion/codegraph-runs/<campaign-id>/<question-id>/`;
+- list every executed receipt in `graph_query_receipts`;
+- list only meaningful receipts in the `graph_evidence_refs` subset;
+- treat graph output as navigation, never vulnerability proof;
+- write exactly one `intrusion/results/<campaign-id>.json`; and
+- choose exactly one terminal status: `candidate`, `closed`, `rejected`, or
+  `needs_environment`.
+
+After all workers yield, run:
+
+```bash
+python3 scripts/finalize-intrusion.py <scan_base>
+```
+
+If the campaign list is empty, do not launch the agent. Record the top-level task
+and run the same finalizer directly. It must produce an empty wrapper, summary,
+and `ok` manifest without creating graph scope.
+
+Required aggregate artifacts:
+
+```text
+intrusion/intrusion-results.json
+intrusion/summary.md
+intrusion/phase-manifest.json
+```
+
+The finalizer must reject missing, duplicate, orphan, malformed, unexecuted-query,
+hash-mismatched, or graph-stub results. Intrusion must never rewrite Recon surfaces
+or Campaign Planning artifacts.
+
+Canonical task artifact: `intrusion/intrusion-results.json`.
+
+### 7.6 Synthesis
+
+Probe the deterministic empty path first:
+
+```bash
+python3 scripts/empty-synthesis.py <scan_base>
+```
+
+Exit `0` means it produced the valid empty synthesis; do not launch a model. Exit
+`2` means candidate sources exist and model synthesis is required. Any other exit
+is failure.
+
+When required, launch top-level task `Synthesis` with agent
+`vulnops-synthesis`. It reads the evidence index, SAST verified findings, and
+intrusion results and writes only:
+
+```text
+synthesis/findings.json
+synthesis/summary.md
+synthesis/phase-manifest.json
+```
+
+Synthesis must include independently exploitable known findings, proven impact
+expansions, complete new root causes, cross-evidence discoveries, and closed
+composite chains. Deduplicate standalone findings by root cause and chains by
+ordered primitive sequence plus terminal impact.
+
+A chain requires at least two ordered primitive steps. Every output capability
+must exactly satisfy the next input capability. A chain may use only known
+primitives when their composition proves distinct exploitability, a new boundary,
+or materially greater impact. Never promote graph-only, advisory-only,
+secret-candidate-only, or environment-only hypotheses.
+
+Run `python3 scripts/finalize-synthesis.py <scan_base>` after model synthesis,
+then validate.
+
+Canonical task artifact: `synthesis/findings.json`.
+
+### 7.7 Final Verification
+
+Read the synthesized finding count.
+
+If findings exist, launch top-level task `FinalVerification` with agent
+`vulnops-final-verification`. It launches one fresh-context
+`vulnops-independent-verify-one` task per finding with the generated
+`pi/verifier` role.
+
+Every verifier must:
+
+- assume the claim is false until source proves it;
+- verify attacker reachability, crossed boundary, intended behavior, root cause,
+  ordered trace, conditions, impact, severity, confidence, and remediation;
+- verify dependency installed version, affected use, and reachability;
+- verify only redacted secret location and exposure evidence;
+- verify every chain primitive and capability transition in order;
+- write one result under `final-verification/results/<finding-id>.json`;
+- record exactly `verifier_model` and `model_diversity` from audit context; and
+- return `verified`, `corrected`, `rejected`, or `needs_environment`.
+
+After all verifier tasks yield, run:
+
+```bash
+python3 scripts/finalize-verification.py <repo_path> <scan_base>
+```
+
+If synthesis is empty, do not launch verifier workers. Record the top-level task
+and run the finalizer directly; it emits empty findings and rejections with the
+correct diversity boolean.
+
+Required aggregate artifacts:
+
+```text
+final-verification/findings.json
+final-verification/summary.md
+final-verification/phase-manifest.json
+```
+
+Missing, duplicate, orphan, malformed, wrong-model, wrong-diversity, or incomplete
+chain results fail the phase. Corrected results must contain a complete corrected
+finding.
+
+Canonical task artifact: `final-verification/findings.json`.
+
+### 7.8 Report
+
+Do not launch a reporting agent. Record `Report` running and execute:
+
+```bash
+python3 scripts/render-report.py <scan_base>
+```
+
+The renderer reads final verified findings only and writes:
+
+```text
+report/security-report.json
+report/security-report.md
+report/phase-manifest.json
+```
+
+The report must remain bounded and sanitized. It includes origin and severity
+counts and reports the same-model limitation only when the selectors match.
+
+Canonical task artifact: `report/security-report.json`.
+
+## 8. Final closure
+
+After Report phase validation, run:
 
 ```bash
 bash scripts/validate-scan.sh <scan_base>
 ```
 
-If validation fails, present the validation errors instead of pretending the scan is complete.
-If validation succeeds, mark the run `complete`. The audit request is terminal.
-Report the final paths/counts once, then stop issuing tool calls for that request.
-
-For phase-level checkpoints, use:
+Mark the run complete only when this succeeds. Then use the read-only status view:
 
 ```bash
-bash scripts/validate-phase.sh <scan_base> <phase>
+bash scripts/audit-status.sh <scan_base>
 ```
 
-Supported phases include `recon`, `sca`, `secrets`, `sast-threatmodel`,
-`sast-decompose`, `sast-deepdive`, `sast-verify`, `sast`, `intelligence`,
-`triage`, `intrusion`, `final-reconciliation`, `final-verification`, and
-`report`.
+Return to the user:
 
----
+- run ID and terminal status;
+- final finding count and severity summary;
+- confirmed, environment-required, and rejected counts;
+- model-diversity state;
+- material limitations or degraded phases;
+- paths to `security-report.md` and `security-report.json`; and
+- whether whole-scan validation passed.
 
-## Constraints
+Do not reproduce raw findings, secrets, payloads, or proof output in chat.
 
-1. **READ-ONLY on target.** Never modify files in `target/`.
-2. **Harness-local writes only.** Scan artifacts go under `scans/`; runtime homes, temp files, caches, and logs stay under `.harness/`.
-3. **Offline by default.** No internet during audit runtime except the configured LLM endpoint.
-4. **Evidence-based.** No speculation. Every finding needs source evidence.
-5. **No weaponized payloads.** Safe local proof is permitted only when config
-   enables it and only through `scripts/run-safe-reproduction.sh`; never run
-   target code unsandboxed.
-6. **No secret exfiltration.** Redact all values before writing artifacts.
-7. **Bounded fanout.** Use OMP subagents aggressively but within depth limits.
-8. **No passive sleep polling.** Use OMP task/yield and IRC progress, then `scripts/validate-phase.sh`.
+## 9. OMP orchestration behavior
 
-## Skills
+Use OMP task yield as the completion signal. Use IRC operations `list`, `wait`,
+and `inbox` for live worker coordination and `send` for short stage transitions.
+Workers send progress to `Main` at real stage changes and immediately before
+yielding.
 
-Phase agents declare their own `skill://` lists in their `.omp/agents/*.md`. The shared skill registry lives under `.omp/skills/`:
+Do not:
 
-### Phase agents load
+- poll directories for completion;
+- use sleep loops or Bash as a scheduler;
+- read transcript, `agent://`, or `history://` URIs;
+- send timer heartbeats with no state change;
+- include secrets, full findings, payloads, or raw output in IRC;
+- launch a second task for work already represented by an active stable task ID;
+  or
+- treat a yielded status as valid until the phase gate passes.
 
-- `skill://vulnops-exclusion-rules` — false-positive exclusion patterns for SAST evidence
-- `skill://vulnops-self-verification` — required evidence gate before promoting a finding
-- `skill://vulnops-severity-guidance` — severity rating rubric for confirmed findings
-- `skill://vulnops-access-control` — authz, IDOR, privilege escalation specialist lens
-- `skill://vulnops-iac` — IaC and CI/CD specialist lens
-- `skill://vulnops-batch-etl` — batch job and ETL pipeline specialist lens
-- `skill://vulnops-logic-bug` — business-logic and race condition specialist lens
-- `skill://vulnops-deserialization` — deserialization and gadget specialist lens
-- `skill://vulnops-crypto` — cryptography and randomness specialist lens
-- `skill://vulnops-audit-core` — shared attacker, evidence, verification-tier, and reporting gate
-- `skill://vulnops-attack-general` — general vulnerability hunt doctrine
-- `skill://vulnops-attack-ai-llm` — AI/LLM trust and tool-use doctrine
-- `skill://vulnops-attack-http-auth` — HTTP, cache, token, and federation doctrine
-- `skill://vulnops-attack-client` — browser and client-side doctrine
-- `skill://vulnops-attack-native` — native memory and privileged-interface doctrine
-- `skill://vulnops-attack-mobile` — mobile OS, app-link, IPC, storage, and WebView doctrine
+`scripts/wait-phase.sh` is manual/CI recovery only. It is not the normal
+orchestration mechanism.
 
-## Tools
+## 10. Model roles
 
-- `bins/omp` — OMP orchestrator
-- `irc` — OMP live subagent presence/progress channel available to Main and phase agents
-- `scripts/run-wraith.sh` — SCA scan wrapper
-- `scripts/run-poltergeist.sh` — secrets scan wrapper
-- `scripts/build-intelligence.py` — deterministic OODA intelligence artifact builder/finalizer
-- `scripts/build-hunt-plan.py` — bounded area × attack-class planner and gapfill scheduler
-- `scripts/finalize-sast.py` — strict aggregation, correction, dedup fallback, and evidence-tier finalizer
-- `scripts/run-safe-reproduction.sh` — opt-in fail-closed offline reproduction sandbox
-- `scripts/finalize-verification.py` — canonical independent-verification finalizer
-- `scripts/render-report.py` — deterministic sanitized report renderer
-- `scripts/update-run-state.py` — atomic run/phase/task lifecycle updater
-- `scripts/run-codegraph.sh` — codegraph CLI wrapper (required, sole graph backend)
-- `scripts/codegraph-context.sh` — codegraph blast-radius context helper (emits per-scope `context.json`)
-- `scripts/validate-config.sh` — audit runtime readiness gate
-- `scripts/bootstrap-omp.sh` — harness-local OMP onboarding/model bootstrap
-- `scripts/validate-phase.sh` — phase artifact checkpoint gate
-- `scripts/wait-phase.sh` — manual recovery/CI wait gate, not Main's live orchestration mechanism
-- `scripts/validate-scan.sh` — artifact integrity gate
+All non-verifier roles use the primary selector through generated OMP roles such
+as `pi/task` and `pi/slow`. Independent verification uses `pi/verifier`.
 
-## Cleanup
+The primary model must be recorded in source-validation metadata. The verifier
+model must be recorded in every independent result. Do not substitute a selector,
+infer a model name, or rewrite diversity metadata in an agent artifact.
 
-```bash
-bash scripts/cleanup.sh all
+## 11. Codegraph operating rules
+
+The target source is indexed during run initialization by copying it to
+`paths.codegraph_project` and running Codegraph there. Never run `codegraph init`
+against `repo_path`.
+
+Campaign workers issue typed operations only: `query`, `callers`, `callees`,
+`impact`, and `affected`. Use the planned question ID as the receipt directory.
+Every planned question requires one executed receipt, even when no meaningful
+result is found.
+
+An executed receipt may be cited as graph evidence only when:
+
+- status and parse status are `ok`;
+- the sibling normalized context exists;
+- the receipt hash matches the context;
+- the response contains a real result node or relationship edge; and
+- the source investigation independently establishes the security claim.
+
+Empty and subject-only results are valid negative navigation outcomes but not
+evidence of a vulnerability.
+
+## 12. Safe reproduction rules
+
+Reproduction is off unless audit context says `safe`. In safe mode, use only
+`scripts/run-safe-reproduction.sh` or the `vulnops-reproduce-one` agent that calls
+it. Never invoke a target binary, build script, package script, test suite, or proof
+command directly.
+
+Support requires a successful `scripts/probe-bubblewrap.sh` namespace/isolation
+probe. Binary presence is not support. On a restricted host, record
+`environment_required` or `needs_environment` according to the phase schema.
+Never add Docker, macOS, or unsandboxed fallback behavior.
+
+Respect configured wall time, CPU, memory, process, output, and parallel limits.
+Persist only bounded sanitized tests, result metadata, and allowed draft patches.
+
+## 13. Artifact and evidence hygiene
+
+- Use stable IDs generated by deterministic scripts where provided.
+- Use target-relative source files in evidence records and schema fields.
+- Resolve every `artifact_ref` beneath the active `scan_base`.
+- Never cite a dropped, rejected, unknown, or unresolved record as confirmed.
+- Keep scanner-specific fields in their canonical tool artifacts.
+- Preserve exact `<redacted>` for every secret value field.
+- Use canonical source references rather than copying evidence prose.
+- Include closures and negative results in their owning phase.
+- Keep summaries bounded; they are navigation aids, not evidence authorities.
+- Do not manually edit a finalized wrapper to make a validator pass. Repair the
+  owning worker result or deterministic builder and rerun finalization.
+
+## 14. Failure and retry rules
+
+Retry only when the failure is recoverable and within the configured attempt
+budget. Reuse the stable task ID, increment the attempt, and record the previous
+error. Do not broaden scope or relax a schema to rescue malformed output.
+
+Stop the workflow when:
+
+- target identity changes;
+- a required tool or functional contract fails;
+- an artifact cannot be repaired within its bounded attempts;
+- a phase validator fails after repair/finalization;
+- a downstream phase would require mutating upstream evidence; or
+- whole-scan validation fails.
+
+Safe sandbox unavailability is not a reason to execute unsafely. Continue static
+analysis and record the environment limitation.
+
+## 15. Main deterministic tools
+
+| Tool | Operational responsibility |
+|---|---|
+| `run-audit.sh`, `init-run.py`, `resume-run.py` | Target discovery, identity, isolated run creation/resume |
+| `update-run-state.py`, `audit-status.sh` | Atomic lifecycle updates and read-only status |
+| `dependency_contract.py`, `finalize-recon.py` | Complete deterministic dependency discovery and Recon sealing |
+| `collect-tools.py` | Concurrent deterministic scanner orchestration |
+| `run-wraith.sh`, `normalize-wraith.py`, `merge-wraith.py` | Real SCA execution and bounded canonical records |
+| `run-poltergeist.sh`, `normalize-poltergeist.py` | Real secret scanning and exact redaction |
+| `setup-codegraph.sh`, `run-codegraph.sh`, `codegraph-adapter.py` | Snapshot indexing and typed query receipts |
+| `build-hunt-plan.py`, `finalize-sast.py` | Bounded SAST planning, aggregation, deduplication, coverage |
+| `build-evidence-index.py`, `build-campaign-plan.py` | Evidence/primitive catalog and campaign selection |
+| `finalize-intrusion.py` | Exact campaign-result closure |
+| `empty-synthesis.py`, `finalize-synthesis.py` | Empty path and strict finding closure |
+| `finalize-verification.py` | Verifier identity, corrections, chain-step closure, final findings |
+| `render-report.py` | Deterministic sanitized reporting |
+| `probe-toolchain.sh`, `probe-bubblewrap.sh` | Functional readiness and containment support |
+| `validate-config.sh`, `validate-phase.sh`, `validate-scan.sh` | Readiness, phase integrity, and whole-scan gates |
+
+## 16. Agent and skill ownership
+
+Phase behavior lives only in `.omp/agents/`. Reusable security doctrine lives
+only in `.omp/skills/`. The attack taxonomy lives in
+`config/attack-taxonomy-v2.json`. Do not duplicate doctrine in this runbook or in
+multiple phase prompts.
+
+Canonical phase agents:
+
+```text
+vulnops-recon
+vulnops-sast-lead
+vulnops-campaign-planning
+vulnops-intrusion
+vulnops-synthesis
+vulnops-final-verification
 ```
 
-## Adding Scans
+Canonical worker agents:
 
-1. Create or update a phase agent under `.omp/agents/`.
-2. Add reusable doctrine as a skill under `.omp/skills/<name>/SKILL.md`.
-3. Add schemas for new structured outputs.
-4. Add paths in `scripts/run-audit.sh`.
-5. Add phase checks in `scripts/validate-phase.sh`.
-6. Add final validation in `scripts/validate-scan.sh`.
+```text
+vulnops-recon-overview
+vulnops-recon-trust
+vulnops-recon-inputs
+vulnops-threatmodel
+vulnops-deepdive-chunk
+vulnops-verify-one
+vulnops-reproduce-one
+vulnops-intrusion-campaign
+vulnops-independent-verify-one
+```
+
+Agents load only the skills declared in their own files. The main lead does not
+copy specialist lens instructions into tasks; it assigns the correct canonical
+agent and preserves its contract.
+
+## 17. Change-control rule
+
+When extending the harness, preserve one authority per concern. A new scanner
+requires a functional fixture, sanitizer, strict normalized schema, receipt,
+evidence-index mapping, and semantic validator. A new phase requires a unique
+artifact authority, zero-item behavior, manifest, task ownership, validation
+dispatch, and run-state entry.
+
+Do not add a model phase for deterministic bookkeeping, a second report path, a
+raw-output option, a fallback artifact builder, or a duplicate prompt containing
+existing skill doctrine. The canonical workflow stays small by keeping each stage
+deep, typed, and accountable.

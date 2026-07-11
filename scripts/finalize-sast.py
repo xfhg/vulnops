@@ -420,7 +420,7 @@ def finalize(root: Path, repo: Path, scan: Path) -> None:
     manifest = {
         "phase": "sast", "status": "degraded" if ledger["funnel"]["environment_required"] or any(cell["status"] in {"deferred", "shallow", "failed"} for cell in ledger["cells"]) else "ok",
         "started_at": now(), "completed_at": now(),
-        "inputs": ["repo-context/security-surfaces.json", "sca/raw-advisories.json", "secrets/redacted-candidates.json", "sast/threat-model.json", "sast/hunt-plan.json"],
+        "inputs": ["repo-context/security-surfaces.json", "tool-collection/sca-advisories.json", "tool-collection/secrets-redacted.json", "sast/threat-model.json", "sast/hunt-plan.json"],
         "outputs": ["sast/raw-findings.json", "sast/validation-results.json", "sast/verified-findings.json", "sast/dropped-findings.json", "sast/coverage-ledger.json", "sast/wishlist.json"],
         "coverage": {"cells": len(ledger["cells"]), "tasks": len(ledger["tasks"]), **ledger["funnel"]},
         "tool_versions": {"vulnops_audit_doctrine": "2.0"},

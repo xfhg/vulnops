@@ -49,49 +49,6 @@ Novelty is an outcome, not a seed requirement. A valuable result may be:
 That distinction keeps the harness red-team oriented without rewarding novelty
 theater. It seeks attacker leverage and combined effect.
 
-### Tools must prove that they worked
-
-Wraith, Poltergeist, and Codegraph are not blind checklist steps. The runtime
-executes functional fixtures during readiness, parses each tool's real output
-envelope, records version and result counts, hashes normalized artifacts, and
-fails unhealthy receipts. A binary merely existing on disk is insufficient.
-
-Scanner data is then used where it adds value:
-
-- Wraith establishes installed dependency and advisory candidates for source
-  reachability and composition work.
-- Poltergeist identifies secret locations and exposure hypotheses while removing
-  the value before persistence.
-- Codegraph indexes a run-local source snapshot and answers typed navigation
-  questions about callers, callees, impact, affected symbols, and search matches.
-  Its results guide source review but never substitute for vulnerability proof.
-
-Dependency discovery is deterministic. Recon's finalizer finds every supported
-lockfile or manifest in the target and owns `projects[].dependency_files`, so
-model guesses such as `go.sum`, `package.json`, Dockerfiles, and workflows cannot
-enter the scanner queue. Tool Collection stages normalized artifacts beneath
-`.harness/` and publishes the complete canonical set only after schemas, counts,
-receipts, and hashes pass.
-
-### Models reason; deterministic code owns integrity
-
-Models perform the work that benefits from adversarial interpretation: threat
-modeling, source hunts, hypothesis refinement, campaign investigation, synthesis,
-and fresh-context verification. Python and shell code own the parts that must be
-stable: tool execution, normalization, IDs, budgets, manifests, hashes, schema
-validation, reference resolution, fingerprint checks, empty paths, and reporting.
-
-This boundary reduces model-authored bookkeeping, repeated summarization, and
-format drift. It also makes failures diagnosable: a conclusion can be traced to a
-source record, campaign, receipt, and verifier result.
-
-### Evidence is promoted, not copied
-
-Each evidence body has one canonical home and one stable identifier. Downstream
-phases cite it instead of rewriting it. Every record and campaign receives a
-terminal disposition. Upstream artifacts—especially the repository model and
-security surfaces—are immutable once validated.
-
 ## Canonical workflow
 
 ```text

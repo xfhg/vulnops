@@ -1,24 +1,15 @@
 # VulnOps V2
 
-**An evidence-driven red-team audit system for finding exploitable source-code
-weaknesses, impact expansions, and composed attack paths.**
-
-VulnOps turns a repository into a bounded security investigation. It combines
+VulnOps is an evidence-driven red-team audit harness for finding exploitable
+source-code weaknesses, impact expansions, and composed attack paths. It combines
 real scanner output, source-first adversarial analysis, typed code navigation,
 attack-primitive composition, optional contained reproduction, and independent
 verification. The final report contains only findings that survive deterministic
 integrity gates.
 
-The product is designed for the gap between two familiar security activities:
-high-volume scanning that reports known signals without proving exploitability,
-and expert manual review that can discover deeper paths but is difficult to
-standardize, reproduce, and scale. VulnOps keeps the useful breadth of automation
-while enforcing the evidence discipline expected from a serious red-team review.
+## Operating objective
 
-## The investment thesis
-
-Security teams do not lack alerts. They lack a reliable way to turn disconnected
-signals into answers to the questions that drive remediation:
+The workflow turns disconnected security signals into evidence-backed answers:
 
 - Can an attacker actually reach the affected behavior?
 - What boundary is crossed and what capability is gained?
@@ -27,28 +18,19 @@ signals into answers to the questions that drive remediation:
 - Which untested state transitions or trust assumptions deserve targeted review?
 - Can another verifier reproduce the reasoning from canonical evidence?
 
-VulnOps makes those questions the workflow, not an optional analysis layer added
-after scanning. The durable product asset is therefore not a larger list of
-detectors. It is a structured evidence and capability system that can absorb new
-tools, models, and specialist doctrine without weakening provenance.
-
-This creates a practical path from repository audit to security decision support:
+Those questions are part of the phase contracts rather than a post-processing
+step. The harness uses a structured evidence and capability system so tools,
+models, and specialist doctrine can change without weakening provenance.
 
 1. normalize heterogeneous evidence;
 2. translate evidence into attacker prerequisites and gained capabilities;
-3. spend bounded investigation budget on the highest-value transitions;
+3. allocate bounded investigation budget to the highest-priority transitions;
 4. independently challenge every reportable conclusion; and
-5. emit sanitized, machine-checkable output suitable for engineering workflows.
+5. emit sanitized, machine-checkable output.
 
-No market-size or performance claim is hard-coded into the product narrative.
-The harness exposes measurable operating data—coverage, campaign dispositions,
-verification rejections, environment gaps, origin classes, and phase receipts—so
-deployment economics can be evaluated from real audits rather than promotional
-proxies.
+## Analysis strategy
 
-## What makes VulnOps different
-
-### Known evidence is a launch point, not the product
+### Known evidence is a launch point
 
 A dependency advisory, source finding, exposed credential candidate, entrypoint,
 or trust transition can become an attack primitive. Campaign Planning asks what
@@ -110,7 +92,7 @@ phases cite it instead of rewriting it. Every record and campaign receives a
 terminal disposition. Upstream artifacts—especially the repository model and
 security surfaces—are immutable once validated.
 
-## Product workflow
+## Canonical workflow
 
 ```text
                               deterministic control plane
@@ -139,7 +121,7 @@ Repository ── Recon ── Tool Collection ── SAST ── Campaign Plann
 | Intrusion | Test capability transitions, impact expansion, and uncovered attack paths | Exactly one terminal result per campaign |
 | Synthesis | Deduplicate root causes and establish standalone or composed findings | Sole pre-verification finding set |
 | Independent Verification | Challenge each finding in a fresh verifier context | Accepted findings and explicit rejections |
-| Report | Render bounded decision-ready output | Sanitized JSON and Markdown |
+| Report | Render bounded verified output | Sanitized JSON and Markdown |
 
 ## Red-team campaign model
 
@@ -155,7 +137,7 @@ prerequisites
 
 Campaigns are selected through three complementary lanes:
 
-| Lane | Question | Typical added value |
+| Lane | Question | Analysis objective |
 |---|---|---|
 | `primitive_led` | What consumes this known capability, or can two capabilities compose? | Chain, bypass, new boundary crossing, expanded impact |
 | `gap_driven` | Which uncovered state, order, replay, parser, fallback, race, or trust assumption merits review? | New root cause or evidence-backed closure |
@@ -348,9 +330,9 @@ Only the current incomplete run resumes when every field matches. Completed and
 failed runs are terminal. A source change, dirty-tree change, depth change,
 reproduction-policy change, or model change creates an isolated run.
 
-This provides two business-relevant properties: results are attributable to a
-specific input and operating policy, and a resumed investigation cannot silently
-mix evidence produced under different assumptions.
+This makes results attributable to a specific input and operating policy, and
+prevents resumed investigations from silently mixing evidence produced under
+different assumptions.
 
 ## Canonical artifacts
 
@@ -397,30 +379,15 @@ The report summarizes severity, verification state, and finding origin:
 - `independent_discovery`
 - `cross_evidence_discovery`
 
-Those categories make the system's incremental value measurable without
-discarding confirmed standalone risk.
+Those categories distinguish standalone risk, impact expansion, composed paths,
+and independent discovery without discarding confirmed findings.
 
-## Adoption and deployment fit
+## Scope
 
-VulnOps is best suited to teams that need a repeatable deep review of source they
-are authorized to assess: product-security investigations, release gates for
-high-risk services, due diligence, security research, and focused red-team
-campaign planning.
-
-The architecture supports gradual adoption:
-
-1. run with reproduction disabled and use source-backed findings only;
-2. measure coverage, closures, verification rejection rate, and environment gaps;
-3. enable functional bubblewrap reproduction on suitable Linux workers;
-4. integrate the deterministic JSON report and final-finding artifact with issue
-   management or governance systems; and
-5. add specialist attack doctrine or normalized tools while preserving the same
-   evidence contracts.
-
-The system does not claim to replace a production environment, external attack
-surface testing, or human authorization decisions. Its role is to make deep
-repository analysis more rigorous, compositional, auditable, and economically
-repeatable.
+VulnOps operates on source repositories the operator is authorized to assess. It
+supports product-security review, high-risk release gates, security research, and
+focused red-team campaign planning. It does not replace production-environment
+validation, external attack-surface testing, or human authorization decisions.
 
 ## Lifecycle and cleanup
 

@@ -80,6 +80,47 @@ Repository ── Recon ── Tool Collection ── SAST ── Campaign Plann
 | Independent Verification | Challenge each finding in a fresh verifier context | Accepted findings and explicit rejections |
 | Report | Render bounded verified output | Sanitized JSON and Markdown |
 
+### Orchestration, subagents, and parallelism
+
+VulnOps uses OMP subagents where work is independent and keeps evidence-dependent
+phases sequential. Every model-owned top-level phase runs as a supervised OMP
+job. The lead follows the exact job ID, enforces the phase deadline, and accepts
+completion only after a structured yield and phase validation. IRC carries short
+stage progress and peer questions; it is never the completion mechanism.
+
+| Area | Worker strategy | Maximum concurrency |
+|---|---|---:|
+| Recon | Overview, trust-boundary, and input-surface workers in one batch | 3 |
+| Tool Collection | Concurrent Wraith invocations and one Poltergeist scan | 4 processes |
+| SAST deep dives | One worker per bounded hunt-task packet, with overflow queued | 4 quick / 8 balanced / 16 full |
+| SAST verification | One adversarial verifier per deduplicated candidate | 4 quick / 8 balanced / 12 full |
+| Safe reproduction | One contained worker per eligible source-verified candidate | Configured `max_parallel` |
+| Intrusion | One worker per campaign, with overflow queued | Depth-bounded campaign waves |
+| Final Verification | One fresh-context verifier per synthesized finding | Depth-bounded verifier waves |
+
+Nested task batches block their coordinator until the batch returns, while the
+workers inside the batch execute concurrently. Every coordinator may spawn only
+its declared specialist workers. Stable task IDs prevent duplicate launches, and
+overflow is queued rather than silently dropped. SAST workers receive small,
+hash-bound task packets instead of the aggregate hunt plan.
+
+The phase order remains sequential by design:
+
+```text
+Recon → Tool Collection → SAST → Campaign Planning
+      → Intrusion → Synthesis → Final Verification → Report
+```
+
+Each downstream phase consumes validated, immutable upstream evidence, so
+overlapping those phases would violate the authority and resume contracts.
+Deterministic scanning, aggregation, empty paths, and reporting do not consume
+model agents. Campaign Planning and Synthesis remain single-agent consolidation
+phases because each owns one canonical decision artifact.
+
+The optional OMP advisor runtime is disabled because it adds an unowned review
+loop to every turn. This does not disable `task`, `job`, canonical phase agents,
+or any of the worker fanout above.
+
 ## Red-team campaign model
 
 The planner records every primitive as:
@@ -160,27 +201,36 @@ that require an appropriate environment.
 
 ## Model portability and independent verification
 
-Primary and verifier selectors are configured independently:
+The primary, orchestration tiers, and verifier selectors are configured
+independently:
 
 ```toml
 [llm]
 selector = "provider/primary-model"
 
+[llm.roles]
+orchestrator = "provider/primary-model:low"
+task = "provider/primary-model:medium"
+slow = "provider/primary-model:high"
+smol = "provider/primary-model:minimal"
+
 [llm.verification]
 selector = "provider/verifier-model" # empty inherits the primary selector
 ```
 
-All discovery and source-validation roles use the primary selector. The
-fresh-context independent verifier uses the generated `pi/verifier` role. One
-custom OpenAI-compatible endpoint is supported; both selectors may choose
-different models on it, and either selector may instead use an OMP-known built-in
-provider.
+The audit lead uses the low-cost orchestration tier, phase coordinators use the
+task tier, and evidence-heavy investigators use the slow tier. Source-validation
+metadata remains attributed to the primary selector. The fresh-context
+independent verifier uses the generated `pi/verifier` role. One custom
+OpenAI-compatible endpoint is supported; all selectors may choose models on it,
+and any selector may instead use an OMP-known built-in provider.
 
-The normalized selectors are part of run identity. Changing either one starts a
-new run, preventing incompatible reasoning state from being resumed. Model
-diversity is the deterministic boolean result of selector inequality. When the
-selectors match, reports state the same-model limitation; fresh contexts still
-separate the tasks.
+The configured primary, role, and verifier selectors are part of run identity.
+Changing any one starts a new run, preventing incompatible reasoning state from
+being resumed. Model diversity compares normalized underlying model identities;
+changing only a thinking-effort suffix does not claim diversity. When the models
+match, reports state the same-model limitation; fresh contexts still separate the
+tasks.
 
 ## Quick start
 
@@ -202,6 +252,10 @@ repository scripts appropriate to the deployment environment:
 bash scripts/install-tools.sh
 bash scripts/fetch-osv-db.sh
 ```
+
+OMP is version- and checksum-pinned by the platform lock files. Readiness fails
+if the installed binary differs from that lock, preventing silent regression to
+an orchestration version with known task-lifecycle defects.
 
 Copy `config.toml.example` to `config.toml`, configure the selectors and endpoint,
 then place exactly one Git repository beneath `target/`.
@@ -255,8 +309,8 @@ part of audit execution.
 `config.toml` is the sole configuration source. The supported surface is kept
 small deliberately:
 
-- LLM base URL, API key, primary selector, verifier selector, and one optional
-  custom-provider model registry;
+- LLM base URL, API key, primary selector, tiered role selectors, verifier
+  selector, and one optional custom-provider model registry;
 - default depth;
 - SAST context-packet size and per-depth task/gapfill/attempt bounds; and
 - safe-reproduction resource limits.
@@ -282,10 +336,11 @@ max_parallel = 1
 ## Run identity and resumability
 
 Each run records repository path, commit, exact target fingerprint, depth,
-reproduction mode, primary selector, verifier selector, and workflow identity.
-Only the current incomplete run resumes when every field matches. Completed and
-failed runs are terminal. A source change, dirty-tree change, depth change,
-reproduction-policy change, or model change creates an isolated run.
+reproduction mode, primary selector, every orchestration role selector, verifier
+selector, and workflow identity. Only the current incomplete run resumes when
+every field matches. Completed and failed runs are terminal. A source change,
+dirty-tree change, depth change, reproduction-policy change, or role/model change
+creates an isolated run.
 
 This makes results attributable to a specific input and operating policy, and
 prevents resumed investigations from silently mixing evidence produced under
@@ -327,6 +382,11 @@ counts, graph receipts, source paths, campaign completeness, and target
 immutability. Whole-scan validation additionally checks run identity, task
 closure, final-verifier attribution, model-diversity metadata, report counts,
 redaction, artifact-size bounds, and cross-phase consistency.
+
+Model phases run as supervised OMP jobs. The lead follows the returned job ID,
+applies a depth-specific deadline, and accepts completion only when the job is
+terminal, its agent yielded structured output, and the phase gate passes. IRC is
+reserved for genuine stage progress and never substitutes for job lifecycle.
 
 The report summarizes severity, verification state, and finding origin:
 

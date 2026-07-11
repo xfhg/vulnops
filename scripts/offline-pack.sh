@@ -111,6 +111,7 @@ load_lock() {
     : "${WRAITH_VERSION:?missing WRAITH_VERSION in lock}"
     : "${POLTERGEIST_VERSION:?missing POLTERGEIST_VERSION in lock}"
     : "${OMP_VERSION:?missing OMP_VERSION in lock}"
+    : "${OMP_SHA256:?missing OMP_SHA256 in lock}"
     : "${OSV_SCANNER_VERSION:?missing OSV_SCANNER_VERSION in lock}"
     : "${MIN_OSV_DB_FILES:?missing MIN_OSV_DB_FILES in lock}"
     : "${MIN_OSV_DB_SIZE_KB:?missing MIN_OSV_DB_SIZE_KB in lock}"
@@ -176,6 +177,7 @@ OFFLINE_PACK_WHEEL_PLATFORM=${OFFLINE_PACK_WHEEL_PLATFORM}
 WRAITH_VERSION=${ACTUAL_WRAITH_VERSION}
 POLTERGEIST_VERSION=${ACTUAL_POLTERGEIST_VERSION}
 OMP_VERSION=${ACTUAL_OMP_VERSION}
+OMP_SHA256=${ACTUAL_OMP_SHA256}
 OSV_SCANNER_VERSION=${ACTUAL_OSV_SCANNER_VERSION}
 EOF
     cat >>"$path" <<EOF
@@ -458,6 +460,7 @@ done
 ACTUAL_WRAITH_VERSION="$(read_version_file "$STAGING/bins/.wraith.version")"
 ACTUAL_POLTERGEIST_VERSION="$(read_version_file "$STAGING/bins/.poltergeist.version")"
 ACTUAL_OMP_VERSION="$(read_version_file "$STAGING/bins/.omp.version")"
+ACTUAL_OMP_SHA256="$(sha256_file "$STAGING/bins/omp")"
 ACTUAL_OSV_SCANNER_VERSION="$(read_version_file "$STAGING/bins/.osv-scanner.version")"
 ACTUAL_CODEGRAPH_VERSION="$(read_version_file "$STAGING/bins/.codegraph.version" 2>/dev/null || echo 'n/a')"
 log "  Binaries: wraith ${ACTUAL_WRAITH_VERSION}, poltergeist ${ACTUAL_POLTERGEIST_VERSION}, omp ${ACTUAL_OMP_VERSION}, osv-scanner ${ACTUAL_OSV_SCANNER_VERSION}, codegraph ${ACTUAL_CODEGRAPH_VERSION}"

@@ -3,20 +3,22 @@ name: vulnops-recon-inputs
 description: Exhaustive external-input, dangerous-sink, integration, and client/native surface researcher
 tools:
   - read
+  - write
   - grep
   - glob
   - bash
-  - irc
   - yield
 model:
   - pi/task
-thinkingLevel: high
+thinkingLevel: medium
 blocking: false
 output:
   properties:
     status:
       enum: [ok, degraded, failed]
-    result:
+    observations:
+      type: number
+    artifact:
       type: string
     warnings:
       elements:
@@ -32,9 +34,12 @@ queue, CLI, browser, native/binary, AI/tool, webhook, plugin, and third-party
 input surfaces. Map dangerous sinks and stored/second-order flows. Identify
 which specialist domains apply: AI/LLM, HTTP/auth, client, and native.
 
-Return a JSON string matching `schemas/v2/recon-research.schema.json` with
-`worker: "input-surfaces"` as `result`. Do not write files, use network access,
-or modify target source. Cite repository-relative file:line evidence.
+Write `paths.repo_context/research/input-surfaces.json` matching
+`schemas/v2/recon-research.schema.json` with `worker: "input-surfaces"`, UTC
+`started_at`/`completed_at`, and repository-relative path:line evidence. Write
+no other file, use no network access, and never modify target source. Yield
+only `status`, observation count, the absolute artifact path, warnings, and
+errors.
 
 ## Skills
 

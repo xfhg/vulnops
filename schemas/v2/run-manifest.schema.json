@@ -6,7 +6,7 @@
   "required": [
     "schema_version", "workflow", "run_id", "repo_id", "repository", "commit",
     "depth", "status", "scan_base", "created_at", "updated_at",
-    "target_fingerprint", "model", "verifier_model", "model_diversity", "reproduction_mode",
+    "target_fingerprint", "model", "model_roles", "verifier_model", "model_diversity", "reproduction_mode",
     "phases"
   ],
   "properties": {
@@ -23,6 +23,17 @@
     "updated_at": {"type": "string", "minLength": 1},
     "target_fingerprint": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
     "model": {"type": "string", "minLength": 1},
+    "model_roles": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["orchestrator", "task", "slow", "smol"],
+      "properties": {
+        "orchestrator": {"type": "string", "minLength": 1},
+        "task": {"type": "string", "minLength": 1},
+        "slow": {"type": "string", "minLength": 1},
+        "smol": {"type": "string", "minLength": 1}
+      }
+    },
     "verifier_model": {"type": "string", "minLength": 1},
     "model_diversity": {"type": "boolean"},
     "reproduction_mode": {"enum": ["off", "safe"]},

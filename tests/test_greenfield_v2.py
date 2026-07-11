@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import hashlib
 import os
 import subprocess
 import sys
@@ -10,6 +11,8 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 PYTHON = sys.executable
+ROLE_ARGS = ("--orchestrator-model", "p/orchestrator", "--task-model", "p/task", "--slow-model", "p/main", "--smol-model", "p/smol")
+ROLE_MAP = {"orchestrator": "p/orchestrator", "task": "p/task", "slow": "p/main", "smol": "p/smol"}
 
 
 def run(*args: str, input_text: str | None = None, env: dict[str, str] | None = None) -> subprocess.CompletedProcess[str]:
@@ -51,7 +54,7 @@ def write_minimal_recon(scan: Path, target: Path, run_id: str, dependency_files:
     write(scan / "repo-context/security-surfaces.json", surfaces)
     (scan / "repo-context/repo.md").write_text("# Fixture\n")
     for name, worker in (("overview.json", "overview"), ("trust-boundaries.json", "trust-boundaries"), ("input-surfaces.json", "input-surfaces")):
-        write(scan / "repo-context/research" / name, {"schema_version": "2.0", "worker": worker, "status": "ok", "observations": [], "warnings": [], "errors": []})
+        write(scan / "repo-context/research" / name, {"schema_version": "2.0", "worker": worker, "status": "ok", "started_at": "2026-01-01T00:00:00Z", "completed_at": "2026-01-01T00:00:01Z", "observations": [], "warnings": [], "errors": []})
     outputs = [
         "repo-context/repo.md", "repo-context/repo-context.json", "repo-context/security-surfaces.json",
         "repo-context/research/overview.json", "repo-context/research/trust-boundaries.json",
@@ -85,7 +88,7 @@ class ScannerContractTests(unittest.TestCase):
             base = Path(tmp); scan = base / "run"; target = base / "target"; target.mkdir()
             (target / "main.go").write_text("package main\n"); (target / "go.mod").write_text("module fixture\ngo 1.22\n"); (target / "go.sum").write_text("sum\n"); (target / "package.json").write_text("{}\n")
             fingerprint = run(PYTHON, "scripts/target-fingerprint.py", str(target)).stdout.strip(); context = base / "context.json"; env = {"VULNOPS_AUDIT_CONTEXT": str(context)}
-            initialized = run(PYTHON, "scripts/init-run.py", "--harness-root", str(ROOT), "--repo-path", str(target), "--scan-base", str(scan), "--run-id", "run", "--repo-name", "fixture", "--remote-url", "local", "--repo-id", "fixture", "--commit", "abc", "--depth", "quick", "--target-fingerprint", fingerprint, "--reproduction-mode", "off", "--model", "p/main", "--verifier-model", "p/verifier", env=env)
+            initialized = run(PYTHON, "scripts/init-run.py", "--harness-root", str(ROOT), "--repo-path", str(target), "--scan-base", str(scan), "--run-id", "run", "--repo-name", "fixture", "--remote-url", "local", "--repo-id", "fixture", "--commit", "abc", "--depth", "quick", "--target-fingerprint", fingerprint, "--reproduction-mode", "off", "--model", "p/main", *ROLE_ARGS, "--verifier-model", "p/verifier", env=env)
             self.assertEqual(initialized.returncode, 0, initialized.stderr)
             write_minimal_recon(scan, target, "run", ["go.sum", "package.json"])
             finalized = run(PYTHON, "scripts/finalize-recon.py", str(target), str(scan), env=env)
@@ -94,6 +97,35 @@ class ScannerContractTests(unittest.TestCase):
             self.assertEqual(document["projects"][0]["dependency_files"], ["go.mod"])
             validated = run("bash", "scripts/validate-phase.sh", str(scan), "recon", env=env)
             self.assertEqual(validated.returncode, 0, validated.stderr)
+
+    def test_hunt_workers_receive_hash_bound_task_packets(self) -> None:
+        with tempfile.TemporaryDirectory(dir=ROOT / ".harness") as tmp:
+            base = Path(tmp); target = base / "target"; target.mkdir(); (target / "app.py").write_text("def handle(value):\n    return value\n")
+            scan = base / "scan"; (scan / "sast/hunt-tasks").mkdir(parents=True)
+            context_path = base / "context.json"
+            write(context_path, {"schema_version": "2.0", "run_id": "run", "depth": "quick", "repo_path": str(target), "scan_base": str(scan)})
+            write(scan / "sast/threat-model.json", {
+                "schema_version": "2.0",
+                "repository_profile": {"kinds": ["library"], "tags": [], "comparable": {"name": None, "basis": "fixture", "confidence": "not_applicable"}},
+                "assets": [], "trust_boundaries": [],
+                "entrypoints": [{"id": "EP-1", "path": "app.py", "kind": "library", "subsystem_ids": ["SUB-1"], "trust_boundary_ids": [], "evidence_refs": ["app.py:1"]}],
+                "subsystems": [{"id": "SUB-1", "name": "handler", "files": ["app.py"], "entrypoints": ["EP-1"], "security_surface_ids": ["EP-1"], "risk": "high", "evidence_refs": ["app.py:1"]}],
+                "attack_classes": [{"id": "injection", "title": "Injection", "domain": "general", "owner": "sast", "methodology_ref": "skill://vulnops-attack-general#injection", "applicable_subsystems": ["SUB-1"], "reason": "untrusted input", "evidence_refs": ["app.py:1"], "custom": False}],
+                "threats": [], "assumptions": [], "evidence_refs": ["app.py:1"], "warnings": [], "errors": [],
+            })
+            write(scan / "sast/hunt-tasks/orphan.json", {"stale": True})
+            built = run(PYTHON, "scripts/build-hunt-plan.py", str(target), str(scan), "--context", str(context_path))
+            self.assertEqual(built.returncode, 0, built.stderr)
+            plan_path = scan / "sast/hunt-plan.json"; plan = json.loads(plan_path.read_text())
+            self.assertEqual(len(plan["tasks"]), 1)
+            task = plan["tasks"][0]; packets = list((scan / "sast/hunt-tasks").glob("*.json"))
+            self.assertEqual([path.name for path in packets], [f"{task['id']}.json"])
+            packet = json.loads(packets[0].read_text())
+            self.assertEqual(packet["run_id"], "run")
+            self.assertEqual(packet["hunt_plan_ref"], "sast/hunt-plan.json")
+            self.assertEqual(packet["hunt_plan_sha256"], hashlib.sha256(plan_path.read_bytes()).hexdigest())
+            self.assertEqual(packet["task"], task)
+
     def test_wraith_real_envelope_is_normalized_and_counts_are_checked(self) -> None:
         with tempfile.TemporaryDirectory(dir=ROOT / ".harness") as tmp:
             base = Path(tmp)
@@ -201,6 +233,10 @@ class ChainVerificationTests(unittest.TestCase):
 
 
 class GreenfieldContractTests(unittest.TestCase):
+    def test_canonical_omp_agent_graph_is_valid(self) -> None:
+        result = run(PYTHON, "scripts/validate-omp-agents.py", str(ROOT))
+        self.assertEqual(result.returncode, 0, result.stderr)
+
     def test_no_legacy_runtime_or_artifact_contracts_remain(self) -> None:
         forbidden_paths = ["config/harness.yaml", "config/scan-criteria.yaml", "V2UPGRADE.md", ".omp/agents/vulnops-decompose.md", ".omp/agents/vulnops-intelligence.md", ".omp/agents/vulnops-triage.md", ".omp/agents/vulnops-reconcile.md", ".omp/agents/vulnops-tool-collection.md", ".omp/agents/vulnops-sca.md", ".omp/agents/vulnops-secrets.md", "scripts/build-intelligence.py", "scripts/build-intrusion-plan.py", "scripts/codegraph-context.sh"]
         self.assertFalse([path for path in forbidden_paths if (ROOT / path).exists()])
@@ -217,13 +253,13 @@ class GreenfieldContractTests(unittest.TestCase):
         with tempfile.TemporaryDirectory(dir=ROOT / "scans") as tmp:
             base=Path(tmp);scan=base/"run";target=base/"target";target.mkdir();(target/"app.py").write_text("def entry():\n    return 1\n")
             fingerprint=run(PYTHON,"scripts/target-fingerprint.py",str(target)).stdout.strip();context_path=base/"context.json"
-            init=[PYTHON,"scripts/init-run.py","--harness-root",str(ROOT),"--repo-path",str(target),"--scan-base",str(scan),"--run-id","run","--repo-name","fixture","--remote-url","local","--repo-id","fixture-id","--commit","abc","--depth","quick","--target-fingerprint",fingerprint,"--reproduction-mode","off","--model","p/main","--verifier-model","p/verifier"]
+            init=[PYTHON,"scripts/init-run.py","--harness-root",str(ROOT),"--repo-path",str(target),"--scan-base",str(scan),"--run-id","run","--repo-name","fixture","--remote-url","local","--repo-id","fixture-id","--commit","abc","--depth","quick","--target-fingerprint",fingerprint,"--reproduction-mode","off","--model","p/main",*ROLE_ARGS,"--verifier-model","p/verifier"]
             env={"VULNOPS_AUDIT_CONTEXT":str(context_path)};created=run(*init,env=env);self.assertEqual(created.returncode,0,created.stderr)
             def manifest(phase:str,outputs:list[str],coverage:dict|None=None):return {"phase":phase,"status":"ok","started_at":"2026-01-01T00:00:00Z","completed_at":"2026-01-01T00:00:01Z","inputs":[],"outputs":outputs,"coverage":coverage or {},"tool_versions":{"fixture":"1"},"warnings":[],"errors":[]}
             write(scan/"repo-context/repo-context.json",{"schema_version":"2.0","repository":"fixture","comparable":{"name":None,"basis":"fixture","confidence":"not_applicable"},"projects":[{"id":"PRJ-1","type":"library","base_path":".","languages":["python"],"frameworks":[],"dependency_files":[],"entry_points":[{"id":"EP-1","path":"app.py","kind":"library","evidence_refs":["app.py:1"]}],"trust_boundary_ids":["TB-1"],"ignore_patterns":[],"evidence_refs":["app.py:1"]}],"actors":[],"domain_tags":[],"sensitive_data_types":[],"build_ci":[],"generated_ignorable":[],"evidence_refs":["app.py:1"],"warnings":[],"errors":[]})
             write(scan/"repo-context/security-surfaces.json",{"schema_version":"2.0","repository":"fixture","entry_points":[{"id":"EP-1","project_id":"PRJ-1","path":"app.py","kind":"library","trust_boundary_ids":["TB-1"],"evidence_refs":["app.py:1"]}],"trust_boundaries":[{"id":"TB-1","project_id":"PRJ-1","source_trust":"caller","target_trust":"library","description":"caller to library","evidence_refs":["app.py:1"]}],"security_relevant_files":[{"path":"app.py","categories":["entry_point"],"evidence_refs":["app.py:1"]}],"ignore_patterns":[],"generated_ignorable":[],"sensitive_data_types":[],"domain_tags":[],"warnings":[],"errors":[]})
             (scan/"repo-context/repo.md").write_text("# Fixture\n")
-            for name,worker in (("overview.json","overview"),("trust-boundaries.json","trust-boundaries"),("input-surfaces.json","input-surfaces")):write(scan/"repo-context/research"/name,{"schema_version":"2.0","worker":worker,"status":"ok","observations":[],"warnings":[],"errors":[]})
+            for name,worker in (("overview.json","overview"),("trust-boundaries.json","trust-boundaries"),("input-surfaces.json","input-surfaces")):write(scan/"repo-context/research"/name,{"schema_version":"2.0","worker":worker,"status":"ok","started_at":"2026-01-01T00:00:00Z","completed_at":"2026-01-01T00:00:01Z","observations":[],"warnings":[],"errors":[]})
             recon_outputs=["repo-context/repo.md","repo-context/repo-context.json","repo-context/security-surfaces.json","repo-context/research/overview.json","repo-context/research/trust-boundaries.json","repo-context/research/input-surfaces.json","repo-context/phase-manifest.json"];write(scan/"repo-context/phase-manifest.json",manifest("recon",recon_outputs))
             sca={"schema_version":"2.0","tool":"wraith","packages_scanned":0,"advisory_count":0,"advisories":[]};secrets={"schema_version":"2.0","tool":"poltergeist","candidate_count":0,"candidates":[]};write(scan/"tool-collection/sca-advisories.json",sca);write(scan/"tool-collection/secrets-redacted.json",secrets)
             for tool,artifact_name,receipt_name in (("wraith","sca-advisories.json","wraith-receipt.json"),("poltergeist","secrets-redacted.json","poltergeist-receipt.json")):
@@ -281,7 +317,7 @@ class RuntimeIsolationTests(unittest.TestCase):
         with tempfile.TemporaryDirectory(dir=ROOT / "scans") as tmp:
             base = Path(tmp); scan = base / "run"; target = base / "target"; target.mkdir(); (target / "main.py").write_text("pass\n"); (target / "go.sum").write_text("sum\n")
             fingerprint = run(PYTHON, "scripts/target-fingerprint.py", str(target)).stdout.strip(); context = base / "context.json"; env = {"VULNOPS_AUDIT_CONTEXT": str(context)}
-            initialized = run(PYTHON, "scripts/init-run.py", "--harness-root", str(ROOT), "--repo-path", str(target), "--scan-base", str(scan), "--run-id", "run", "--repo-name", "fixture", "--remote-url", "local", "--repo-id", "fixture", "--commit", "abc", "--depth", "quick", "--target-fingerprint", fingerprint, "--reproduction-mode", "off", "--model", "p/main", "--verifier-model", "p/verifier", env=env)
+            initialized = run(PYTHON, "scripts/init-run.py", "--harness-root", str(ROOT), "--repo-path", str(target), "--scan-base", str(scan), "--run-id", "run", "--repo-name", "fixture", "--remote-url", "local", "--repo-id", "fixture", "--commit", "abc", "--depth", "quick", "--target-fingerprint", fingerprint, "--reproduction-mode", "off", "--model", "p/main", *ROLE_ARGS, "--verifier-model", "p/verifier", env=env)
             self.assertEqual(initialized.returncode, 0, initialized.stderr)
             write_minimal_recon(scan, target, "run", ["go.sum"])
             collected = run(PYTHON, "scripts/collect-tools.py", str(scan), "--context", str(context), env=env)
@@ -339,7 +375,7 @@ class RuntimeIsolationTests(unittest.TestCase):
     def test_deterministic_tool_collection_runs_parallel_phase(self) -> None:
         with tempfile.TemporaryDirectory(dir=ROOT/"scans") as tmp:
             base=Path(tmp);scan=base/"run";target=base/"target";target.mkdir();(target/"go.mod").write_text("module fixture\ngo 1.22\n");(target/"main.go").write_text("package main\nfunc main() {}\n");fingerprint=run(PYTHON,"scripts/target-fingerprint.py",str(target)).stdout.strip();context=base/"context.json";env={"VULNOPS_AUDIT_CONTEXT":str(context)}
-            init=run(PYTHON,"scripts/init-run.py","--harness-root",str(ROOT),"--repo-path",str(target),"--scan-base",str(scan),"--run-id","run","--repo-name","fixture","--remote-url","local","--repo-id","fixture","--commit","abc","--depth","quick","--target-fingerprint",fingerprint,"--reproduction-mode","off","--model","p/main","--verifier-model","p/verifier",env=env);self.assertEqual(init.returncode,0,init.stderr)
+            init=run(PYTHON,"scripts/init-run.py","--harness-root",str(ROOT),"--repo-path",str(target),"--scan-base",str(scan),"--run-id","run","--repo-name","fixture","--remote-url","local","--repo-id","fixture","--commit","abc","--depth","quick","--target-fingerprint",fingerprint,"--reproduction-mode","off","--model","p/main",*ROLE_ARGS,"--verifier-model","p/verifier",env=env);self.assertEqual(init.returncode,0,init.stderr)
             write_minimal_recon(scan, target, "run", ["go.mod"])
             collected=run(PYTHON,"scripts/collect-tools.py",str(scan),"--context",str(context),env=env);self.assertEqual(collected.returncode,0,collected.stderr)
             validated=run("bash","scripts/validate-phase.sh",str(scan),"tool-collection",env=env);self.assertEqual(validated.returncode,0,validated.stderr)

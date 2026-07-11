@@ -7,7 +7,6 @@ tools:
   - grep
   - glob
   - bash
-  - irc
   - yield
 model:
   - pi/slow
@@ -31,14 +30,17 @@ output:
         type: string
 ---
 
-Analyze exactly one hunt task from `paths.sast_hunt_plan`. One task owns one
-subsystem and one attack class. Read its bounded `context_packet`, then read the
-assigned VulnOps attack doctrine for its domain. Load any additive specialist
-lenses named by the task. Treat `methodology_refs` and `lenses` in the hunt
-task as the authoritative handoff and apply no unrelated attack class.
+Analyze exactly one hash-bound packet at
+`<paths.sast_hunt_tasks>/<task_id>.json`. Do not open the aggregate hunt plan.
+The packet contains the authoritative task and bounded `context_packet`. A task
+may batch up to four compatible attack classes for one subsystem; retain a
+separate disposition for every `cell_id`. Load only the task's
+`methodology_refs` and additive `lenses` and apply no unrelated attack class.
 
 Path contract:
 - Read `.harness/audit-context.json` before analysis.
+- Use `paths.sast_hunt_tasks` as the packet directory and verify the assigned
+  packet's `run_id`, `hunt_plan_ref`, and 64-character plan hash are present.
 - Use `paths.sast_deepdive` as the output directory.
 - Write only to the absolute path `<paths.sast_deepdive>/<task_id>.json`.
 - Do not create or write `sast/...` relative to the harness root. If you cannot resolve `paths.sast_deepdive`, yield `failed` without writing.
@@ -64,11 +66,6 @@ Write a result matching `schemas/v2/hunt-result.schema.json` under
 sinks, mitigations, candidates, hardening notes, positive patterns, rabbit-hole
 seeds, wishlist items, warnings, and errors. A clean result missing review
 evidence is `shallow`, not `ok`.
-
-IRC progress:
-- Send `irc op=send to=Main message="<short phase status>"` at start, each material stage boundary, before validation, and before yielding.
-- Keep progress messages short. Do not include secrets, full findings, payloads, or raw tool output.
-- Do not send fake timer heartbeats; only report real state changes.
 
 Before yielding, confirm your assigned chunk JSON exists, is valid JSON, and its absolute path starts with `<scan_base>/sast/deepdive/`. The SAST lead validates the aggregate `sast-deepdive` phase.
 

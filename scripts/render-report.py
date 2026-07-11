@@ -31,7 +31,7 @@ def main()->int:
         summary[finding["severity"]]+=1;summary[finding["origin"]]+=1
         rendered.append({"id":finding["id"],"title":clean(finding["title"]),"finding_kind":finding["finding_kind"],"origin":finding["origin"],"severity":finding["severity"],"risk_score":finding["risk_score"],"confidence":finding["confidence"],"verdict":finding["verdict"],"description":clean(finding["closure_rationale"]),"impact":clean(finding["impact"]),"remediation":clean(finding["remediation"]),"evidence_refs":[str(x.get("artifact_ref")) for x in finding.get("source_refs",[])]})
     limitations=[]
-    if not context.get("model_diversity"):limitations.append("Discovery and independent verification used fresh contexts with the same model selector.")
+    if not context.get("model_diversity"):limitations.append("Discovery and independent verification used fresh contexts with the same underlying model identity; reasoning effort alone is not model diversity.")
     if context.get("reproduction_mode")=="off":limitations.append("Safe reproduction was disabled; dynamic claims are limited to other cited deterministic evidence.")
     scans={}
     for phase,directory in (("recon","repo-context"),("tool-collection","tool-collection"),("sast","sast"),("campaign-planning","campaign-planning"),("intrusion","intrusion"),("synthesis","synthesis"),("final-verification","final-verification")):

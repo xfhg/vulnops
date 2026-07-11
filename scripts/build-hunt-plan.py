@@ -24,6 +24,32 @@ def load(path: Path, fallback: object) -> object:
         return fallback
 
 
+def publish_task_packets(scan: Path, plan: dict, plan_bytes: bytes) -> None:
+    directory = scan / "sast/hunt-tasks"
+    directory.mkdir(parents=True, exist_ok=True)
+    digest = hashlib.sha256(plan_bytes).hexdigest()
+    expected: set[str] = set()
+    for task in plan.get("tasks", []):
+        task_id = str(task.get("id", ""))
+        if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]*", task_id):
+            raise ValueError(f"unsafe hunt task ID: {task_id!r}")
+        expected.add(f"{task_id}.json")
+        packet = {
+            "schema_version": "2.0",
+            "run_id": str(plan.get("run_id", "")),
+            "hunt_plan_ref": "sast/hunt-plan.json",
+            "hunt_plan_sha256": digest,
+            "task": task,
+        }
+        path = directory / f"{task_id}.json"
+        temporary = path.with_name(f".{path.name}.{os.getpid()}.tmp")
+        temporary.write_text(json.dumps(packet, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+        temporary.replace(path)
+    for path in directory.glob("*.json"):
+        if path.name not in expected:
+            path.unlink()
+
+
 def slug(value: str) -> str:
     return re.sub(r"[^a-z0-9]+", "-", value.lower()).strip("-") or "item"
 
@@ -347,7 +373,11 @@ def main() -> int:
         plan = gapfill(root, plan, args.scan_base, threat)
     else:
         plan = initial_plan(root, args.scan_base, context, threat)
-    output.write_text(json.dumps(plan, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    rendered = (json.dumps(plan, indent=2, sort_keys=True) + "\n").encode("utf-8")
+    temporary = output.with_name(f".{output.name}.{os.getpid()}.tmp")
+    temporary.write_bytes(rendered)
+    temporary.replace(output)
+    publish_task_packets(args.scan_base, plan, rendered)
 
     print(output)
     return 0

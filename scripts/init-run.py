@@ -9,6 +9,8 @@ import os
 from datetime import datetime, timezone
 from pathlib import Path
 
+from model_identity import model_diversity
+
 
 PHASES = (
     "recon",
@@ -47,14 +49,24 @@ def main() -> int:
     parser.add_argument("--target-fingerprint", required=True)
     parser.add_argument("--reproduction-mode", choices=("off", "safe"), required=True)
     parser.add_argument("--model", required=True)
+    parser.add_argument("--orchestrator-model", required=True)
+    parser.add_argument("--task-model", required=True)
+    parser.add_argument("--slow-model", required=True)
+    parser.add_argument("--smol-model", required=True)
     parser.add_argument("--verifier-model", required=True)
     parser.add_argument("--resume", action="store_true")
     args = parser.parse_args()
     model = args.model.strip()
     verifier_model = args.verifier_model.strip()
-    if not model or not verifier_model:
-        parser.error("model selectors must be non-empty")
-    model_diversity = model != verifier_model
+    model_roles = {
+        "orchestrator": args.orchestrator_model.strip(),
+        "task": args.task_model.strip(),
+        "slow": args.slow_model.strip(),
+        "smol": args.smol_model.strip(),
+    }
+    if not model or not verifier_model or any(not value for value in model_roles.values()):
+        parser.error("model selectors and model roles must be non-empty")
+    diversity = model_diversity(model, verifier_model)
 
     root = args.harness_root.resolve()
     repo = args.repo_path.resolve()
@@ -87,8 +99,9 @@ def main() -> int:
                 "updated_at": created,
                 "target_fingerprint": args.target_fingerprint,
                 "model": model,
+                "model_roles": model_roles,
                 "verifier_model": verifier_model,
-                "model_diversity": model_diversity,
+                "model_diversity": diversity,
                 "reproduction_mode": args.reproduction_mode,
                 "phases": {phase: "pending" for phase in PHASES},
             },
@@ -112,6 +125,7 @@ def main() -> int:
         "sast_threat_model": scan / "sast/threat-model.json",
         "sast_threat_model_md": scan / "sast/threat-model.md",
         "sast_hunt_plan": scan / "sast/hunt-plan.json",
+        "sast_hunt_tasks": scan / "sast/hunt-tasks",
         "sast_deepdive": scan / "sast/deepdive",
         "sast_verify": scan / "sast/verify",
         "sast_raw_findings": scan / "sast/raw-findings.json",
@@ -183,8 +197,9 @@ def main() -> int:
         "depth": args.depth,
         "target_fingerprint": args.target_fingerprint,
         "model": model,
+        "model_roles": model_roles,
         "verifier_model": verifier_model,
-        "model_diversity": model_diversity,
+        "model_diversity": diversity,
         "reproduction_mode": args.reproduction_mode,
         "harness_root": str(root),
         "repo_path": str(repo),
@@ -192,6 +207,19 @@ def main() -> int:
         "scan_base": str(scan),
         "paths": {key: str(value) for key, value in paths.items()},
         "tools": {key: str(value) for key, value in tools.items()},
+        "orchestration": {
+            "completion_signal": "job",
+            "phase_timeout_seconds": {
+                "recon": 900,
+                "tool-collection": 900,
+                "sast": {"quick": 3600, "balanced": 7200, "full": 14400},
+                "campaign-planning": 1200,
+                "intrusion": {"quick": 1800, "balanced": 3600, "full": 7200},
+                "synthesis": 1200,
+                "final-verification": {"quick": 2700, "balanced": 5400, "full": 10800},
+                "report": 600,
+            },
+        },
         "created_at": now(),
     }
     context_path = Path(os.environ.get("VULNOPS_AUDIT_CONTEXT", root / ".harness/audit-context.json"))

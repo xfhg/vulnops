@@ -42,6 +42,7 @@ from __future__ import annotations
 import json
 import subprocess
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
 
 root = Path(sys.argv[1]).resolve()
@@ -87,6 +88,8 @@ def load_json(path: Path):
 
 phases = []
 run_manifest = load_json(scan / "run-manifest.json")
+task_ledger = load_json(scan / "task-ledger.json")
+audit_context = load_json(root / ".harness" / "audit-context.json")
 is_v2 = isinstance(run_manifest, dict) and run_manifest.get("schema_version") == "2.0"
 for phase, dirname in phase_dirs:
     path = scan / dirname / "phase-manifest.json"
@@ -128,8 +131,33 @@ if is_v2:
     verifier_model = run_manifest.get("verifier_model", "missing")
     print(f"- Primary model: {primary_model}")
     print(f"- Verifier model: {verifier_model}")
-    print(f"- Model diversity: {str(primary_model != verifier_model).lower()}")
+    model_roles = run_manifest.get("model_roles", {})
+    if isinstance(model_roles, dict):
+        print("- Model roles: " + ", ".join(f"{key}={model_roles.get(key, 'missing')}" for key in ("orchestrator", "task", "slow", "smol")))
+    efforts = {"off", "minimal", "low", "medium", "high", "xhigh", "max", "auto"}
+    primary_head, primary_sep, primary_effort = str(primary_model).rpartition(":")
+    verifier_head, verifier_sep, verifier_effort = str(verifier_model).rpartition(":")
+    primary_identity = primary_head if primary_sep and primary_effort.lower() in efforts else str(primary_model)
+    verifier_identity = verifier_head if verifier_sep and verifier_effort.lower() in efforts else str(verifier_model)
+    print(f"- Model diversity: {str(primary_identity != verifier_identity).lower()}")
     print(f"- Reproduction: {run_manifest.get('reproduction_mode', 'off')}")
+    if run_manifest.get("status") == "running" and isinstance(task_ledger, dict):
+        active = next((item for item in task_ledger.get("tasks", []) if isinstance(item, dict) and item.get("status") == "running"), None)
+        if active:
+            phase = str(active.get("phase", "unknown"))
+            print(f"- Active phase: {phase} ({active.get('id', 'unknown')})")
+            try:
+                updated = datetime.fromisoformat(str(active.get("updated_at", "")).replace("Z", "+00:00"))
+                age = max(0, int((datetime.now(timezone.utc) - updated.astimezone(timezone.utc)).total_seconds()))
+                print(f"- Active phase age: {age}s")
+                if isinstance(audit_context, dict) and audit_context.get("scan_base") == str(scan):
+                    configured = audit_context.get("orchestration", {}).get("phase_timeout_seconds", {}).get(phase)
+                    if isinstance(configured, dict):
+                        configured = configured.get(audit_context.get("depth"))
+                    if isinstance(configured, int):
+                        print(f"- Active phase deadline: {configured}s ({'exceeded' if age > configured else 'within limit'})")
+            except (TypeError, ValueError):
+                pass
 for item in phases:
     print(f"- {item['phase']}: {item['status']}")
 if summary:

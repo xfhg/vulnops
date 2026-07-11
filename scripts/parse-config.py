@@ -55,6 +55,11 @@ def main() -> None:
     provider_api = str(provider.get("api", "openai-completions") or "openai-completions")
     provider_auth = str(provider.get("auth", "api-key") or "api-key")
     selector = str(llm.get("selector", "") or "").strip()
+    roles = llm.get("roles", {})
+    orchestrator_selector = str(roles.get("orchestrator", selector) or selector).strip()
+    task_selector = str(roles.get("task", selector) or selector).strip()
+    slow_selector = str(roles.get("slow", selector) or selector).strip()
+    smol_selector = str(roles.get("smol", selector) or selector).strip()
     verifier_selector = str(llm.get("verification", {}).get("selector", "") or "").strip() or selector
 
     exports: list[tuple[str, str]] = [
@@ -66,6 +71,10 @@ def main() -> None:
         ("ON_PREM_PROVIDER_API", provider_api),
         ("ON_PREM_PROVIDER_AUTH", provider_auth),
         ("OMP_MODEL_SELECTOR", selector),
+        ("OMP_ORCHESTRATOR_MODEL_SELECTOR", orchestrator_selector),
+        ("OMP_TASK_MODEL_SELECTOR", task_selector),
+        ("OMP_SLOW_MODEL_SELECTOR", slow_selector),
+        ("OMP_SMOL_MODEL_SELECTOR", smol_selector),
         ("OMP_VERIFIER_MODEL_SELECTOR", verifier_selector),
         ("VULNOPS_REPRODUCTION_MODE", str(reproduction.get("mode", "off") or "off")),
         ("VULNOPS_REPRODUCTION_SANDBOX", str(reproduction.get("sandbox", "auto") or "auto")),

@@ -3,10 +3,10 @@ name: vulnops-recon-overview
 description: Repository overview, stack, architecture, and comparable-baseline researcher
 tools:
   - read
+  - write
   - grep
   - glob
   - bash
-  - irc
   - yield
 model:
   - pi/task
@@ -16,7 +16,9 @@ output:
   properties:
     status:
       enum: [ok, degraded, failed]
-    result:
+    observations:
+      type: number
+    artifact:
       type: string
     warnings:
       elements:
@@ -39,9 +41,12 @@ from build and CI metadata. Only paths accepted by
 checksums such as `go.sum`, Dockerfiles, Makefiles, workflows, and general config
 belong in architecture/build evidence, never in `dependency_files`.
 
-Return a JSON string matching `schemas/v2/recon-research.schema.json` with
-`worker: "overview"` as `result`. Do not write files, use network access, or
-modify target source. Cite real repository-relative paths and lines.
+Write `paths.repo_context/research/overview.json` matching
+`schemas/v2/recon-research.schema.json` with `worker: "overview"`, UTC
+`started_at`/`completed_at`, and real repository-relative path:line evidence.
+Write no other file, use no network access, and never modify target source.
+Yield only `status`, observation count, the absolute artifact path, warnings,
+and errors.
 
 ## Skills
 

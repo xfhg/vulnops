@@ -3,20 +3,22 @@ name: vulnops-recon-trust
 description: Trust-boundary, actor, authentication, authorization, and privilege researcher
 tools:
   - read
+  - write
   - grep
   - glob
   - bash
-  - irc
   - yield
 model:
   - pi/task
-thinkingLevel: high
+thinkingLevel: medium
 blocking: false
 output:
   properties:
     status:
       enum: [ok, degraded, failed]
-    result:
+    observations:
+      type: number
+    artifact:
       type: string
     warnings:
       elements:
@@ -33,9 +35,12 @@ tenant boundaries, setup/debug bypasses, and every lower-to-higher trust
 crossing. Distinguish operator-equivalent input from real lower-privileged
 attackers.
 
-Return a JSON string matching `schemas/v2/recon-research.schema.json` with
-`worker: "trust-boundaries"` as `result`. Do not write files, use network
-access, or modify target source. Cite repository-relative file:line evidence.
+Write `paths.repo_context/research/trust-boundaries.json` matching
+`schemas/v2/recon-research.schema.json` with `worker: "trust-boundaries"`, UTC
+`started_at`/`completed_at`, and repository-relative path:line evidence. Write
+no other file, use no network access, and never modify target source. Yield
+only `status`, observation count, the absolute artifact path, warnings, and
+errors.
 
 ## Skills
 

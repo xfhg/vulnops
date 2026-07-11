@@ -6,17 +6,17 @@ startup:
   setupWizard: false
 
 modelRoles:
-  default: 'openai-codex/gpt-5.5:xhigh'
-  task: 'openai-codex/gpt-5.5:xhigh'
-  slow: 'openai-codex/gpt-5.5:xhigh'
-  smol: 'openai-codex/gpt-5.5:xhigh'
-  plan: 'openai-codex/gpt-5.5:xhigh'
-  advisor: 'openai-codex/gpt-5.5:xhigh'
-  vision: 'openai-codex/gpt-5.5:xhigh'
-  designer: 'openai-codex/gpt-5.5:xhigh'
-  commit: 'openai-codex/gpt-5.5:xhigh'
-  tiny: 'openai-codex/gpt-5.5:xhigh'
-  primary: 'openai-codex/gpt-5.5:xhigh'
+  default: 'openai-codex/gpt-5.5:low'
+  task: 'openai-codex/gpt-5.5:medium'
+  slow: 'openai-codex/gpt-5.5:high'
+  smol: 'openai-codex/gpt-5.5:minimal'
+  plan: 'openai-codex/gpt-5.5:medium'
+  advisor: 'openai-codex/gpt-5.5:low'
+  vision: 'openai-codex/gpt-5.5:high'
+  designer: 'openai-codex/gpt-5.5:high'
+  commit: 'openai-codex/gpt-5.5:minimal'
+  tiny: 'openai-codex/gpt-5.5:minimal'
+  primary: 'openai-codex/gpt-5.5:high'
   verifier: 'openai-codex/gpt-5.5:xhigh'
 
 memory:
@@ -31,8 +31,20 @@ search:
   enabled: false
 remote:
   enabled: false
+defaultThinkingLevel: low
+async:
+  enabled: true
+  maxJobs: 32
+  pollWaitDuration: smart
+task:
+  batch: true
+  maxConcurrency: 16
+  maxRecursionDepth: 2
+  isolation:
+    mode: none
 tools:
   approvalMode: yolo
 advisor:
-  enabled: true
+  enabled: false
+  subagents: false
   immuneTurns: 3

@@ -131,6 +131,10 @@ main() {
     local ctx="${HARNESS_ROOT}/.harness/audit-context.json"
     local reproduction_mode="${VULNOPS_REPRODUCTION_MODE:-off}"
     local primary_model="${OMP_MODEL_SELECTOR:-${ON_PREM_MODEL_NAME:-unknown}}"
+    local orchestrator_model="${OMP_ORCHESTRATOR_MODEL_SELECTOR:-${primary_model}}"
+    local task_model="${OMP_TASK_MODEL_SELECTOR:-${primary_model}}"
+    local slow_model="${OMP_SLOW_MODEL_SELECTOR:-${primary_model}}"
+    local smol_model="${OMP_SMOL_MODEL_SELECTOR:-${primary_model}}"
     local verifier_model="${OMP_VERIFIER_MODEL_SELECTOR:-${primary_model}}"
     case "$reproduction_mode" in
         off|safe) ;;
@@ -147,7 +151,8 @@ main() {
         local resume_fields
         resume_fields="$(python3 "${HARNESS_ROOT}/scripts/resume-run.py" \
             "$ctx" "$clone_dir" "$short_sha" "$depth" "$target_fingerprint" \
-            "$reproduction_mode" "$primary_model" "$verifier_model")"
+            "$reproduction_mode" "$primary_model" "$orchestrator_model" \
+            "$task_model" "$slow_model" "$smol_model" "$verifier_model")"
         if [ -n "$resume_fields" ]; then
             IFS=$'\t' read -r run_id scan_base <<<"$resume_fields"
             resumed=true
@@ -165,6 +170,7 @@ main() {
     mkdir -p "${scan_base}/repo-context/research"
     mkdir -p "${scan_base}/tool-collection"
     mkdir -p "${scan_base}/sast/deepdive"
+    mkdir -p "${scan_base}/sast/hunt-tasks"
     mkdir -p "${scan_base}/sast/verify"
     mkdir -p "${scan_base}/sast/reproduction"
     mkdir -p "${scan_base}/sast/fixes"
@@ -204,6 +210,10 @@ main() {
         --target-fingerprint "$target_fingerprint"
         --reproduction-mode "$reproduction_mode"
         --model "$primary_model"
+        --orchestrator-model "$orchestrator_model"
+        --task-model "$task_model"
+        --slow-model "$slow_model"
+        --smol-model "$smol_model"
         --verifier-model "$verifier_model"
     )
     if [ "$resumed" = true ]; then

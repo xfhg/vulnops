@@ -5,6 +5,7 @@ import argparse, importlib.util, json, os, re
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+from model_identity import model_diversity
 SAFE=re.compile(r"^F-[0-9]{3}$")
 def now()->str:return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 def load(path:Path,fallback:Any)->Any:
@@ -15,7 +16,7 @@ def write(path:Path,doc:object)->None:
 def validate_candidate(root:Path,candidate:object)->list[str]:
     spec=importlib.util.spec_from_file_location("validator",root/"scripts/validate-json.py"); module=importlib.util.module_from_spec(spec); assert spec and spec.loader; spec.loader.exec_module(module); schema=load(root/"schemas/v2/synthesis-findings.schema.json",{}); return module.Validator(schema).collect(candidate,schema["$defs"]["finding"])
 def main()->int:
-    p=argparse.ArgumentParser(); p.add_argument("repo_path",type=Path); p.add_argument("scan_base",type=Path); a=p.parse_args(); root=Path(__file__).resolve().parent.parent; context=load(Path(os.environ.get("VULNOPS_AUDIT_CONTEXT",root/".harness/audit-context.json")),{}); primary=str(context.get("model",os.environ.get("OMP_MODEL_SELECTOR",""))); verifier=str(context.get("verifier_model",os.environ.get("OMP_VERIFIER_MODEL_SELECTOR",""))); diversity=primary!=verifier; source=load(a.scan_base/"synthesis/findings.json",{}); candidates=source.get("findings",[]) if isinstance(source,dict) else []; findings=[]; rejections=[]; errors=[]
+    p=argparse.ArgumentParser(); p.add_argument("repo_path",type=Path); p.add_argument("scan_base",type=Path); a=p.parse_args(); root=Path(__file__).resolve().parent.parent; context=load(Path(os.environ.get("VULNOPS_AUDIT_CONTEXT",root/".harness/audit-context.json")),{}); primary=str(context.get("model",os.environ.get("OMP_MODEL_SELECTOR",""))); verifier=str(context.get("verifier_model",os.environ.get("OMP_VERIFIER_MODEL_SELECTOR",""))); diversity=model_diversity(primary,verifier); source=load(a.scan_base/"synthesis/findings.json",{}); candidates=source.get("findings",[]) if isinstance(source,dict) else []; findings=[]; rejections=[]; errors=[]
     ids=[str(x.get("id")) for x in candidates if isinstance(x,dict)]
     if len(ids)!=len(set(ids)):errors.append("synthesis contains duplicate finding IDs")
     for candidate in candidates:

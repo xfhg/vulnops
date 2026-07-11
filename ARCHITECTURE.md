@@ -143,6 +143,13 @@ The control plane consists of:
 The control plane decides whether work is compatible, complete, and safe to
 promote. It never manufactures a security conclusion.
 
+Model-owned top-level phases are supervised OMP jobs. The lead captures one job
+ID per stable phase task, observes that job through the OMP job lifecycle, and
+enforces the depth-specific deadline stored in audit context. A job is not
+successful merely because files appeared or an IRC message arrived: it must
+terminate with a schema-valid yield and then pass the phase validator. IRC carries
+only bounded stage transitions and peer questions.
+
 ### 4.2 Evidence data plane
 
 The data plane carries:
@@ -173,14 +180,15 @@ repository path
 + depth
 + reproduction mode
 + normalized primary selector
++ exact orchestrator, task, slow, and smol role selectors
 + normalized verifier selector
 + workflow identity
 ```
 
 Only the current incomplete run resumes when every field matches. `complete` and
-`failed` are terminal run states. A changed selector creates a new run even if the
-underlying model happens to be similar; selector identity is the reproducible
-configuration fact available to the harness.
+`failed` are terminal run states. A changed role selector creates a new run even
+if the underlying model happens to be similar; exact selector identity is the
+reproducible execution configuration available to the harness.
 
 ### 5.1 Why commit alone is insufficient
 
@@ -244,6 +252,44 @@ Independent Verification: fresh context, every finding, every chain step
          ▼
 Deterministic Report: final accepted findings only
 ```
+
+### 6.1 Orchestration and concurrency model
+
+The main OMP process owns the workflow and launches each model-owned phase as one
+supervised asynchronous job. Job identity, terminal state, structured yield, and
+the phase validator form the completion contract. Deadlines are stored in audit
+context and a timeout closes the stable attempt rather than leaving an orphaned
+phase. IRC is limited to genuine progress transitions and peer questions.
+
+Parallelism is applied within phases where workers have disjoint ownership:
+
+| Area | Decomposition | Bound |
+|---|---|---:|
+| Recon | Overview, trust-boundary, and input-surface research | 3 workers |
+| Tool Collection | Wraith invocations plus Poltergeist | 4 processes |
+| SAST deep dives | Hash-bound hunt-task packets | 4 quick / 8 balanced / 16 full |
+| SAST verification | Deduplicated validation candidates | 4 quick / 8 balanced / 12 full |
+| Safe reproduction | Eligible source-verified candidates | Configured `max_parallel` |
+| Intrusion | Planned campaigns | Depth-bounded waves |
+| Final Verification | Synthesized findings | Depth-bounded waves |
+
+OMP nested task batches are synchronous from the coordinator's perspective, but
+the workers within a batch run concurrently. Queue overflow is executed in later
+waves and never silently discarded. Coordinators can spawn only their declared
+specialists, leaf workers do not create unbounded descendants, and stable IDs
+prevent a second task from representing already-active work.
+
+Top-level phases do not overlap. Recon, Tool Collection, SAST, Campaign Planning,
+Intrusion, Synthesis, Final Verification, and Report form a strict evidence
+pipeline: downstream work requires the preceding immutable phase to validate.
+Campaign Planning and Synthesis therefore remain single-agent consolidation
+authorities. Deterministic scanning, bookkeeping, aggregation, empty paths, and
+reporting use no model agents.
+
+The OMP advisor is disabled independently of task execution. It would add a
+background review loop without owning a VulnOps artifact or gate; disabling it
+does not affect asynchronous jobs, phase coordinators, or canonical worker
+fanout.
 
 ## 7. Phase ownership and contracts
 
@@ -394,6 +440,11 @@ Context packets are bounded in bytes. If necessary, broad context is removed
 before the packet is allowed to exceed its configured size; workers can still read
 specific source through tools. This prevents prompt size from growing with the
 repository while preserving source access.
+
+Each worker receives a task-specific file beneath `sast/hunt-tasks/`, not the
+aggregate hunt plan. The packet embeds the exact task and the SHA-256 of the plan
+that produced it. SAST validation requires an exact packet set and rejects stale,
+orphaned, or hash-mismatched work before promotion.
 
 ### 10.4 Depth and fanout
 
@@ -703,13 +754,15 @@ plausible while one intermediate capability is unsupported.
 ### 16.1 Model attribution and diversity
 
 The primary selector owns source-validation attribution. The configured verifier
-selector must appear in every independent result. `model_diversity` is calculated
-as normalized selector inequality and is stored as a JSON boolean in the run,
-context, verifier results, final wrapper, and every accepted finding.
+selector must appear in every independent result. `model_diversity` compares the
+normalized underlying model identities and is stored as a JSON boolean in the
+run, context, verifier results, final wrapper, and every accepted finding. Known
+thinking-effort suffixes are removed for this comparison, so high versus xhigh on
+the same model is not misrepresented as independent model diversity.
 
 The validator rejects wrong-model results or inconsistent diversity metadata.
-When selectors match, the report records the limitation; it does not misrepresent
-fresh context as model diversity.
+When normalized model identities match, the report records the limitation; it
+does not misrepresent fresh context as model diversity.
 
 When synthesis is empty, deterministic finalization emits empty accepted and
 rejected arrays with the correct diversity value. No verifier tasks are fabricated.
@@ -766,9 +819,10 @@ workflow integrity.
 `validate-config.sh` verifies:
 
 - the exact supported configuration keys and value bounds;
-- primary and verifier selector syntax;
+- primary, tiered role, and verifier selector syntax;
 - custom-provider endpoint/auth requirements;
-- generated primary/verifier role mapping;
+- generated role mapping and canonical agent/spawn graph;
+- the pinned OMP version and platform checksum;
 - registration of every selected custom model;
 - required binaries, scripts, schemas, agents, and local OSV database;
 - absence of forbidden workflow/report/config surfaces;

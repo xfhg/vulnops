@@ -156,6 +156,12 @@ def main()->int:
             if isinstance(receipt,dict) and (scan/"tool-collection"/artifact_name).is_file() and receipt.get("normalized_sha256")!=hashlib.sha256((scan/"tool-collection"/artifact_name).read_bytes()).hexdigest():errors.append(f"{name} normalized hash mismatch")
     elif phase=="sast":
         schema(root,"threat-model.schema.json",scan/"sast/threat-model.json",errors,semantic="threat-model",target=target); schema(root,"hunt-plan.schema.json",scan/"sast/hunt-plan.json",errors,semantic="hunt-plan",target=target); schema(root,"candidate-finding.schema.json",scan/"sast/raw-findings.json",errors,True,"candidate",target); schema(root,"validation-result.schema.json",scan/"sast/validation-results.json",errors,True,"validation-result",target); schema(root,"coverage-ledger.schema.json",scan/"sast/coverage-ledger.json",errors); schema(root,"wishlist.schema.json",scan/"sast/wishlist.json",errors)
+        hunt_plan=load(scan/"sast/hunt-plan.json",errors) or {}; plan_sha=hashlib.sha256((scan/"sast/hunt-plan.json").read_bytes()).hexdigest() if (scan/"sast/hunt-plan.json").is_file() else ""; expected_packets=set()
+        for task in hunt_plan.get("tasks",[]):
+            task_id=str(task.get("id","")); expected_packets.add(f"{task_id}.json"); packet=load(scan/"sast/hunt-tasks"/f"{task_id}.json",errors) or {}
+            if packet.get("run_id")!=hunt_plan.get("run_id") or packet.get("hunt_plan_ref")!="sast/hunt-plan.json" or packet.get("hunt_plan_sha256")!=plan_sha or packet.get("task")!=task:errors.append(f"hunt task packet mismatch: {task_id}")
+        actual_packets={path.name for path in (scan/"sast/hunt-tasks").glob("*.json")} if (scan/"sast/hunt-tasks").is_dir() else set()
+        if actual_packets!=expected_packets:errors.append("hunt task packet set does not match hunt plan")
         for name in ("verified-findings.json","dropped-findings.json","dedup-clusters.json"):
             if not isinstance(load(scan/"sast"/name,errors),list if name!="dedup-clusters.json" else dict):errors.append(f"sast/{name} has wrong shape")
     elif phase=="campaign-planning":

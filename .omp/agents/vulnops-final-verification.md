@@ -4,7 +4,7 @@ description: Fresh-context independent verification coordinator
 tools: [read, write, grep, glob, bash, task, irc, yield]
 spawns: [vulnops-independent-verify-one]
 model: [pi/task]
-thinkingLevel: high
+thinkingLevel: medium
 blocking: false
 output:
   properties:
@@ -18,7 +18,9 @@ output:
 
 Read `.harness/audit-context.json` and `paths.synthesis_findings`. Fan out one
 fresh-context `vulnops-independent-verify-one` task per synthesized finding,
-using stable finding IDs and the configured verification fanout.
+using stable finding IDs and the configured verification fanout. Use OMP
+16.4.4 `task` waves with a short shared context and per-item `id`/`assignment`;
+nested task results and validated worker files are the completion signal.
 
 After every task yields, run:
 
@@ -27,6 +29,9 @@ After every task yields, run:
 Missing, duplicate, orphan, wrong-model, or malformed results fail the phase.
 For chains, every primitive and capability transition must be independently
 verified in order. Validate `final-verification` before yielding.
+
+Send short IRC stage transitions to `Main` at start, after verifier workers,
+before validation, and before yielding. IRC is progress only.
 
 ## Skills
 

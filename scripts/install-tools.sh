@@ -59,6 +59,35 @@ get_latest_version() {
     echo "$version"
 }
 
+sha256_file() {
+    if command -v sha256sum >/dev/null 2>&1; then
+        sha256sum "$1" | awk '{print $1}'
+    elif command -v shasum >/dev/null 2>&1; then
+        shasum -a 256 "$1" | awk '{print $1}'
+    else
+        err "Missing sha256 tool: install sha256sum or shasum"
+        return 1
+    fi
+}
+
+omp_lock_file() {
+    local platform
+    platform="$(detect_platform)"
+    local path="${HARNESS_ROOT}/config/offline-pack.${platform}.lock"
+    if [ ! -f "$path" ] && [ "$platform" = "linux_amd64" ]; then
+        path="${HARNESS_ROOT}/config/offline-pack.lock"
+    fi
+    [ -f "$path" ] || return 1
+    printf '%s\n' "$path"
+}
+
+omp_lock_value() {
+    local key="$1"
+    local lock
+    lock="$(omp_lock_file)" || return 1
+    sed -n "s/^${key}=//p" "$lock" | sed -n '1p'
+}
+
 download_and_extract() {
     local repo="$1"
     local binary="$2"
@@ -190,6 +219,13 @@ version_for_tool() {
             return
         fi
     fi
+    if [ "$tool" = "omp" ] && [ "$default_version" = "latest" ]; then
+        value="$(omp_lock_value OMP_VERSION 2>/dev/null || true)"
+        if [ -n "$value" ]; then
+            echo "$value"
+            return
+        fi
+    fi
     echo "$default_version"
 }
 
@@ -200,24 +236,41 @@ download_omp() {
 
     mkdir -p "$INSTALL_DIR"
 
-    # Check if already up to date
-    local version_file="${INSTALL_DIR}/.omp.version"
-    if [ -f "${INSTALL_DIR}/omp" ] && [ -f "$version_file" ]; then
-        local installed_version
-        installed_version="$(cat "$version_file")"
-        if [ "$version" = "latest" ] || [ "$installed_version" = "$version" ]; then
-            log "  omp: already installed (${installed_version})"
-            return 0
-        fi
-    fi
-
-    # Resolve version
+    # Resolve latest before comparing against the installed marker. The old
+    # ordering treated any installed version as current when "latest" was
+    # requested, which made upgrades a no-op.
     if [ "$version" = "latest" ]; then
         log "Fetching latest OMP version..."
         version="$(get_latest_version "can1357/oh-my-pi")"
         if [ -z "$version" ]; then
             err "Failed to determine latest OMP version"
             return 1
+        fi
+    fi
+
+    local expected_sha=""
+    local locked_version
+    locked_version="$(omp_lock_value OMP_VERSION 2>/dev/null || true)"
+    if [ "$version" = "$locked_version" ]; then
+        expected_sha="$(omp_lock_value OMP_SHA256 2>/dev/null || true)"
+        if ! [[ "$expected_sha" =~ ^[a-f0-9]{64}$ ]]; then
+            err "Pinned OMP ${version} is missing a valid platform SHA-256"
+            return 1
+        fi
+    fi
+
+    # Check both the marker and the executable itself. A stale marker must not
+    # bless a mismatched binary.
+    local version_file="${INSTALL_DIR}/.omp.version"
+    if [ -x "${INSTALL_DIR}/omp" ] && [ -f "$version_file" ]; then
+        local installed_version actual_version actual_sha
+        installed_version="$(sed -n '1p' "$version_file")"
+        actual_version="$(${INSTALL_DIR}/omp --version 2>/dev/null | sed -n 's#^omp/##p' | sed -n '1p')"
+        actual_sha="$(sha256_file "${INSTALL_DIR}/omp" 2>/dev/null || true)"
+        if [ "$installed_version" = "$version" ] && [ "v${actual_version#v}" = "v${version#v}" ] \
+            && { [ -z "$expected_sha" ] || [ "$actual_sha" = "$expected_sha" ]; }; then
+            log "  omp: already installed (${installed_version})"
+            return 0
         fi
     fi
 
@@ -265,10 +318,25 @@ download_omp() {
         return 1
     fi
 
+    if [ -n "$expected_sha" ]; then
+        local downloaded_sha
+        downloaded_sha="$(sha256_file "${tmpdir}/omp")" || return 1
+        if [ "$downloaded_sha" != "$expected_sha" ]; then
+            err "OMP ${version} checksum mismatch for ${platform}"
+            return 1
+        fi
+    fi
+
     chmod +x "${tmpdir}/omp"
+    local reported_version
+    reported_version="$(${tmpdir}/omp --version 2>/dev/null | sed -n 's#^omp/##p' | sed -n '1p')"
+    if [ "v${reported_version#v}" != "v${version#v}" ]; then
+        err "Downloaded OMP reports ${reported_version:-unknown}; expected ${version}"
+        return 1
+    fi
+    fix_binary "${tmpdir}/omp"
     mv -f "${tmpdir}/omp" "${INSTALL_DIR}/omp"
-    fix_binary "${INSTALL_DIR}/omp"
-    echo "$version" > "$version_file"
+    printf '%s\n' "$version" > "$version_file"
     log "  Installed: ${INSTALL_DIR}/omp"
     return 0
 }

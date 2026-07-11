@@ -27,6 +27,40 @@ def write(path: Path, document: object) -> None:
     temporary.replace(path)
 
 
+def render_repo_markdown(document: dict[str, Any]) -> str:
+    lines = [
+        "# Repository Context",
+        "",
+        f"- Repository: {document.get('repository', 'unknown')}",
+        f"- Projects: {len(document.get('projects', []))}",
+        f"- Domain tags: {', '.join(str(item) for item in document.get('domain_tags', [])) or 'none'}",
+        "",
+        "## Projects",
+        "",
+    ]
+    for project in document.get("projects", []):
+        if not isinstance(project, dict):
+            continue
+        lines.extend(
+            [
+                f"### {project.get('id', 'project')}",
+                "",
+                f"- Type: {project.get('type', 'unknown')}",
+                f"- Base path: {project.get('base_path', '.')}",
+                f"- Languages: {', '.join(str(item) for item in project.get('languages', [])) or 'unknown'}",
+                f"- Frameworks: {', '.join(str(item) for item in project.get('frameworks', [])) or 'none'}",
+                f"- Entry points: {len(project.get('entry_points', []))}",
+                "",
+            ]
+        )
+    warnings = [str(item) for item in document.get("warnings", [])]
+    if warnings:
+        lines.extend(["## Limitations", ""])
+        lines.extend(f"- {warning}" for warning in warnings)
+        lines.append("")
+    return "\n".join(lines)
+
+
 def is_within(relative: str, base: str) -> bool:
     path_parts = PurePosixPath(relative).parts
     base_parts = PurePosixPath(base or ".").parts
@@ -82,6 +116,13 @@ def main() -> int:
     for project in projects:
         project["dependency_files"] = sorted(set(project["dependency_files"]))
     write(repo_context_path, document)
+    (scan / "repo-context/repo.md").write_text(render_repo_markdown(document), encoding="utf-8")
+
+    research = [
+        load(scan / "repo-context/research/overview.json"),
+        load(scan / "repo-context/research/trust-boundaries.json"),
+        load(scan / "repo-context/research/input-surfaces.json"),
+    ]
 
     outputs = [
         "repo-context/repo.md",
@@ -97,7 +138,7 @@ def main() -> int:
     manifest = {
         "phase": "recon",
         "status": "ok",
-        "started_at": now(),
+        "started_at": min((str(item.get("started_at", "")) for item in research if item.get("started_at")), default=now()),
         "completed_at": now(),
         "inputs": [".harness/audit-context.json"],
         "outputs": outputs,
@@ -105,6 +146,7 @@ def main() -> int:
             "projects": len(projects),
             "entry_points": sum(len(project.get("entry_points", [])) for project in projects),
             "dependency_inputs": len(discovered),
+            "workers": len(research),
         },
         "tool_versions": {"recon_finalizer": "deterministic-v2"},
         "warnings": list(document.get("warnings", [])),

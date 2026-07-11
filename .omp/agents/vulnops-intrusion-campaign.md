@@ -1,7 +1,7 @@
 ---
 name: vulnops-intrusion-campaign
 description: Source-first worker for one red-team campaign
-tools: [read, write, grep, glob, bash, irc, yield]
+tools: [read, write, grep, glob, bash, yield]
 model: [pi/slow]
 thinkingLevel: high
 blocking: false

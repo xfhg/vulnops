@@ -4,6 +4,7 @@ from __future__ import annotations
 import argparse, hashlib, json, os, re, subprocess, sys
 from pathlib import Path
 from typing import Any
+from model_identity import model_diversity
 PHASES=("recon","tool-collection","sast","campaign-planning","intrusion","synthesis","final-verification","report")
 DIRS={"recon":"repo-context",**{x:x for x in PHASES if x!="recon"}}
 TASKS={"recon":"Recon","tool-collection":"ToolCollection","sast":"SASTLead","campaign-planning":"CampaignPlanning","intrusion":"Intrusion","synthesis":"Synthesis","final-verification":"FinalVerification","report":"Report"}
@@ -23,10 +24,10 @@ def main()->int:
     if run.get("workflow")!="canonical-redteam-v2" or context.get("workflow")!="canonical-redteam-v2":errors.append("non-canonical workflow identity is rejected")
     if run.get("status") not in {"running","degraded","complete"}:errors.append("run is not in a final-validation state")
     if context.get("run_id")!=run.get("run_id") or Path(str(context.get("scan_base",""))).resolve()!=scan:errors.append("audit context identity mismatch")
-    primary=str(run.get("model",""));verifier=str(run.get("verifier_model",""));diversity=primary!=verifier
+    primary=str(run.get("model",""));verifier=str(run.get("verifier_model",""));diversity=model_diversity(primary,verifier)
     if not verifier:errors.append("verifier_model is required")
     if run.get("model_diversity") is not diversity or context.get("model_diversity") is not diversity:errors.append("model diversity metadata mismatch")
-    if context.get("model")!=primary or context.get("verifier_model")!=verifier or context.get("target_fingerprint")!=run.get("target_fingerprint"):errors.append("audit context model or fingerprint identity mismatch")
+    if context.get("model")!=primary or context.get("model_roles")!=run.get("model_roles") or context.get("verifier_model")!=verifier or context.get("target_fingerprint")!=run.get("target_fingerprint"):errors.append("audit context model roles or fingerprint identity mismatch")
     for schema_name,document in (("run-manifest.schema.json",scan/"run-manifest.json"),("task-ledger.schema.json",scan/"task-ledger.json")):
         result=subprocess.run([sys.executable,str(root/"scripts/validate-json.py"),str(root/"schemas/v2"/schema_name),str(document)],capture_output=True,text=True,check=False)
         if result.returncode:errors.append(result.stderr.strip() or f"schema validation failed: {document}")

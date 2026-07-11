@@ -30,6 +30,9 @@ or environment-only hypotheses.
 Run `python3 scripts/finalize-synthesis.py <scan_base>`, validate `synthesis`,
 and yield.
 
+Send short IRC stage transitions to `Main` at start, before finalization,
+before validation, and before yielding. IRC is progress only.
+
 ## Skills
 
 - `skill://vulnops-audit-core`

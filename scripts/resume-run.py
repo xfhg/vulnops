@@ -32,6 +32,10 @@ def main() -> int:
     parser.add_argument("target_fingerprint")
     parser.add_argument("reproduction_mode")
     parser.add_argument("model")
+    parser.add_argument("orchestrator_model")
+    parser.add_argument("task_model")
+    parser.add_argument("slow_model")
+    parser.add_argument("smol_model")
     parser.add_argument("verifier_model")
     args = parser.parse_args()
 
@@ -50,6 +54,14 @@ def main() -> int:
         return 0
     if str(context.get("verifier_model", "")) != args.verifier_model.strip():
         return 0
+    expected_roles = {
+        "orchestrator": args.orchestrator_model.strip(),
+        "task": args.task_model.strip(),
+        "slow": args.slow_model.strip(),
+        "smol": args.smol_model.strip(),
+    }
+    if context.get("model_roles") != expected_roles:
+        return 0
 
     scan_base = Path(str(context.get("scan_base", "")))
     manifest = load(scan_base / "run-manifest.json")
@@ -61,6 +73,8 @@ def main() -> int:
     if str(manifest.get("model", "")) != args.model.strip():
         return 0
     if str(manifest.get("verifier_model", "")) != args.verifier_model.strip():
+        return 0
+    if manifest.get("model_roles") != expected_roles:
         return 0
     if manifest.get("status") in {"complete", "failed"}:
         return 0

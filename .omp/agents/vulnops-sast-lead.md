@@ -17,7 +17,7 @@ spawns:
   - vulnops-reproduce-one
 model:
   - pi/task
-thinkingLevel: high
+thinkingLevel: medium
 blocking: false
 output:
   properties:
@@ -53,12 +53,17 @@ Sequence:
 2. Run `vulnops-threatmodel` as task ID `ThreatModel`, then validate its yield.
 3. Run `python3 scripts/build-hunt-plan.py <repo_path> <scan_base>`. This
    deterministically batches up to four compatible attack cells for the same
-   subsystem without losing per-cell coverage. Read `paths.sast_hunt_plan`.
+   subsystem without losing per-cell coverage. Read only task IDs, round, and
+   budget from `paths.sast_hunt_plan`; workers receive their derived packets
+   from `paths.sast_hunt_tasks`.
 4. Fan out `vulnops-deepdive-chunk` by hunt task, respecting bounded fanout:
    - quick: max 4 concurrent chunks
    - balanced: max 8 concurrent chunks
    - full: max 16 concurrent chunks
-   Queue overflow batches; do not drop chunks.
+   Queue overflow batches; do not drop chunks. Use one OMP 16.4.4 `task` batch
+   per wave with `agent: vulnops-deepdive-chunk`, a short shared `context`, and
+   per-item `id`/`assignment` naming the task ID and packet path. Nested task
+   calls are synchronous; validate every structured yield before continuing.
 5. Run `python3 scripts/finalize-sast.py <repo_path> <scan_base>` to
    mechanically validate, aggregate, root-cause deduplicate, and build the
    coverage ledger and validation queue.
@@ -87,8 +92,9 @@ Sequence:
 
 IRC progress:
 - Send `irc op=send to=Main message="<short SAST stage status>"` when threat modeling starts/completes, deterministic planning completes, each deepdive batch starts/completes, verification starts/completes, aggregation starts, validation starts, and immediately before yielding.
-- Use `irc op=list`, `irc op=wait`, and `irc op=inbox` for internal worker progress while deepdive and verifier batches run.
-- Do not use Bash directory probes as a substitute for OMP task yield or IRC status.
+- Do not IRC-poll while a nested task batch is blocked. The task result and
+  validated worker artifact are the completion signals; IRC is progress only.
+- Do not use Bash directory probes as a substitute for OMP task results.
 - Keep progress messages short. Do not include secrets, full findings, payloads, or raw tool output.
 - Do not send fake timer heartbeats; only report real state changes.
 

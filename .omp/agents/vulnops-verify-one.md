@@ -7,7 +7,6 @@ tools:
   - grep
   - glob
   - bash
-  - irc
   - yield
 model:
   - pi/slow
@@ -63,11 +62,6 @@ corrections, model selector, and mechanical-check results for every outcome.
 If any promoted claim changes, include a complete strict `corrected_candidate`
 with the same safe ID; otherwise set it to `null`. Never emit corrections that
 the corrected candidate does not apply.
-
-IRC progress:
-- Send `irc op=send to=Main message="<short phase status>"` at start, each material stage boundary, before validation, and before yielding.
-- Keep progress messages short. Do not include secrets, full findings, payloads, or raw tool output.
-- Do not send fake timer heartbeats; only report real state changes.
 
 Before yielding, confirm your verifier JSON exists, is valid JSON, and its absolute path starts with `<scan_base>/sast/verify/`. The SAST lead validates the aggregate `sast-verify` phase.
 

@@ -93,8 +93,10 @@ scan_base
 target_fingerprint
 reproduction_mode
 model
+model_roles
 verifier_model
 model_diversity
+orchestration.phase_timeout_seconds
 paths.*
 tools.*
 ```
@@ -106,8 +108,8 @@ filesystem operations use the context's absolute paths.
 
 Resume only the incomplete run selected by `run-audit.sh`. Resume identity requires
 the same repository path, commit, exact fingerprint, depth, reproduction mode,
-primary selector, verifier selector, and workflow. Never consume completed or
-failed runs as input.
+primary selector, all tiered role selectors, verifier selector, and workflow.
+Never consume completed or failed runs as input.
 
 ## 5. Run-state protocol
 
@@ -126,7 +128,9 @@ python3 scripts/update-run-state.py <scan_base> --run-status running
 ```
 
 Before a top-level task starts, record the task and phase as running. Increment the
-attempt only when a real attempt begins:
+attempt only when a real attempt begins. Model phases then launch one asynchronous
+OMP task job and supervise that exact job with `job`; deterministic phases run
+inline:
 
 ```bash
 python3 scripts/update-run-state.py <scan_base> \
@@ -135,7 +139,8 @@ python3 scripts/update-run-state.py <scan_base> \
   --increment-attempt
 ```
 
-After the task yields or the deterministic phase finishes:
+After the task job reaches `completed` with a schema-valid yield, or the
+deterministic phase finishes:
 
 1. run the phase validator;
 2. stop immediately if validation fails;
@@ -156,9 +161,9 @@ python3 scripts/update-run-state.py <scan_base> \
 degraded remains degraded. On an unrecoverable task or validation error, record the
 error and mark the run failed. Do not advance to the next phase.
 
-If a task yields without valid terminal output, close that attempt as failed before
-retrying the same stable task ID. Retry only once. IRC messages after yield do not
-change task state and cannot repair an attempt. Never create repair/replacement
+If a task job fails, is cancelled, times out, or delivers no valid terminal yield,
+close that attempt as failed before retrying the same stable task ID. Retry only
+once. IRC messages never change task state and cannot repair an attempt. Never create repair/replacement
 top-level tasks. When stopping, pass the failed phase, stable task, sanitized error,
 and `--run-status failed` together so no phase or task remains running.
 
@@ -200,8 +205,10 @@ The coordinator launches these workers in one parallel batch:
 | `Trust` | `vulnops-recon-trust` | Assets, privilege changes, and trust boundaries |
 | `Inputs` | `vulnops-recon-inputs` | Entrypoints, attacker-controlled inputs, parsers, protocols |
 
-Workers return evidence and do not write artifacts. The coordinator writes only
-under `paths.repo_context`:
+Workers write exactly one disjoint research artifact each under
+`paths.repo_context/research`; they never write aggregate artifacts. The
+coordinator writes only aggregate JSON under `paths.repo_context`, and the
+deterministic finalizer renders `repo.md` and the manifest:
 
 ```text
 repo-context/repo.md
@@ -311,6 +318,10 @@ sast/phase-manifest.json
 `sast/deepdive/`, `sast/verify/`, `sast/reproduction/`, and `sast/fixes/` contain
 bounded supporting artifacts. Source-verified candidates may be promoted;
 environment-required candidates remain unconfirmed.
+
+`build-hunt-plan.py` also publishes one derived, hash-bound packet beneath
+`paths.sast_hunt_tasks` per hunt task. Workers read only their assigned packet,
+not the full aggregate hunt plan. The hunt plan remains the sole authority.
 
 Canonical task artifact: `sast/verified-findings.json`.
 
@@ -497,7 +508,9 @@ report/phase-manifest.json
 ```
 
 The report must remain bounded and sanitized. It includes origin and severity
-counts and reports the same-model limitation only when the selectors match.
+counts and reports the same-model limitation when the normalized underlying
+primary and verifier model identities match. Thinking effort alone is not model
+diversity.
 
 Canonical task artifact: `report/security-report.json`.
 
@@ -529,10 +542,13 @@ Do not reproduce raw findings, secrets, payloads, or proof output in chat.
 
 ## 9. OMP orchestration behavior
 
-Use OMP task yield as the completion signal. Use IRC operations `list`, `wait`,
-and `inbox` for live worker coordination and `send` for short stage transitions.
-Workers send progress to `Main` at real stage changes and immediately before
-yielding.
+Use the terminal OMP job delivery plus schema-valid yield as the completion
+signal for top-level model phases. Use `job` to poll/cancel the exact task job.
+Use IRC only for genuine peer questions and short top-level stage transitions;
+it is never a scheduler or completion signal. Nested task batches are
+synchronous, so coordinators wait for the task result rather than IRC-polling.
+Leaf workers rely on OMP task progress cards and do not send routine progress
+directly to `Main`.
 
 Do not:
 
@@ -550,12 +566,18 @@ orchestration mechanism.
 
 ## 10. Model roles
 
-All non-verifier roles use the primary selector through generated OMP roles such
-as `pi/task` and `pi/slow`. Independent verification uses `pi/verifier`.
+Generated OMP roles use the same underlying primary model with tiered reasoning:
+`pi/default` for low-effort orchestration, `pi/task` for medium-effort
+coordination and Recon, `pi/slow` for high-effort security investigation, and
+`pi/smol`/`pi/tiny` for minimal-effort mechanical work. Independent verification
+uses `pi/verifier` at its configured effort.
 
-The primary model must be recorded in source-validation metadata. The verifier
-model must be recorded in every independent result. Do not substitute a selector,
-infer a model name, or rewrite diversity metadata in an agent artifact.
+The exact role-selector map is part of run and resume identity. The primary
+high-effort selector must be recorded in source-validation metadata. The
+verifier selector must be recorded in every independent result. Diversity
+compares normalized provider/model identity; a thinking-effort difference alone
+is not model diversity. Do not substitute selectors, infer model names, or
+rewrite diversity metadata in an agent artifact.
 
 ## 11. Codegraph operating rules
 

@@ -7,7 +7,6 @@ tools:
   - grep
   - glob
   - bash
-  - irc
   - yield
 model:
   - pi/slow
@@ -59,11 +58,6 @@ as SAST work. Emit strict, stable IDs and evidence-backed objects for assets,
 trust boundaries, entrypoints, subsystems, and threats. Every subsystem file
 and entrypoint path must exist under the target; every cross-reference must
 resolve to an ID in the same document.
-
-IRC progress:
-- Send `irc op=send to=Main message="<short phase status>"` at start, each material stage boundary, before validation, and before yielding.
-- Keep progress messages short. Do not include secrets, full findings, payloads, or raw tool output.
-- Do not send fake timer heartbeats; only report real state changes.
 
 Before yielding, run `bash scripts/validate-phase.sh <scan_base> sast-threatmodel`.
 

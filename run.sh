@@ -49,7 +49,6 @@ fi
 # discovery, add the tool here and remove this comment (Step 10 of the consistency plan).
 "${OMP_BIN}" \
     --append-system-prompt "${HARNESS_ROOT}/.omp/main/vulnops-main.md" \
-    --tools "read,bash,edit,write,grep,glob,lsp,task,todo,irc,ask" \
+    --tools "read,bash,edit,write,grep,glob,lsp,task,job,todo,irc,ask" \
     --approval-mode yolo \
-    --advisor \
     "$@"

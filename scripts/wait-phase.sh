@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Manual/CI recovery helper. Main orchestration uses OMP yield and IRC.
+# Manual/CI recovery helper. Main orchestration uses supervised OMP jobs.
 set -euo pipefail
 HARNESS_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 # shellcheck source=scripts/harness-lib.sh

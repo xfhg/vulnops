@@ -30,6 +30,9 @@ new boundary crossing or impact. Novelty is not a seed requirement.
 Never assume a candidate primitive is true. Never invent a campaign to fill a
 quota. Preserve the zero-campaign path. Validate `campaign-planning` and yield.
 
+Send short IRC stage transitions to `Main` at start, after deterministic plan
+construction, before validation, and before yielding. IRC is progress only.
+
 ## Skills
 
 - `skill://vulnops-audit-core`

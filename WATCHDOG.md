@@ -1,25 +1,37 @@
-# Watchdog notes
+# Canonical V2 Watchdog
 
-These are the vulnops harness advisor's review priorities. The advisor is a passive
-reviewer of the Main controller; it cannot approve actions or change session state.
+The advisor passively reviews Main and cannot approve actions or mutate state.
+Watch for:
 
-Especially watch for:
-
-- Phase-contract drift between `.omp/agents/vulnops-*.md` frontmatter/output lists and
-  the behavior prompts under `config/agents/*.md`, or between either and `AGENTS.md`.
-- A phase agent that yields `status: "ok"` with empty or missing `artifacts`, or whose
-  `phase-manifest.json` status disagrees with `validate-phase.sh` output.
-- Missing or empty required codegraph evidence: `codegraph-runs/<sid>/codegraph-out/context.json`
-  must be non-empty (nodes + edges > 0) for every required intelligence/intrusion scope.
-  codegraph is the sole graph backend; there is no whole-repo fallback.
-- Any residual reference to `graphify`, `.venv`, `codegraphy`, or `find` as a tool name
-  (post-migration failure modes — `find` is not an OMP tool; the real name is `glob`).
-- Required artifacts that `validate-phase.sh` checks but that the corresponding agent
-  prompt omits from its Write/Required-outputs list (e.g. `security-surfaces.json` for
-  recon, `intrusion-seeds.json` for triage).
-- Per-finding markdown files treated as part of the validated contract — they are not;
-  `validate-phase.sh` / `validate-scan.sh` are the only contract. Behavior prompts are advisory.
-- `intrusion` declared terminal before `intrusion/phase-manifest.json` is `ok` AND the
-  required-scope codegraph contexts exist — reconciliation must not start early.
-- Subagents prompted via `ask` in a non-interactive audit run (the harness runs
-  `--approval-mode yolo`; an `ask` call would stall).
+- Drift between `.omp/agents/`, `.omp/main/vulnops-main.md`, `AGENTS.md`, and
+  the eight canonical phase manifests.
+- More than one running top-level phase/task, repeated attempt increments without
+  a stable-task retry, post-yield IRC treated as completion, absolute task
+  artifacts, or a successful phase restarted downstream.
+- Recon dependency inputs not produced by `finalize-recon.py`, an inventory that
+  differs from deterministic target discovery, or unsupported files such as
+  `go.sum`, `package.json`, Dockerfiles, build scripts, or workflows queued to
+  Wraith.
+- Tool Collection invoking model workers, persisting raw output, or accepting
+  unhealthy Wraith, Poltergeist, OMP, or Codegraph receipts.
+- Tool Collection publishing canonical files before its complete staged set passes
+  schemas, counts, receipt health, and normalized hashes.
+- Any direct `codegraph init` against `target/`, escaping symlink, unexecuted
+  graph question, receipt/hash mismatch, or graph stub cited as evidence.
+- Evidence records, primitives, campaigns, or verifier results without exactly
+  one terminal disposition.
+- Candidate/context-only primitives silently treated as confirmed capabilities.
+- Chains with missing primitives, open capability transitions, unrelated issue
+  aggregation, or combined severity unsupported by end-to-end impact.
+- Dependency advisories promoted without installed affected use and
+  reachability, or secret candidates promoted without exact redaction and
+  exposure validation.
+- SAST gapfill that queues work without executing it, loses per-cell coverage,
+  or treats malformed worker output as clean.
+- Reproduction outside a successful bubblewrap probe, or dynamic verification
+  without fail/pass evidence and matching artifact hashes.
+- Target fingerprint drift, output outside `scans/` or `.harness/`, network use
+  beyond the configured LLM endpoint, or reporting from anything other than
+  final verified findings.
+- Any compatibility reader, alternate schema generation, deprecated phase,
+  fallback scanner, duplicated prompt/config, or model-authored report.

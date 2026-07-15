@@ -1,0 +1,46 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "VulnOps v2 Safe Reproduction Result",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "finding_id", "status", "sandbox", "sanitized_summary", "test_ref", "patch_ref", "hashes", "before", "after", "warnings", "errors"],
+  "properties": {
+    "schema_version": {"const": "2.0"},
+    "finding_id": {"type": "string", "pattern": "^(?!.*\\.\\.)[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$"},
+    "status": {"enum": ["not_requested", "dynamic_verified", "contradicted", "environment_required", "failed"]},
+    "sandbox": {"enum": ["none", "bubblewrap"]},
+    "sanitized_summary": {"type": "string", "minLength": 1},
+    "test_ref": {"type": ["string", "null"]},
+    "patch_ref": {"type": ["string", "null"]},
+    "hashes": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "test_sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+        "patch_sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"}
+      }
+    },
+    "before": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "exit_code", "output_ref"],
+      "properties": {
+        "status": {"enum": ["not_run", "expected_failure", "unexpected_success", "failed"]},
+        "exit_code": {"type": ["integer", "null"]},
+        "output_ref": {"type": ["string", "null"]}
+      }
+    },
+    "after": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "exit_code", "output_ref"],
+      "properties": {
+        "status": {"enum": ["not_run", "passed", "failed"]},
+        "exit_code": {"type": ["integer", "null"]},
+        "output_ref": {"type": ["string", "null"]}
+      }
+    },
+    "warnings": {"type": "array", "items": {"type": "string"}},
+    "errors": {"type": "array", "items": {"type": "string"}}
+  }
+}

@@ -1,0 +1,105 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "VulnOps v2 Hunt Task Result",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version", "task_id", "status", "cell_results", "files_reviewed",
+    "entrypoints_traced", "sinks_reviewed", "mitigations_checked",
+    "candidates", "hardening_notes", "positive_patterns", "rabbit_holes",
+    "wishlist_items", "warnings", "errors"
+  ],
+  "properties": {
+    "schema_version": {"const": "2.0"},
+    "task_id": {"type": "string", "pattern": "^(?!.*\\.\\.)[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$"},
+    "status": {"enum": ["ok", "shallow", "failed"]},
+    "cell_results": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "cell_id", "status", "reason", "files_reviewed",
+          "entrypoints_traced", "sinks_reviewed", "mitigations_checked",
+          "candidate_ids", "evidence_refs"
+        ],
+        "properties": {
+          "cell_id": {"type": "string", "pattern": "^(?!.*\\.\\.)[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$"},
+          "status": {"enum": ["finding", "clean", "not_applicable", "shallow", "failed"]},
+          "reason": {"type": "string", "minLength": 1},
+          "files_reviewed": {"type": "array", "items": {"type": "string"}},
+          "entrypoints_traced": {"type": "array", "items": {"type": "string"}},
+          "sinks_reviewed": {"type": "array", "items": {"type": "string"}},
+          "mitigations_checked": {"type": "array", "items": {"type": "string"}},
+          "candidate_ids": {"type": "array", "items": {"type": "string", "minLength": 1}, "uniqueItems": true},
+          "evidence_refs": {"type": "array", "items": {"type": "string", "minLength": 1}, "minItems": 1}
+        }
+      }
+    },
+    "files_reviewed": {"type": "array", "items": {"type": "string"}},
+    "entrypoints_traced": {"type": "array", "items": {"type": "string"}},
+    "sinks_reviewed": {"type": "array", "items": {"type": "string"}},
+    "mitigations_checked": {"type": "array", "items": {"type": "string"}},
+    "candidates": {"type": "array", "items": {"type": "object"}},
+    "hardening_notes": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["title", "description", "evidence_refs"],
+        "properties": {
+          "title": {"type": "string", "minLength": 1},
+          "description": {"type": "string", "minLength": 1},
+          "evidence_refs": {"type": "array", "items": {"type": "string"}, "minItems": 1}
+        }
+      }
+    },
+    "positive_patterns": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["title", "description", "evidence_refs"],
+        "properties": {
+          "title": {"type": "string", "minLength": 1},
+          "description": {"type": "string", "minLength": 1},
+          "evidence_refs": {"type": "array", "items": {"type": "string"}, "minItems": 1}
+        }
+      }
+    },
+    "rabbit_holes": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "subsystem", "attack_class_id", "surface_ids", "threat_ids",
+          "asset_ids", "attacker", "entrypoint_ids", "boundary_ids",
+          "security_question", "stop_conditions", "priority", "reason",
+          "expected_added_value", "files", "evidence_refs"
+        ],
+        "properties": {
+          "subsystem": {"type": "string", "minLength": 1},
+          "attack_class_id": {"type": "string", "minLength": 1},
+          "surface_ids": {"type": "array", "items": {"type": "string", "minLength": 1}, "minItems": 1, "uniqueItems": true},
+          "threat_ids": {"type": "array", "items": {"type": "string", "minLength": 1}, "minItems": 1, "uniqueItems": true},
+          "asset_ids": {"type": "array", "items": {"type": "string", "minLength": 1}, "minItems": 1, "uniqueItems": true},
+          "attacker": {"type": "string", "minLength": 1},
+          "entrypoint_ids": {"type": "array", "items": {"type": "string", "minLength": 1}, "minItems": 1, "uniqueItems": true},
+          "boundary_ids": {"type": "array", "items": {"type": "string", "minLength": 1}, "minItems": 1, "uniqueItems": true},
+          "security_question": {"type": "string", "minLength": 12},
+          "stop_conditions": {"type": "array", "items": {"type": "string", "minLength": 1}, "minItems": 1},
+          "priority": {"enum": ["critical", "high", "medium", "low"]},
+          "reason": {"type": "string", "minLength": 1},
+          "expected_added_value": {"type": "string", "minLength": 1},
+          "files": {"type": "array", "items": {"type": "string"}, "minItems": 1},
+          "evidence_refs": {"type": "array", "items": {"type": "string"}, "minItems": 1}
+        }
+      }
+    },
+    "wishlist_items": {"type": "array", "items": {"type": "object"}},
+    "warnings": {"type": "array", "items": {"type": "string"}},
+    "errors": {"type": "array", "items": {"type": "string"}}
+  }
+}

@@ -1,0 +1,44 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "VulnOps v2 Adversarial Validation Result",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "id", "candidate_id", "status", "confidence", "closure_reason", "evidence_refs", "corrections", "corrected_candidate", "mechanical_checks", "model"],
+  "properties": {
+    "schema_version": {"const": "2.0"},
+    "id": {"type": "string", "pattern": "^(?!.*\\.\\.)[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$"},
+    "candidate_id": {"type": "string", "pattern": "^(?!.*\\.\\.)[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$"},
+    "status": {"enum": ["source_verified", "rejected", "deferred", "environment_required"]},
+    "confidence": {"enum": ["low", "medium", "high"]},
+    "closure_reason": {"type": "string", "minLength": 1},
+    "evidence_refs": {"type": "array", "items": {"type": "string"}, "minItems": 1},
+    "corrections": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["field", "before", "after", "reason"],
+        "properties": {
+          "field": {"type": "string", "minLength": 1},
+          "before": {"type": "string"},
+          "after": {"type": "string"},
+          "reason": {"type": "string", "minLength": 1}
+        }
+      }
+    },
+    "corrected_candidate": {"type": ["object", "null"]},
+    "mechanical_checks": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema", "paths", "lines", "trace_order", "target_unchanged"],
+      "properties": {
+        "schema": {"type": "boolean"},
+        "paths": {"type": "boolean"},
+        "lines": {"type": "boolean"},
+        "trace_order": {"type": "boolean"},
+        "target_unchanged": {"type": "boolean"}
+      }
+    },
+    "model": {"type": "string", "minLength": 1}
+  }
+}

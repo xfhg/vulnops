@@ -1,24 +1,6 @@
 #!/usr/bin/env bash
-# setup-codegraph.sh — Idempotent codegraph index bootstrap for the harness.
-#
-# Builds a per-audit codegraph index for the target repo. Resolution order:
-#   1. $CODEGRAPH_TARGET_DIR — explicit clone path (set by run-audit.sh)
-#   2. $VULNOPSV3_TARGET     — the harness's resolved target root
-#   3. ${HARNESS_ROOT}/target — legacy fallback
-#
-# Index root resolution:
-#   1. $CODEGRAPH_INDEX_DIR          — explicit override
-#   2. ${VULNOPSV3_SCANS}/.codegraph  — per-audit isolation
-#   3. ${HARNESS_ROOT}/.codegraph    — last-resort shared root
-#
-# Per-audit isolation is the recommended layout: two audits against
-# different repos must not clobber each other. The shared fallback exists
-# only so the script is usable outside the run-audit.sh orchestrator.
-#
-# Telemetry is off and the daemon is disabled by harness-lib.sh. codegraph is
-# the harness's sole graph backend and a required binary; a missing binary is
-# a setup failure (validate-config enforces it).
-
+# Build a run-local immutable snapshot before invoking codegraph. The upstream
+# CLI writes .codegraph beneath the indexed project, so target/ is never used.
 set -euo pipefail
 
 HARNESS_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -27,61 +9,87 @@ source "${HARNESS_ROOT}/scripts/harness-lib.sh"
 harness_setup_containment "$HARNESS_ROOT"
 
 CODEGRAPH_BIN="${HARNESS_ROOT}/bins/codegraph"
-CODEGRAPH_TARGET_DIR="${CODEGRAPH_TARGET_DIR:-${VULNOPSV3_TARGET:-${HARNESS_ROOT}/target}}"
-CODEGRAPH_INDEX_DIR="${CODEGRAPH_INDEX_DIR:-${VULNOPSV3_SCANS:-${HARNESS_ROOT}/scans}/.codegraph}"
-MARKER="${CODEGRAPH_INDEX_DIR}/.codegraph-init-marker"
-TARGET_MTIME_FILE="${CODEGRAPH_INDEX_DIR}/.target-mtime"
+SOURCE="${CODEGRAPH_TARGET_DIR:-}"
+RUNTIME="${CODEGRAPH_RUNTIME_DIR:-}"
 
-mkdir -p "${CODEGRAPH_INDEX_DIR}"
-
-if [ ! -x "${CODEGRAPH_BIN}" ]; then
-    echo "[setup-codegraph] bins/codegraph not installed; skipping (agents will fall back to grep/Read)"
-    exit 0
+if [ ! -x "$CODEGRAPH_BIN" ]; then
+    echo "[setup-codegraph] codegraph is unavailable" >&2
+    exit 1
 fi
-
-if [ ! -d "${CODEGRAPH_TARGET_DIR}" ]; then
-    echo "[setup-codegraph] target directory not present: ${CODEGRAPH_TARGET_DIR} (will be indexed on next audit run)"
-    exit 0
+if [ -z "$SOURCE" ] || [ ! -d "$SOURCE" ]; then
+    echo "[setup-codegraph] CODEGRAPH_TARGET_DIR must be a readable directory" >&2
+    exit 1
 fi
+if [ -z "$RUNTIME" ]; then
+    echo "[setup-codegraph] CODEGRAPH_RUNTIME_DIR is required" >&2
+    exit 1
+fi
+harness_require_inside_root "$HARNESS_ROOT" "$SOURCE" "codegraph source"
+harness_require_inside_root "$HARNESS_ROOT" "$RUNTIME" "codegraph runtime"
 
-# Latest mtime of any file under the target (seconds since epoch). Empty
-# when the target is empty or unreadable; the empty string cannot match a
-# stored mtime so we always re-init in that case.
-target_mtime() {
-    # Portable across GNU/BSD find: use stat on every file and take the
-    # max mtime. stat's %m gives whole-second modification time, which is
-    # enough for the change-detection heuristic.
-    find "${CODEGRAPH_TARGET_DIR}" -type f -print 2>/dev/null \
-        | while IFS= read -r f; do
-            stat -f %m "$f" 2>/dev/null || stat -c %Y "$f" 2>/dev/null
-        done \
-        | sort -n | tail -n 1
+PROJECT="${RUNTIME}/project"
+RECEIPT="${RUNTIME}/index-receipt.json"
+mkdir -p "$RUNTIME"
+
+python3 - "$SOURCE" "$PROJECT" <<'PY'
+from __future__ import annotations
+import os
+import shutil
+import sys
+from pathlib import Path
+
+source = Path(sys.argv[1]).resolve()
+project = Path(sys.argv[2]).resolve()
+if project.exists():
+    shutil.rmtree(project)
+project.mkdir(parents=True)
+excluded = {".git", ".codegraph", ".harness"}
+for root, dirs, files in os.walk(source, followlinks=False):
+    symlink_dirs = sorted(d for d in dirs if (Path(root) / d).is_symlink())
+    dirs[:] = sorted(d for d in dirs if d not in excluded and d not in symlink_dirs)
+    rel_root = Path(root).relative_to(source)
+    for name in [*symlink_dirs, *sorted(files)]:
+        src = Path(root) / name
+        if name in excluded:
+            continue
+        dst = project / rel_root / name
+        dst.parent.mkdir(parents=True, exist_ok=True)
+        if src.is_symlink():
+            try:
+                resolved = src.resolve(strict=True)
+                relative_target = resolved.relative_to(source)
+            except (OSError, ValueError) as exc:
+                raise SystemExit(f"refusing repository symlink that is broken or escapes the target: {src}: {exc}")
+            mapped_target = project / relative_target
+            os.symlink(os.path.relpath(mapped_target, dst.parent), dst, target_is_directory=resolved.is_dir())
+        else:
+            shutil.copy2(src, dst)
+PY
+
+started="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+status="ok"
+message=""
+if ! "$CODEGRAPH_BIN" init "$PROJECT" >/dev/null 2>&1; then
+    status="failed"
+    message="codegraph init failed"
+fi
+completed="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+version="$($CODEGRAPH_BIN --version 2>/dev/null | head -n 1 || true)"
+python3 - "$RECEIPT" "$status" "$version" "$started" "$completed" "$message" <<'PY'
+import json, sys
+from pathlib import Path
+path, status, version, started, completed, message = sys.argv[1:]
+doc = {
+    "schema_version": "2.0", "tool": "codegraph", "operation": "index",
+    "status": status, "version": version or "unknown", "started_at": started,
+    "completed_at": completed, "parse_status": "not_applicable",
+    "result_count": 0, "normalized_sha256": None,
+    "warnings": [] if status == "ok" else [message],
 }
-
-# Skip re-indexing when the marker exists and the target mtime has not
-# changed since last init. A full re-index on every run is wasteful on
-# large repos and a real audit can take minutes.
-if [ -f "${MARKER}" ] && [ -f "${TARGET_MTIME_FILE}" ]; then
-    last_mtime="$(cat "${TARGET_MTIME_FILE}" 2>/dev/null || echo 0)"
-    current_mtime="$(target_mtime || true)"
-    if [ -n "${current_mtime}" ] && [ "${current_mtime}" = "${last_mtime}" ]; then
-        echo "[setup-codegraph] index up to date for ${CODEGRAPH_TARGET_DIR}"
-        exit 0
-    fi
+Path(path).write_text(json.dumps(doc, indent=2, sort_keys=True) + "\n")
+PY
+if [ "$status" != "ok" ]; then
+    echo "[setup-codegraph] ${message}" >&2
+    exit 1
 fi
-
-if "${CODEGRAPH_BIN}" init "${CODEGRAPH_TARGET_DIR}" >"${CODEGRAPH_INDEX_DIR}/init.log" 2>&1; then
-    touch "${MARKER}"
-    current_mtime="$(target_mtime || true)"
-    if [ -n "${current_mtime}" ]; then
-        echo "${current_mtime}" > "${TARGET_MTIME_FILE}"
-    fi
-    echo "[setup-codegraph] indexed ${CODEGRAPH_TARGET_DIR} -> ${CODEGRAPH_INDEX_DIR}"
-else
-    echo "[setup-codegraph] codegraph init failed; see ${CODEGRAPH_INDEX_DIR}/init.log"
-    # Marker is NOT written on failure so a later re-run can retry.
-    exit 0
-fi
-
-# Best-effort status print for the harness log; non-fatal if status fails.
-"${CODEGRAPH_BIN}" status >>"${CODEGRAPH_INDEX_DIR}/init.log" 2>&1 || true
+echo "[setup-codegraph] indexed immutable snapshot at ${PROJECT}"

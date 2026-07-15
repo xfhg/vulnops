@@ -42,6 +42,7 @@ from __future__ import annotations
 import json
 import subprocess
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
 
 root = Path(sys.argv[1]).resolve()
@@ -61,13 +62,12 @@ if not scan.exists():
 
 phase_dirs = [
     ("recon", "repo-context"),
-    ("sca", "sca"),
-    ("secrets", "secrets"),
+    ("tool-collection", "tool-collection"),
     ("sast", "sast"),
-    ("intelligence", "intelligence"),
-    ("triage", "triage"),
+    ("campaign-planning", "campaign-planning"),
     ("intrusion", "intrusion"),
-    ("final-reconciliation", "final-reconciliation"),
+    ("synthesis", "synthesis"),
+    ("final-verification", "final-verification"),
     ("report", "report"),
 ]
 
@@ -87,6 +87,24 @@ def load_json(path: Path):
 
 
 phases = []
+run_manifest = load_json(scan / "run-manifest.json")
+task_ledger = load_json(scan / "task-ledger.json")
+audit_context = load_json(root / ".harness" / "audit-context.json")
+is_v2 = isinstance(run_manifest, dict) and run_manifest.get("schema_version") == "2.0"
+current_contract = None
+if is_v2:
+    sys.path.insert(0, str(root / "scripts"))
+    try:
+        from harness_contract import harness_contract_sha256
+
+        current_contract = harness_contract_sha256(root)
+    except Exception:
+        current_contract = None
+contract_compatible = bool(
+    is_v2
+    and current_contract
+    and run_manifest.get("harness_contract_sha256") == current_contract
+)
 for phase, dirname in phase_dirs:
     path = scan / dirname / "phase-manifest.json"
     manifest = load_json(path)
@@ -98,42 +116,99 @@ for phase, dirname in phase_dirs:
         }
     )
 
-validation = subprocess.run(
-    ["bash", str(root / "scripts" / "validate-scan.sh"), str(scan)],
-    cwd=root,
-    text=True,
-    stdout=subprocess.PIPE,
-    stderr=subprocess.PIPE,
+validation = None
+validation_reason = None
+phase_state = run_manifest.get("phases", {}) if isinstance(run_manifest, dict) else {}
+all_phase_success = isinstance(phase_state, dict) and all(
+    phase_state.get(phase) in {"ok", "degraded", "skipped"} for phase, _ in phase_dirs
 )
+if is_v2 and not contract_compatible:
+    validation_reason = "harness contract differs from this historical run"
+elif is_v2 and not all_phase_success:
+    validation_reason = "workflow is incomplete"
+else:
+    validation = subprocess.run(
+        ["bash", str(root / "scripts" / "validate-scan.sh"), str(scan)],
+        cwd=root,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
 
 report_md = scan / "report" / "security-report.md"
 report_json = scan / "report" / "security-report.json"
-enrichment = scan / "intrusion" / "enrichment.json"
+intrusion_results = scan / "intrusion" / "intrusion-results.json"
 summary = {}
 report = load_json(report_json)
 if isinstance(report, dict) and isinstance(report.get("summary"), dict):
     summary = report["summary"]
 
-complete = validation.returncode == 0 and all(item["status"] == "ok" for item in phases)
+terminal = {"ok", "degraded", "skipped"}
+complete = (
+    validation is not None
+    and validation.returncode == 0
+    and all(item["status"] in terminal for item in phases)
+)
 
 print("Audit Status")
 print(f"- Scan: {rel(scan)}")
 print(f"- State: {'complete' if complete else 'not complete'}")
+if is_v2:
+    print(f"- Run ID: {run_manifest.get('run_id', 'unknown')}")
+    print(f"- Run manifest: {run_manifest.get('status', 'unknown')}")
+    primary_model = run_manifest.get("model", "unknown")
+    verifier_model = run_manifest.get("verifier_model", "missing")
+    print(f"- Primary model: {primary_model}")
+    print(f"- Verifier model: {verifier_model}")
+    model_roles = run_manifest.get("model_roles", {})
+    if isinstance(model_roles, dict):
+        print("- Model roles: " + ", ".join(f"{key}={model_roles.get(key, 'missing')}" for key in ("orchestrator", "task", "slow", "smol")))
+    efforts = {"off", "minimal", "low", "medium", "high", "xhigh", "max", "auto"}
+    primary_head, primary_sep, primary_effort = str(primary_model).rpartition(":")
+    verifier_head, verifier_sep, verifier_effort = str(verifier_model).rpartition(":")
+    primary_identity = primary_head if primary_sep and primary_effort.lower() in efforts else str(primary_model)
+    verifier_identity = verifier_head if verifier_sep and verifier_effort.lower() in efforts else str(verifier_model)
+    print(f"- Model diversity: {str(primary_identity != verifier_identity).lower()}")
+    print(f"- Reproduction: {run_manifest.get('reproduction_mode', 'off')}")
+    if int(run_manifest.get("recovery_count", 0)):
+        print(f"- Recovery generations: {int(run_manifest.get('recovery_count', 0))}")
+    unfinished = next((phase for phase, _ in phase_dirs if (run_manifest.get("phases") or {}).get(phase) not in terminal), None)
+    if unfinished:
+        print(f"- Recovery boundary: {unfinished}")
+    if run_manifest.get("status") == "running" and isinstance(task_ledger, dict):
+        active = next((item for item in task_ledger.get("tasks", []) if isinstance(item, dict) and item.get("status") == "running"), None)
+        if active:
+            phase = str(active.get("phase", "unknown"))
+            print(f"- Active phase: {phase} ({active.get('id', 'unknown')})")
+            try:
+                updated = datetime.fromisoformat(str(active.get("updated_at", "")).replace("Z", "+00:00"))
+                age = max(0, int((datetime.now(timezone.utc) - updated.astimezone(timezone.utc)).total_seconds()))
+                print(f"- Active phase age: {age}s")
+                if isinstance(audit_context, dict) and audit_context.get("scan_base") == str(scan):
+                    configured = audit_context.get("orchestration", {}).get("phase_timeout_seconds", {}).get(phase)
+                    if isinstance(configured, dict):
+                        configured = configured.get(audit_context.get("depth"))
+                    if isinstance(configured, int):
+                        print(f"- Active phase deadline: {configured}s ({'exceeded' if age > configured else 'within limit'})")
+            except (TypeError, ValueError):
+                pass
 for item in phases:
     print(f"- {item['phase']}: {item['status']}")
 if summary:
     print(f"- Findings: {summary.get('total', 'unknown')} total")
     counts = [
         f"{key}={summary.get(key)}"
-        for key in ("critical", "high", "medium", "low", "info")
+        for key in ("critical", "high", "medium", "low", "informational", "info")
         if key in summary
     ]
     if counts:
         print(f"- Severity: {', '.join(counts)}")
 print(f"- Final report: {rel(report_md)}")
 print(f"- JSON report: {rel(report_json)}")
-print(f"- Intrusion enrichment: {rel(enrichment)}")
-if validation.returncode == 0:
+print(f"- Intrusion results: {rel(intrusion_results)}")
+if validation is None:
+    print(f"- Validation: not run ({validation_reason or 'workflow is incomplete'})")
+elif validation.returncode == 0:
     print("- Validation: ok")
 else:
     print("- Validation: failed")

@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "VulnOps v2 Tool Collection",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "run_id", "sca_ref", "secrets_ref", "receipts", "warnings"],
+  "properties": {
+    "schema_version": {"const": "2.0"},
+    "run_id": {"type": "string", "minLength": 1},
+    "sca_ref": {"const": "tool-collection/sca-advisories.json"},
+    "secrets_ref": {"const": "tool-collection/secrets-redacted.json"},
+    "receipts": {"type": "array", "items": {"type": "string", "minLength": 1}, "minItems": 2, "uniqueItems": true},
+    "warnings": {"type": "array", "items": {"type": "string"}}
+  }
+}

@@ -1,0 +1,81 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "VulnOps v2 Repository Context",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "repository", "comparable", "projects", "actors", "domain_tags", "sensitive_data_types", "build_ci", "generated_ignorable", "evidence_refs", "warnings", "errors"],
+  "properties": {
+    "schema_version": {"const": "2.0"},
+    "repository": {"type": "string", "minLength": 1},
+    "comparable": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "basis", "confidence"],
+      "properties": {
+        "name": {"type": ["string", "null"]},
+        "basis": {"type": "string", "minLength": 1},
+        "confidence": {"enum": ["low", "medium", "high", "not_applicable"]}
+      }
+    },
+    "projects": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "type", "base_path", "languages", "frameworks", "dependency_files", "entry_points", "trust_boundary_ids", "ignore_patterns", "evidence_refs"],
+        "properties": {
+          "id": {"type": "string", "pattern": "^(?!.*\\.\\.)[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$"},
+          "type": {"enum": ["backend", "frontend", "library", "mobile", "cli", "infra", "native", "ai_llm", "other"]},
+          "base_path": {"type": "string"},
+          "languages": {"type": "array", "items": {"type": "string"}, "minItems": 1},
+          "frameworks": {"type": "array", "items": {"type": "string"}},
+          "dependency_files": {
+            "type": "array",
+            "uniqueItems": true,
+            "description": "Target-relative Wraith-supported lockfiles/manifests only; the semantic validator owns the canonical filename contract.",
+            "items": {"type": "string", "minLength": 1}
+          },
+          "entry_points": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["id", "path", "kind", "evidence_refs"],
+              "properties": {
+                "id": {"type": "string", "pattern": "^(?!.*\\.\\.)[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$"},
+                "path": {"type": "string", "minLength": 1},
+                "kind": {"enum": ["http", "cli", "worker", "library", "ipc", "file", "queue", "webhook", "browser", "mobile", "other"]},
+                "evidence_refs": {"type": "array", "items": {"type": "string", "minLength": 1}, "minItems": 1}
+              }
+            }
+          },
+          "trust_boundary_ids": {"type": "array", "items": {"type": "string"}},
+          "ignore_patterns": {"type": "array", "items": {"type": "string"}},
+          "evidence_refs": {"type": "array", "items": {"type": "string", "minLength": 1}, "minItems": 1}
+        }
+      }
+    },
+    "actors": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "name", "trust_level", "evidence_refs"],
+        "properties": {
+          "id": {"type": "string", "pattern": "^(?!.*\\.\\.)[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$"},
+          "name": {"type": "string", "minLength": 1},
+          "trust_level": {"type": "string", "minLength": 1},
+          "evidence_refs": {"type": "array", "items": {"type": "string", "minLength": 1}, "minItems": 1}
+        }
+      }
+    },
+    "domain_tags": {"type": "array", "items": {"enum": ["ai_llm", "http_auth", "client", "native", "mobile", "iac", "etl"]}},
+    "sensitive_data_types": {"type": "array", "items": {"type": "string"}},
+    "build_ci": {"type": "array", "items": {"type": "string"}},
+    "generated_ignorable": {"type": "array", "items": {"type": "string"}},
+    "evidence_refs": {"type": "array", "items": {"type": "string", "minLength": 1}, "minItems": 1},
+    "warnings": {"type": "array", "items": {"type": "string"}},
+    "errors": {"type": "array", "items": {"type": "string"}}
+  }
+}

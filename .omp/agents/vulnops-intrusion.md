@@ -1,66 +1,36 @@
 ---
 name: vulnops-intrusion
-description: Additive graph-guided intrusion enrichment agent for VulnOps audits
-tools:
-  - read
-  - write
-  - grep
-  - glob
-  - bash
-  - irc
-  - yield
-model:
-  - pi/task
-thinkingLevel: high
+description: Coordinates bounded evidence-led intrusion campaigns
+tools: [read, write, grep, glob, bash, task, irc, yield]
+spawns: [vulnops-intrusion-campaign]
+model: [pi/task]
+thinkingLevel: medium
 blocking: false
 output:
   properties:
-    status:
-      enum: [ok, degraded, failed]
-    enrichments:
-      type: number
-    artifacts:
-      elements:
-        type: string
-    warnings:
-      elements:
-        type: string
-    errors:
-      elements:
-        type: string
+    status: {enum: [ok, degraded, failed]}
+    campaigns: {type: number}
+    candidates: {type: number}
+    artifacts: {elements: {type: string}}
+    warnings: {elements: {type: string}}
+    errors: {elements: {type: string}}
 ---
 
-Follow `config/agents/intrusion.md`. This phase uses codegraph (AST-only, offline) for targeted OODA graph scopes. Failure of a required critical/high scope is a real phase failure and must block reconciliation.
+Read the validated evidence index and campaign plan. Spawn one
+`vulnops-intrusion-campaign` per campaign with depth-bounded concurrency and
+stable campaign IDs. Use OMP 16.4.4 `task` waves with a short shared context
+and per-item `id`/`assignment`; nested calls are synchronous and their
+structured results are the completion signal. An empty plan skips worker
+fanout and remains valid.
 
-Read Intelligence Fusion artifacts before planning intrusion. Triage remains the decision gate, but intelligence cards and graph scopes should expand file context, questions, and provenance for promoted triage seeds.
+After every worker yields, run
+`python3 scripts/finalize-intrusion.py <scan_base>`. This rejects missing,
+duplicate, orphan, malformed, or graph-stub results and emits the sole
+`intrusion/intrusion-results.json`. Validate `intrusion` before yielding.
 
-Do not yield while codegraph scope extraction is still running or only partial `codegraph-runs/` artifacts exist. Intrusion validates only when `intrusion/enrichment.json`, `intrusion/intrusion-plan.json`, and required `intrusion/codegraph-runs/<sid>/codegraph-out/context.json` outputs exist, and `intrusion/phase-manifest.json` has status `ok`.
-
-codegraph is the sole graph backend. For every required scope, `intrusion/codegraph-runs/<sid>/codegraph-out/context.json` must exist with at least one graph edge or an evidence-bearing node beyond source/target stubs. Blast-radius, callers-of, and call-path questions are answered from that AST context. There is no LLM extraction step and no whole-repo mode.
-
-Write:
-- `intrusion/summary.md`
-- `intrusion/enrichment.json`
-- `intrusion/intrusion-plan.json`
-- `intrusion/phase-manifest.json`
-
-Required graph evidence (one context.json per planned scope):
-- `intrusion/codegraph-runs/*/codegraph-out/context.json`
-
-IRC progress:
-- Send `irc op=send to=Main message="<short phase status>"` at start, each material stage boundary, before validation, and before yielding.
-- Keep progress messages short. Do not include secrets, full findings, payloads, or raw tool output.
-- Do not send fake timer heartbeats; only report real state changes.
-
-Before yielding, run `bash scripts/validate-phase.sh <scan_base> intrusion`.
-
-Yield only after validation completes. Yield structured status with:
-- `status`
-- `enrichments`
-- `artifacts`
-- `warnings`
-- `errors`
+Send short IRC stage transitions to `Main` at start, after campaign workers,
+before validation, and before yielding. IRC is progress only.
 
 ## Skills
 
-None. This phase does not load SAST specialist lens skills.
+- `skill://vulnops-audit-core`

@@ -1,44 +1,41 @@
 #!/usr/bin/env bash
-# run-wraith.sh — Scan a lockfile for vulnerabilities using wraith.
-# Handles: OSV database path, tool discovery, offline mode.
-#
-# Usage: bash scripts/run-wraith.sh <lockfile_path>
-# Output: JSON to stdout
+# Run Wraith offline and persist only its normalized, bounded contract.
 set -euo pipefail
-
 HARNESS_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 # shellcheck source=scripts/harness-lib.sh
 source "${HARNESS_ROOT}/scripts/harness-lib.sh"
 harness_setup_containment "$HARNESS_ROOT"
-WRAITH="${HARNESS_ROOT}/bins/wraith"
-
-if [ $# -lt 1 ]; then
-    echo "Usage: $0 <lockfile_path>" >&2
+if [ "$#" -ne 4 ]; then
+    echo "Usage: $0 <repo-root> <lockfile> <normalized-json> <receipt-json>" >&2
+    exit 64
+fi
+repo="$1"; lockfile="$2"; output="$3"; receipt="$4"
+harness_require_inside_root "$HARNESS_ROOT" "$repo" "repository"
+harness_require_inside_root "$HARNESS_ROOT" "$lockfile" "lockfile"
+harness_require_allowed_output "$HARNESS_ROOT" "$output"
+harness_require_allowed_output "$HARNESS_ROOT" "$receipt"
+relative_lockfile="${lockfile#${repo%/}/}"
+if [ "$relative_lockfile" = "$lockfile" ] || ! python3 "${HARNESS_ROOT}/scripts/dependency_contract.py" "$relative_lockfile"; then
+    echo "Wraith input is not a supported target-relative dependency file" >&2
+    exit 64
+fi
+db="${HARNESS_ROOT}/.harness/osv-db"
+if [ ! -x "${HARNESS_ROOT}/bins/wraith" ] || [ ! -x "${HARNESS_ROOT}/bins/osv-scanner" ]; then
+    echo "Wraith or its OSV scanner dependency is unavailable" >&2
     exit 1
 fi
-
-LOCKFILE="$1"
-harness_require_inside_root "$HARNESS_ROOT" "$LOCKFILE" "lockfile"
-
-if [ ! -x "${WRAITH}" ]; then
-    echo '{"error":"wraith not found","hint":"run: bash scripts/install-tools.sh wraith"}' >&2
+if [ ! -d "$db" ]; then
+    echo "OSV database is unavailable" >&2
     exit 1
 fi
-
-# Verify OSV database exists
-DB_DIR="${HARNESS_ROOT}/.harness/osv-db"
-MIN_OSV_DB_FILES=3
-MIN_OSV_DB_SIZE_KB=51200
-DB_FILE_COUNT=0
-DB_SIZE_KB=0
-if [[ -d "${DB_DIR}" ]]; then
-    DB_FILE_COUNT="$(find "${DB_DIR}" -type f | wc -l | tr -d ' ')"
-    DB_SIZE_KB="$(du -sk "${DB_DIR}" 2>/dev/null | awk '{print $1}')"
+export OSV_SCANNER_LOCAL_DB_CACHE_DIRECTORY="$db"
+tmp="$(mktemp "${TMPDIR}/wraith.XXXXXX")"; trap 'rm -f "$tmp"' EXIT
+set +e
+"${HARNESS_ROOT}/bins/wraith" scan --offline --format json "$lockfile" >"$tmp"
+status=$?
+set -e
+if [ "$status" -ne 0 ] && [ "$status" -ne 1 ]; then
+    echo "Wraith operational failure (exit ${status})" >&2
+    exit "$status"
 fi
-if [[ ! -d "${DB_DIR}" ]] || [[ "${DB_FILE_COUNT}" -lt "${MIN_OSV_DB_FILES}" ]] || [[ "${DB_SIZE_KB:-0}" -lt "${MIN_OSV_DB_SIZE_KB}" ]]; then
-    echo "{\"error\":\"OSV database missing or incomplete\",\"files\":${DB_FILE_COUNT},\"size_kb\":${DB_SIZE_KB:-0},\"hint\":\"run: bash scripts/fetch-osv-db.sh\"}" >&2
-    exit 1
-fi
-
-export OSV_SCANNER_LOCAL_DB_CACHE_DIRECTORY="${DB_DIR}"
-exec "${WRAITH}" scan --offline --format json "${LOCKFILE}"
+python3 "${HARNESS_ROOT}/scripts/normalize-wraith.py" --repo "$repo" --lockfile "$lockfile" --output "$output" --receipt "$receipt" <"$tmp"

@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "VulnOps v2 Tool Health Receipt",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "tool", "operation", "status", "version", "started_at", "completed_at", "parse_status", "result_count", "normalized_sha256", "warnings"],
+  "properties": {
+    "schema_version": {"const": "2.0"},
+    "tool": {"enum": ["wraith", "poltergeist", "codegraph", "omp", "bubblewrap"]},
+    "operation": {"type": "string", "minLength": 1},
+    "status": {"enum": ["ok", "failed", "unsupported"]},
+    "version": {"type": "string", "minLength": 1},
+    "started_at": {"type": "string", "minLength": 1},
+    "completed_at": {"type": "string", "minLength": 1},
+    "parse_status": {"enum": ["ok", "failed", "not_applicable"]},
+    "result_count": {"type": "integer", "minimum": 0},
+    "normalized_sha256": {"type": ["string", "null"], "pattern": "^[a-f0-9]{64}$"},
+    "meaningful": {"type": "boolean"},
+    "warnings": {"type": "array", "items": {"type": "string"}}
+  }
+}

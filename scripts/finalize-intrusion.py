@@ -1,253 +1,59 @@
 #!/usr/bin/env python3
-"""Finalize intrusion artifacts from validated scoped codegraph runs.
-
-This script is intentionally conservative: it records graph-backed context for
-final reconciliation, but it does not invent upgrades or downgrades. Agents may
-add richer analysis later, but the phase can complete without another long LLM
-turn after codegraph has already extracted the scoped context.
-"""
+"""Aggregate exactly one strict terminal result for every planned campaign."""
 from __future__ import annotations
-
-import argparse
-import json
+import argparse, hashlib, json, os, subprocess, sys
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
-
-
-def load_json(path: Path, default: Any) -> Any:
-    try:
-        return json.loads(path.read_text(encoding="utf-8"))
-    except FileNotFoundError:
-        return default
-
-
-def write_json(path: Path, data: Any) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
-
-
-def seed_map(scan: Path) -> dict[str, dict[str, Any]]:
-    data = load_json(scan / "triage" / "intrusion-seeds.json", {})
-    seeds = data.get("seeds", []) if isinstance(data, dict) else []
-    return {str(seed.get("id")): seed for seed in seeds if isinstance(seed, dict) and seed.get("id")}
-
-
-def has_codegraph_evidence(ctx: Any) -> bool:
-    if not isinstance(ctx, dict):
-        return False
-    edges = ctx.get("edges")
-    if isinstance(edges, list) and edges:
-        return True
-    nodes = ctx.get("nodes")
-    if not isinstance(nodes, list):
-        return False
-    return any(isinstance(node, dict) and node.get("role") not in {"source", "target"} for node in nodes)
-
-
-def graph_stats(context_path: Path) -> dict[str, Any]:
-    ctx = load_json(context_path, {})
-    if not isinstance(ctx, dict):
-        return {"nodes": 0, "edges": 0, "communities": 0, "has_evidence": False}
-    nodes = ctx.get("nodes", [])
-    edges = ctx.get("edges", [])
-    return {
-        "nodes": len(nodes) if isinstance(nodes, list) else 0,
-        "edges": len(edges) if isinstance(edges, list) else 0,
-        "communities": 0,
-        "has_evidence": has_codegraph_evidence(ctx),
-    }
-
-
-def validate_scope(scan: Path, scope: dict[str, Any]) -> tuple[bool, dict[str, Any], list[str]]:
-    sid = str(scope.get("id", ""))
-    cg_context = scan / "intrusion" / "codegraph-runs" / sid / "codegraph-out" / "context.json"
-    errors: list[str] = []
-    stats = graph_stats(cg_context)
-    codegraph_ok = bool(stats.get("has_evidence"))
-    if not codegraph_ok:
-        if not cg_context.is_file():
-            errors.append(f"{sid}: missing codegraph context.json")
-        else:
-            errors.append(f"{sid}: codegraph context has no graph edges or evidence-bearing nodes")
-    evidence_kind = "codegraph" if codegraph_ok else "none"
-    merged = {
-        "scope_id": sid,
-        **stats,
-        "evidence_kind": evidence_kind,
-    }
-    return not errors, merged, errors
-
-
-def action_for_question_type(question_type: str) -> str:
-    if question_type == "dependency_reachability":
-        return "confirm"
-    if question_type in {"attack_path", "credential_flow", "cross_boundary", "reachability"}:
-        return "new-context"
-    return "new-context"
-
-
-def main() -> None:
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("scan_base")
-    args = parser.parse_args()
-
-    scan = Path(args.scan_base).resolve()
-    started_at = datetime.now(timezone.utc).isoformat()
-    intrusion = scan / "intrusion"
-    plan = load_json(intrusion / "intrusion-plan.json", {})
-    if not isinstance(plan, dict) or plan.get("mode") != "targeted-ooda":
-        raise SystemExit("missing targeted-ooda intrusion/intrusion-plan.json")
-    scopes = plan.get("scopes", [])
-    if not isinstance(scopes, list) or not scopes:
-        raise SystemExit("intrusion plan has no scopes")
-
-    seeds = seed_map(scan)
-    enrichments: list[dict[str, Any]] = []
-    warnings: list[str] = []
-    errors: list[str] = []
-    completed = 0
-    required_failed = 0
-    scope_summaries: list[dict[str, Any]] = []
-
-    findings_dir = intrusion / "findings"
-    findings_dir.mkdir(parents=True, exist_ok=True)
-
-    for scope in scopes:
-        if not isinstance(scope, dict):
-            errors.append("intrusion plan contains non-object scope")
-            continue
-        ok, stats, scope_errors = validate_scope(scan, scope)
-        scope_id = str(scope.get("id", stats.get("scope_id", "")))
-        seed_ids = scope.get("seed_ids", []) or []
-        qtypes = sorted({str(s.get("question_type", "reachability")) for s in (seeds.get(str(sid), {}) for sid in seed_ids) if isinstance(s, dict)} | set(scope.get("question_types", []) or [])) or ["reachability"]
-        primary_qtype = qtypes[0]
-        scope_summaries.append({**stats, "scope_id": scope_id, "seed_ids": seed_ids, "required": bool(scope.get("required"))})
-        if scope_errors:
-            errors.extend(scope_errors)
-            if scope.get("required"):
-                required_failed += 1
-        elif stats.get("evidence_kind") != "none":
-            completed += 1
-        for seed_id in seed_ids:
-            seed = seeds.get(str(seed_id), {})
-            evidence_refs = list(seed.get("evidence_refs", [])) if isinstance(seed.get("evidence_refs"), list) else []
-            evidence_refs.extend(
-                [
-                    f"intrusion/codegraph-runs/{scope_id}/codegraph-out/context.json",
-                ]
-            )
-            enrichment = {
-                "triage_id": str(seed_id),
-                "type": primary_qtype,
-                "action": action_for_question_type(primary_qtype),
-                "severity": seed.get("severity", "info"),
-                "confidence": seed.get("confidence", "medium"),
-                "evidence_refs": evidence_refs,
-                "evidence_kind": stats.get("evidence_kind", "codegraph"),
-                "summary": (
-                    f"Scoped graph analysis completed for {seed_id} in {scope_id} "
-                    f"({stats.get('evidence_kind', 'codegraph')} evidence: "
-                    f"{stats['nodes']} nodes, {stats['edges']} edges, {stats['communities']} communities). "
-                    "Graph context for reconciliation; does not by itself upgrade or downgrade severity."
-                ),
-            }
-            enrichments.append(enrichment)
-
-        finding_path = findings_dir / f"{scope_id}.md"
-        finding_path.write_text(
-            "\n".join(
-                [
-                    f"# Scoped Graph Context: {scope_id}",
-                    "",
-                    f"- **Seed IDs**: {', '.join(map(str, seed_ids))}",
-                    f"- **Question Types**: {', '.join(qtypes)}",
-                    f"- **Required**: {bool(scope.get('required'))}",
-                    f"- **Evidence Kind**: {stats.get('evidence_kind', 'codegraph')}",
-                    f"- **Nodes**: {stats['nodes']}",
-                    f"- **Edges**: {stats['edges']}",
-                    f"- **Communities**: {stats['communities']}",
-                    "",
-                    "## Interpretation",
-                    f"Scoped graph extraction completed via {stats.get('evidence_kind', 'codegraph')}. "
-                    "This artifact is context for reconciliation and does not by itself upgrade or downgrade severity.",
-                    "",
-                ]
-            ),
-            encoding="utf-8",
-        )
-
-    status = "ok" if required_failed == 0 and not errors else "failed"
-    write_json(intrusion / "enrichment.json", enrichments)
-
-    summary_lines = [
-        "# Intrusion Analysis Summary",
-        "",
-        "## Scope Coverage",
-        "- Extraction mode: codegraph AST targeted scopes",
-        f"- Seeds: {plan.get('coverage', {}).get('seed_count', len(seeds))}",
-        f"- Scoped seeds: {plan.get('coverage', {}).get('scoped_seed_count', 'unknown')}",
-        f"- Scopes planned: {len(scopes)}",
-        f"- Scopes completed: {completed}",
-        f"- Required scopes failed: {required_failed}",
-        f"- Unresolved seed IDs: {', '.join(plan.get('coverage', {}).get('unresolved_seed_ids', [])) or 'none'}",
-        "",
-        "## Scoped Graphs",
-    ]
-    for item in scope_summaries:
-        summary_lines.append(
-            f"- {item['scope_id']}: {item['nodes']} nodes, {item['edges']} edges, "
-            f"{item['communities']} communities; seeds: {', '.join(map(str, item.get('seed_ids', [])))}"
-        )
-    summary_lines.extend(
-        [
-            "",
-            "## Enrichment",
-            f"- Entries written: {len(enrichments)}",
-            "- Actions are conservative graph context unless explicit evidence supports later upgrade/downgrade.",
-            "",
-            "## Mode Limitations",
-        ]
-    )
-    if warnings:
-        summary_lines.extend(f"- Warning: {warning}" for warning in warnings)
+def now()->str:return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+def load(path:Path,fallback:Any)->Any:
+    try:return json.loads(path.read_text(encoding="utf-8"))
+    except (OSError,json.JSONDecodeError):return fallback
+def write(path:Path,doc:object)->None:
+    path.parent.mkdir(parents=True,exist_ok=True); tmp=path.with_name(f".{path.name}.{os.getpid()}.tmp"); tmp.write_text(json.dumps(doc,indent=2,sort_keys=True)+"\n"); tmp.replace(path)
+def resolve(scan:Path,ref:str)->Path|None:
+    base=ref.split(":",1)[0].split("#",1)[0]; candidate=(scan/base).resolve()
+    try:candidate.relative_to(scan.resolve())
+    except ValueError:return None
+    return candidate if candidate.is_file() else None
+def main()->int:
+    p=argparse.ArgumentParser(); p.add_argument("scan_base",type=Path); a=p.parse_args(); root=Path(__file__).resolve().parent.parent; context=load(Path(os.environ.get("VULNOPS_AUDIT_CONTEXT",root/".harness/audit-context.json")),{}); plan=load(a.scan_base/"campaign-planning/campaign-plan.json",{}); errors=[]; results=[]; candidate_ids=set()
+    campaigns=plan.get("campaigns",[]) if isinstance(plan,dict) else []
+    for campaign in campaigns:
+        cid=str(campaign.get("id","")); path=a.scan_base/f"intrusion/results/{cid}.json"; result=load(path,None)
+        if not isinstance(result,dict):errors.append(f"missing intrusion result for {cid}");continue
+        if result.get("campaign_id")!=cid:errors.append(f"campaign ID mismatch in {path.name}");continue
+        status=result.get("status"); candidates=result.get("candidates")
+        if status=="candidate" and (not isinstance(candidates,list) or not candidates):errors.append(f"{cid} candidate status requires candidates")
+        if status!="candidate" and candidates:errors.append(f"{cid} non-candidate status may not contain candidates")
+        question_ids={str(x.get("id")) for x in campaign.get("graph_questions",[]) if isinstance(x,dict)}
+        query_refs=[str(x) for x in result.get("graph_query_receipts",[])];evidence_graph_refs=[str(x) for x in result.get("graph_evidence_refs",[])]
+        receipt_question_ids={Path(ref.split(":",1)[0].split("#",1)[0]).parent.name for ref in query_refs}
+        if receipt_question_ids!=question_ids or len(query_refs)!=len(question_ids):errors.append(f"{cid} must record exactly one receipt for every planned graph question")
+        if not set(evidence_graph_refs).issubset(set(query_refs)):errors.append(f"{cid} graph evidence refs must be a subset of executed query receipts")
+        for ref in [*result.get("evidence_refs",[]),*query_refs]:
+            if resolve(a.scan_base,str(ref)) is None:errors.append(f"{cid} unresolved artifact reference: {ref}")
+        for ref in query_refs:
+            receipt_path=resolve(a.scan_base,str(ref));receipt=load(receipt_path or Path("/nonexistent"),{})
+            if receipt.get("tool")!="codegraph" or receipt.get("status")!="ok" or receipt.get("parse_status")!="ok":errors.append(f"{cid} cites unhealthy graph query receipt: {ref}")
+            context_path=receipt_path.with_name("context.json") if receipt_path else None
+            if context_path is None or not context_path.is_file() or receipt.get("normalized_sha256")!=hashlib.sha256(context_path.read_bytes()).hexdigest():errors.append(f"{cid} graph receipt hash does not match sibling context.json: {ref}")
+            if ref in evidence_graph_refs and not receipt.get("meaningful"):errors.append(f"{cid} cites non-meaningful graph evidence: {ref}")
+        for candidate in candidates if isinstance(candidates,list) else []:
+            fid=str(candidate.get("id","")) if isinstance(candidate,dict) else ""
+            if not fid or fid in candidate_ids:errors.append(f"duplicate or missing intrusion candidate ID: {fid!r}")
+            candidate_ids.add(fid)
+        results.append(result)
+    extra={p.stem for p in (a.scan_base/"intrusion/results").glob("*.json")}-{str(c.get("id")) for c in campaigns}
+    if extra:errors.append("orphan intrusion results: "+", ".join(sorted(extra)))
+    wrapper={"schema_version":"2.0","run_id":str(context.get("run_id","")),"results":results}; output_path=a.scan_base/"intrusion/intrusion-results.json"; write(output_path,wrapper)
+    checked=subprocess.run([sys.executable,str(root/"scripts/validate-json.py"),str(root/"schemas/v2/intrusion-results.schema.json"),str(output_path)],capture_output=True,text=True,check=False)
+    if checked.returncode:errors.append(checked.stderr.strip() or "intrusion result schema validation failed")
+    counts={name:sum(1 for r in results if r.get("status")==name) for name in ("candidate","closed","rejected","needs_environment")}
+    summary="# Intrusion Campaign Results\n\n"+"\n".join(f"- {k.replace('_',' ').title()}: {v}" for k,v in counts.items())+"\n"; (a.scan_base/"intrusion/summary.md").write_text(summary)
+    manifest={"phase":"intrusion","status":"failed" if errors else "degraded" if counts["needs_environment"] else "ok","started_at":now(),"completed_at":now(),"inputs":["campaign-planning/evidence-index.json","campaign-planning/campaign-plan.json"],"outputs":["intrusion/intrusion-results.json","intrusion/summary.md"],"coverage":{"campaigns":len(campaigns),**counts},"tool_versions":{"primary_model":str(context.get("model","unknown")),"codegraph":"typed-adapter-v2"},"warnings":[],"errors":errors}; write(a.scan_base/"intrusion/phase-manifest.json",manifest)
     if errors:
-        summary_lines.extend(f"- Error: {error}" for error in errors)
-    if not warnings and not errors:
-        summary_lines.append("- No required scoped graph failures.")
-    (intrusion / "summary.md").write_text("\n".join(summary_lines) + "\n", encoding="utf-8")
-
-    manifest = {
-        "phase": "intrusion",
-        "status": status,
-        "started_at": started_at,
-        "completed_at": datetime.now(timezone.utc).isoformat(),
-        "inputs": [
-            "repo-context/security-surfaces.json",
-            "triage/intrusion-seeds.json",
-            "intrusion/intrusion-plan.json",
-        ],
-        "outputs": [
-            "intrusion/summary.md",
-            "intrusion/enrichment.json",
-            "intrusion/intrusion-plan.json",
-            "intrusion/findings",
-        ],
-        "coverage": {
-            "mode": "targeted-ooda",
-            "scopes_planned": len(scopes),
-            "scopes_completed": completed,
-            "required_scopes_failed": required_failed,
-            "enrichment_entries": len(enrichments),
-        },
-        "tool_versions": {"codegraph": "AST analysis via scripts/codegraph-context.sh"},
-        "warnings": warnings,
-        "errors": errors,
-    }
-    write_json(intrusion / "phase-manifest.json", manifest)
-    print(json.dumps({"status": status, "enrichments": len(enrichments), "completed_scopes": completed}))
-    raise SystemExit(0 if status == "ok" else 1)
-
-
-if __name__ == "__main__":
-    main()
+        for error in errors:print(f"[finalize-intrusion] ERROR: {error}",file=__import__('sys').stderr)
+        return 1
+    return 0
+if __name__=="__main__":raise SystemExit(main())

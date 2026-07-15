@@ -1,0 +1,20 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Normalized Wraith Advisories",
+  "type": "object", "additionalProperties": false,
+  "required": ["schema_version", "tool", "packages_scanned", "advisory_count", "advisories"],
+  "properties": {
+    "schema_version": {"const": "2.0"}, "tool": {"const": "wraith"},
+    "packages_scanned": {"type": "integer", "minimum": 0}, "advisory_count": {"type": "integer", "minimum": 0},
+    "advisories": {"type": "array", "items": {
+      "type": "object", "additionalProperties": false,
+      "required": ["id", "advisory_id", "package", "version", "ecosystem", "severity", "summary", "references", "source_lockfile"],
+      "properties": {
+        "id": {"type": "string", "pattern": "^SCA-[a-f0-9]{16}$"}, "advisory_id": {"type": "string", "minLength": 1},
+        "package": {"type": "string", "minLength": 1}, "version": {"type": "string"}, "ecosystem": {"type": "string"},
+        "severity": {"enum": ["critical", "high", "medium", "low", "unknown"]}, "summary": {"type": "string", "maxLength": 1000},
+        "references": {"type": "array", "items": {"type": "string", "maxLength": 512}, "maxItems": 10}, "source_lockfile": {"type": "string", "minLength": 1}
+      }
+    }}
+  }
+}

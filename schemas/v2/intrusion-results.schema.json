@@ -1,0 +1,45 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "VulnOps v2 Intrusion Campaign Results",
+  "type": "object", "additionalProperties": false,
+  "required": ["schema_version", "run_id", "results"],
+  "properties": {
+    "schema_version": {"const": "2.0"}, "run_id": {"type": "string", "minLength": 1},
+    "results": {"type": "array", "items": {"$ref": "#/$defs/result"}}
+  },
+  "$defs": {"result": {
+    "type": "object", "additionalProperties": false,
+    "required": ["schema_version", "campaign_id", "status", "conclusion", "evidence_refs", "graph_query_receipts", "graph_evidence_refs", "primitive_updates", "candidates"],
+    "properties": {
+      "schema_version": {"const": "2.0"}, "campaign_id": {"type": "string", "pattern": "^CAM-[0-9]{3}$"},
+      "status": {"enum": ["candidate", "closed", "rejected", "needs_environment"]}, "conclusion": {"type": "string", "minLength": 1},
+      "evidence_refs": {"type": "array", "items": {"type": "string", "minLength": 1}, "minItems": 1, "uniqueItems": true},
+      "graph_query_receipts": {"type": "array", "items": {"type": "string", "minLength": 1}, "uniqueItems": true},
+      "graph_evidence_refs": {"type": "array", "items": {"type": "string", "minLength": 1}, "uniqueItems": true},
+      "primitive_updates": {"type": "array", "items": {"$ref": "#/$defs/primitiveUpdate"}},
+      "candidates": {"type": "array", "items": {"$ref": "#/$defs/intrusionCandidate"}}
+    }
+  },
+  "primitiveUpdate": {
+    "type": "object", "additionalProperties": false,
+    "required": ["id", "type", "trust", "prerequisites", "capability_gained", "boundary", "reachable_assets", "conditions", "evidence_refs"],
+    "properties": {
+      "id": {"type": "string", "pattern": "^NP-[A-F0-9]{12}$"}, "type": {"enum": ["vulnerability", "credential", "access", "control_gap", "state_transition", "environment_constraint"]},
+      "trust": {"enum": ["confirmed", "candidate", "context_only"]}, "prerequisites": {"type": "array", "items": {"type": "string", "minLength": 1}},
+      "capability_gained": {"type": "string", "minLength": 1}, "boundary": {"type": "string", "minLength": 1}, "reachable_assets": {"type": "array", "items": {"type": "string", "minLength": 1}},
+      "conditions": {"type": "array", "items": {"type": "string", "minLength": 1}}, "evidence_refs": {"type": "array", "items": {"type": "string", "minLength": 1}, "minItems": 1}
+    }
+  },
+  "intrusionCandidate": {
+    "type": "object", "additionalProperties": false,
+    "required": ["id", "finding_kind", "title", "attacker", "root_causes", "trace", "conditions", "impact", "evidence_refs", "primitive_ids", "validation_level"],
+    "properties": {
+      "id": {"type": "string", "pattern": "^IC-[A-F0-9]{12}$"}, "finding_kind": {"enum": ["code", "dependency", "secret", "chain"]}, "title": {"type": "string", "minLength": 1},
+      "attacker": {"type": "object", "additionalProperties": false, "required": ["perspective", "starting_access", "boundary_crossed"], "properties": {"perspective": {"type": "string", "minLength": 1}, "starting_access": {"type": "string", "minLength": 1}, "boundary_crossed": {"type": "string", "minLength": 1}}},
+      "root_causes": {"type": "array", "items": {"type": "object", "additionalProperties": false, "required": ["file", "line", "scope", "mechanism"], "properties": {"file": {"type": "string", "minLength": 1}, "line": {"type": "integer", "minimum": 1}, "scope": {"type": "string", "minLength": 1}, "mechanism": {"type": "string", "minLength": 1}}}, "minItems": 1},
+      "trace": {"type": "array", "items": {"type": "object", "additionalProperties": false, "required": ["kind", "file", "line", "scope", "description"], "properties": {"kind": {"enum": ["entrypoint", "propagation", "sink"]}, "file": {"type": "string", "minLength": 1}, "line": {"type": "integer", "minimum": 1}, "scope": {"type": "string", "minLength": 1}, "description": {"type": "string", "minLength": 1}}}, "minItems": 2},
+      "conditions": {"type": "array", "items": {"type": "string", "minLength": 1}}, "impact": {"type": "string", "minLength": 1}, "evidence_refs": {"type": "array", "items": {"type": "string", "minLength": 1}, "minItems": 1},
+      "primitive_ids": {"type": "array", "items": {"type": "string", "minLength": 1}, "uniqueItems": true}, "validation_level": {"enum": ["source_verified", "dynamic_verified", "environment_required"]}
+    }
+  }}
+}

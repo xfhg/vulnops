@@ -1,282 +1,1074 @@
-# VulnOps Harness Architecture
+# VulnOps V2 Architecture
 
-## Executive View
+This document is the technical design record for the canonical VulnOps audit
+harness. It explains the trust model, control plane, artifact contracts, phase
+ownership, evidence promotion rules, red-team composition model, containment
+boundary, and failure semantics.
 
-VulnOps is a read-only security audit harness for source repositories placed under `target/`. The harness uses OMP as the audit controller, runs specialized phase agents, captures every phase as filesystem artifacts under `scans/`, and validates the scan before any report is treated as complete.
+The architecture is optimized for one outcome: produce security conclusions that
+remain useful after the excitement of discovery has passed—conclusions that are
+source-backed, attributable, independently challenged, safe to retain, and precise
+enough for an engineer to remediate.
 
-The architecture is an OODA value chain:
+## 1. Goals and explicit boundaries
 
-- **Observe:** map the repository and collect deterministic evidence from dependency, secrets, and code-analysis tools.
-- **Orient:** fuse collected evidence into intelligence cards, graph scopes, coverage gaps, and rule gaps.
-- **Decide:** triage only evidence-backed candidates into verified findings, deferred hypotheses, or drops.
-- **Act:** run scoped codegraph AST analysis for high-value reachability, blast-radius, dependency-impact, and cross-boundary questions, then reconcile and report.
+### 1.1 Goals
 
-The core promise is simple: **preserve intelligence across phases without allowing hypotheses to become findings unless they pass evidence gates**. The harness should make it easy to push hard on suspicious attack paths, but difficult to publish speculation.
+The harness is designed to:
 
-## System Context
+- discover exploitable code weaknesses, not just pattern matches;
+- establish or reject reachability for known dependency and secret signals;
+- use known findings as capabilities in deeper impact-expansion and composition
+  work;
+- find attack paths across source areas, trust boundaries, and evidence types;
+- preserve a canonical, typed evidence chain from tool output to final report;
+- separate model judgment from deterministic integrity enforcement;
+- operate offline except for one configured LLM gateway;
+- keep the target immutable and all runtime state contained;
+- fail closed when evidence, tools, isolation, references, or identity do not
+  satisfy their contracts; and
+- scale investigation through bounded parallelism rather than unbounded agent
+  fanout.
 
-```mermaid
-flowchart LR
-    Operator["Operator\nsecurity engineer"] --> Run["run.sh\nOMP main controller"]
-    Target["target/<repo>\nread-only source"] --> Run
-    Config["config.toml\nLLM, harness settings"] --> Run
+### 1.2 Non-goals
 
-    Run --> Context[".harness/audit-context.json\npath source of truth"]
-    Run --> Agents["OMP phase agents\n.omp/agents/*"]
+The harness does not:
 
-    Agents --> Tools["Deterministic tools\nWraith, Poltergeist, local code reads"]
-    Agents --> Codegraph["codegraph wrapper\nscoped AST graph extraction (offline)"]
-    Agents -->|allowed exception| LLM["Configured LLM endpoint\nonly allowed runtime network"]
+- equate an advisory, graph relationship, scanner match, or model assertion with
+  a vulnerability;
+- execute target code outside the supported containment backend;
+- retain raw scanner output, raw proof output, secret values, or proof tokens;
+- access the public internet during an audit, other than the configured model
+  endpoint;
+- fabricate campaigns, graph scope, findings, or verifier work to fill a budget;
+- provide multiple workflow modes, phase implementations, schema generations, or
+  report authorities;
+- support multiple custom LLM endpoints in one runtime; or
+- infer deployment-only facts that are not present in the repository or a safely
+  reproduced environment.
 
-    Tools --> Artifacts["scans/<repo-id>/*\nphase artifacts"]
-    Codegraph --> Artifacts
-    Agents --> Artifacts
+## 2. Architectural principles
 
-    Artifacts --> Validators["validate-phase.sh\nvalidate-scan.sh"]
-    Validators --> Report["report/security-report.md\nreport/security-report.json"]
-    Validators --> Status["audit-status.sh\nread-only status"]
+### 2.1 Evidence before assertion
+
+Every reportable finding must resolve to canonical artifacts and source locations.
+The minimum proof shape is attacker → boundary → entrypoint → propagation → sink
+→ impact, with explicit conditions. Different finding kinds add stricter fields;
+none weakens this base requirement.
+
+### 2.2 One owner per artifact
+
+Each phase owns a disjoint output namespace. A downstream phase consumes upstream
+artifacts by stable reference and never repairs, rewrites, or regenerates them.
+This prevents an investigation agent from silently changing the evidence it is
+supposed to evaluate.
+
+### 2.3 Determinism around model reasoning
+
+Models are used for interpretation and adversarial reasoning. Deterministic code
+owns paths, IDs, budgets, schema validation, normalization, aggregation, hashes,
+fingerprints, run state, empty-result handling, and reporting. The deterministic
+shell around model work makes results resumable and auditable.
+
+### 2.4 Capabilities, not labels
+
+A known issue is represented by what an attacker needs and gains, not merely by a
+CVE, category, or title. This permits composition across evidence kinds and makes
+impact-expansion a first-class operation.
+
+### 2.5 Bounded work with explicit closure
+
+Depth controls finite budgets. Fanout has a fixed concurrency ceiling and overflow
+is queued. Every evidence record and campaign reaches a terminal disposition.
+The system values a defensible closure because unresolved work is operationally
+indistinguishable from dropped work.
+
+### 2.6 Safe absence is valid state
+
+Zero lockfiles, zero scanner matches, zero campaigns, zero synthesized findings,
+and zero verifier tasks are valid outcomes. Deterministic finalizers produce the
+required empty wrappers and manifests. No stage invents an item merely to make a
+later stage run.
+
+## 3. System boundary
+
+```text
+┌──────────────────────────── VulnOps repository ────────────────────────────┐
+│                                                                            │
+│  target/<repo>             Immutable audit input                           │
+│       │                                                                    │
+│       ├──────────── read-only source reads ───────────────┐                 │
+│       │                                                   │                 │
+│       └── fingerprint ──> identity/integrity gates        │                 │
+│                                                           ▼                 │
+│  .harness/                                      scans/<repo>/runs/<run>/    │
+│  ├─ audit-context.json                          ├─ canonical evidence       │
+│  ├─ contained homes/caches/temp                 ├─ phase manifests          │
+│  ├─ tool probes                                 ├─ task ledger              │
+│  └─ codegraph/<run>/project snapshot            └─ final reports            │
+│             │                                                              │
+│             └── writable index and typed queries                            │
+│                                                                            │
+│  bins/ + scripts/             deterministic execution and validation        │
+│  .omp/agents + .omp/skills    model behavior and reusable doctrine           │
+│  schemas/v2                   canonical artifact contracts                  │
+└────────────────────────────────────────────────────────────────────────────┘
+                         │
+                         └── only permitted audit network path:
+                             configured LLM endpoint
 ```
 
-The target repository is never modified. Runtime homes, caches, logs, temporary files, and generated provider files are kept under `.harness/` or other harness-approved paths. Audit runtime is offline except for the configured LLM endpoint used by OMP. codegraph is AST-only and makes no network calls.
+The target is never a workspace. Agents may read it, but all writes belong under
+`scans/` or `.harness/`. Containment helpers relocate homes, caches, and temporary
+state so third-party tools do not leak runtime files into operator or target
+directories.
 
-## OODA Workflow
+## 4. Control plane and data plane
 
-```mermaid
-flowchart TD
-    Start["Target detected\nscripts/run-audit.sh"] --> Recon["Recon\nvulnops-recon"]
+VulnOps is easier to reason about as two cooperating planes.
 
-    Recon --> Parallel["Parallel evidence collection"]
-    Parallel --> SCA["SCA\nvulnops-sca"]
-    Parallel --> Secrets["Secrets\nvulnops-secrets"]
-    Parallel --> SAST["SAST Lead\nvulnops-sast-lead"]
+### 4.1 Control plane
 
-    SAST --> TM["Threat Model"]
-    TM --> Decompose["Decompose"]
-    Decompose --> DeepDive["Deepdive chunks"]
-    DeepDive --> Verify["Adversarial verify"]
+The control plane consists of:
 
-    SCA --> Intelligence["Intelligence Fusion\nvulnops-intelligence"]
-    Secrets --> Intelligence
-    Verify --> Intelligence
-    Recon --> Intelligence
+- `config.toml` and the environment generated from it;
+- `.harness/audit-context.json`, the path and selector authority;
+- `run-manifest.json`, the run identity and phase state machine;
+- `task-ledger.json`, task attempts and terminal outcomes;
+- phase manifests, which describe inputs, outputs, coverage, warnings, errors,
+  tool versions, and terminal status;
+- strict JSON schemas; and
+- configuration, phase, and whole-scan validators.
 
-    Intelligence --> Triage["Triage\nvulnops-triage"]
-    Triage --> Intrusion["Intrusion\nvulnops-intrusion"]
-    Intrusion --> Reconcile["Final Reconciliation\nvulnops-reconcile"]
-    Reconcile --> Reporter["Reporter\nvulnops-reporter"]
-    Reporter --> FinalValidation["validate-scan.sh"]
+The control plane decides whether work is compatible, complete, and safe to
+promote. It never manufactures a security conclusion.
 
-    FinalValidation --> Complete["Complete only when validation passes"]
-    FinalValidation --> Failed["Report validation errors\nno fake completion"]
+Deterministic Tool Collection uses `ok` for every contract-valid scanner result,
+including findings and normal deduplication. Match occurrences and unique
+normalized records are separate coverage counts, not health warnings. There is
+no successful degraded state for this phase; deterministic contract violations
+fail closed.
+
+Model-owned top-level phases are supervised OMP jobs. The lead captures one job
+ID per stable phase task, observes that job through the OMP job lifecycle, and
+enforces the depth-specific deadline stored in audit context. A job is not
+successful merely because files appeared or an IRC message arrived: it must
+terminate with a schema-valid yield and then pass the phase validator. IRC carries
+only bounded stage transitions and peer questions.
+
+### 4.2 Evidence data plane
+
+The data plane carries:
+
+- repository structure and security surfaces;
+- normalized tool observations and receipts;
+- SAST candidates, validation results, closures, and coverage;
+- canonical evidence records and attack primitives;
+- campaigns, graph query receipts, and terminal results;
+- synthesized findings and independent verdicts; and
+- final sanitized report data.
+
+Stable IDs and artifact references connect these structures. Evidence bodies are
+not copied between phases.
+
+## 5. Run identity, initialization, and resume
+
+Initialization discovers exactly one Git repository below `target/`, verifies the
+required binaries through a functional probe, computes repository identity, and
+creates an isolated run directory.
+
+The complete compatibility identity is:
+
+```text
+repository path
++ commit
++ exact working-tree fingerprint
++ depth
++ reproduction mode
++ normalized primary selector
++ exact orchestrator, task, slow, and smol role selectors
++ normalized verifier selector
++ workflow identity
++ harness contract fingerprint
++ resolved SAST budget snapshot
 ```
 
-## Artifact Data Flow
+Only the current incomplete run resumes when immutable target and model/policy
+identity matches. `complete` is closed; `failed` and interrupted executions are
+recoverable states. A changed role selector creates a new run even if the
+underlying model happens to be similar. A harness-contract or resolved-budget
+change starts a recorded recovery generation inside the same audit.
 
-```mermaid
-flowchart LR
-    RC["repo-context/*\nrepo.md\nrepo-context.json\nsecurity-surfaces.json"] --> SASTA["sast/*\nthreat-model\ntask-manifest\nraw/verified/dropped\ncoverage-ledger"]
-    RC --> INT["intelligence/*\nevidence-corpus\nattack-surface-map\nintel-plan\ninvestigation-cards\ncoverage-gaps\nrule-gaps"]
+The harness contract fingerprint binds schemas, planning and aggregation code,
+validators, recovery code, and phase-agent contracts. Each successful phase also
+receives a deterministic whole-directory seal. Recovery preserves those bytes,
+removes the failed phase and every downstream phase, resets their task entries,
+and resumes from the first unfinished phase. When the harness contract changed,
+whole-scan validation accepts a retained prior-contract phase only by verifying
+its recorded seal and prior successful phase state; rerun phases must pass current
+semantic validation.
 
-    SCA["sca/*\nraw-advisories\nsummary"] --> INT
-    SEC["secrets/*\nredacted-candidates\npatterns\nsummary"] --> INT
-    SASTA --> INT
+### 5.1 Why commit alone is insufficient
 
-    INT --> TRI["triage/*\nconsolidated.md\nfindings.json\nintrusion-seeds.json"]
-    TRI --> INTR["intrusion/*\nintrusion-plan\ncodegraph-runs\nenrichment\nsummary"]
-    INT --> INTR
+A Git commit does not capture ignored files, uncommitted changes, generated source,
+or modified tracked files. `target-fingerprint.py` covers the working tree used by
+the audit. The fingerprint is rechecked after graph snapshot creation, after every
+phase, and at whole-scan validation. Any mismatch invalidates the run.
 
-    INTR --> REC["final-reconciliation/*\nfindings.json\nsummary"]
-    TRI --> REC
-    INT --> REC
+### 5.2 State machines
 
-    REC --> REP["report/*\nsecurity-report.md\nsecurity-report.json"]
-    INT --> REP
-    SCA --> REP
-    SEC --> REP
-    SASTA --> REP
+Run statuses are:
+
+```text
+initialized → running → complete
+                    ├→ degraded
+                    └→ failed
+                         │
+                         └→ recover → initialized
 ```
 
-The artifact graph is intentionally redundant. The final report is not allowed to be the only place where meaning exists. Each phase leaves a machine-readable trail so validation, recovery, and future audits can reconstruct why a finding survived or died.
+Phase statuses are `pending`, `running`, `ok`, `degraded`, `failed`, or `skipped`.
+Task statuses are `pending`, `running`, `ok`, `degraded`, `failed`, or `shallow`.
+Updates are atomic and timestamped. A phase manifest is validated before its
+status is synchronized into the run manifest.
 
-## Value Chain By Phase
+The state updater enforces phase order and mutual exclusion in code. A top-level
+task has one stable ID, at most two real attempts, and may run only with its owning
+phase. Successful artifacts must be existing scan-relative files and the owning
+phase directory is sealed after validation; failed tasks have null artifacts and
+bounded errors. Stopping closes every running phase/task. Recovery never restarts
+or mutates successful upstream phases: it retains their seals and discards the
+failed/downstream suffix. The two-attempt ceiling applies per recovery generation.
 
-| Phase | Input value consumed | New value produced | Downstream consumers | Validation gate | Failure behavior |
-|---|---|---|---|---|---|
-| Target detection | `target/` repository, `config.toml`, installed tools | `.harness/audit-context.json`, scan directories, canonical paths | Main controller, all agents | tool/config checks plus path containment | Stop before phase work |
-| Recon | Source tree, build files, config files, architecture clues | `repo.md`, `repo-context.json`, `security-surfaces.json`, recon manifest | SAST, Intelligence, Intrusion, Report | `validate-phase.sh recon` | Stop; no downstream phase has a trustworthy map |
-| SCA | Recon context, dependency manifests, local OSV data through Wraith | `raw-advisories.json`, lockfile inventory, SCA summary | Intelligence, Triage, Report | `validate-phase.sh sca` | Stop or surface missing/incomplete advisory evidence |
-| Secrets | Source tree, recon context, Poltergeist output | `redacted-candidates.json`, systemic secret patterns, secrets summary | Intelligence, Triage, Report | `validate-phase.sh secrets` | Stop or surface redaction/scan artifact failure |
-| SAST threat model | Recon map, security surfaces | Assets, entry points, trust boundaries, threats | SAST decompose | `validate-phase.sh sast-threatmodel` | Stop SAST before blind chunking |
-| SAST decompose | Threat model, repo context, scan criteria | Risk-ranked chunks with files, hypotheses, lenses | Deepdive workers | `validate-phase.sh sast-decompose` | Stop SAST before broad analysis |
-| SAST deepdive | One task chunk per worker | Raw candidate findings with evidence refs | Verifiers | `validate-phase.sh sast-deepdive` | SAST cannot promote candidates |
-| SAST verify | Raw candidates, source/sink evidence, exclusion rules | `verified-findings.json`, `dropped-findings.json` | Intelligence, Triage | `validate-phase.sh sast-verify` and `validate-phase.sh sast` | Raw findings remain non-final |
-| Intelligence Fusion | Recon, SCA, Secrets, SAST verified/dropped/coverage data | Evidence corpus, attack map, intelligence plan, investigation cards, coverage gaps, rule gaps | Triage, Intrusion, Reconcile, Report | `validate-phase.sh intelligence` | Stop before triage; intelligence preservation is required |
-| Triage | Intelligence cards, SCA, Secrets, SAST verified findings | Consolidated verified findings, deferred/dropped hypotheses, intrusion seeds | Intrusion, Reconcile | `validate-phase.sh triage` | Stop before intrusion; no verified decision layer |
-| Intrusion | Triage seeds, intelligence context, recon surfaces | Scoped codegraph context, enrichment, reachability/blast-radius/dependency-impact context | Reconcile, Report | `validate-phase.sh intrusion` | Fail closed; no missing-graph success |
-| Reconciliation | Triage findings, intrusion enrichment, intelligence provenance | Final normalized findings | Reporter | `validate-phase.sh final-reconciliation` | Stop before report; no source of truth |
-| Report | Final findings, scan summaries, intelligence gaps | Human report and JSON report | Operator, stakeholders, status checks | `validate-phase.sh report`, then `validate-scan.sh` | Present validation errors instead of completion |
+`degraded` is not a schema escape hatch and does not mean “less than exhaustive.”
+It represents structurally valid output with a material loss of audit capability,
+such as `needs_environment` or a failed SAST cell. Expected bounded behavior—tool
+deduplication, findings-present scanner exits, normal negative results, and
+configured depth/task/question/round/attempt ceilings—remains `ok`. Malformed or
+inconsistent output fails.
 
-## Intelligence Preservation Model
+The semantic phase validator derives the permitted status from canonical
+coverage rather than trusting a producer-supplied label. Recon, healthy Tool
+Collection, and Campaign Planning close `ok`. Intrusion, Synthesis, Final
+Verification, and Report may close `degraded` only when their canonical coverage
+contains `needs_environment`. SAST may close `degraded` only for a failed cell or
+environment-required verification.
 
-Intelligence Fusion is the harness memory layer between raw tool evidence and decision-making.
+## 6. Canonical workflow
 
-```mermaid
-flowchart TD
-    Raw["Raw phase facts\nrecon, sca, secrets, sast"] --> Corpus["evidence-corpus.json\nnormalized observations"]
-    Corpus --> Map["attack-surface-map.json\ncomponents, boundaries, sinks"]
-    Corpus --> Plan["intel-plan.json\nscoped codegraph questions"]
-    Corpus --> Cards["investigation-cards.json\nranked hypotheses"]
-    Corpus --> Gaps["coverage-gaps.json\nunresolved surfaces"]
-    Corpus --> Rules["rule-gaps.json\nfuture guardrails"]
-
-    Plan --> CodeRuns["intelligence/codegraph-runs/*\nAST scoped context"]
-    CodeRuns --> Cards
-
-    Cards --> Triage["Triage promotes, defers, or drops"]
-    Gaps --> Report["Coverage and Open Questions"]
-    Rules --> Report
+```text
+Recon
+  │
+  ├──────────────┐
+  ▼              ▼
+repository    Tool Collection: Wraith + Poltergeist
+model            │
+  │              │ normalized records + healthy receipts
+  └──────┬───────┘
+         ▼
+SAST: threat model → deterministic hunt plan → batched hunts
+      → validation → alternate traces → optional reproduction → coverage
+         │
+         ▼
+Campaign Planning: evidence records → typed primitives → bounded campaigns
+         │
+         ▼
+Intrusion: source investigation + typed Codegraph navigation
+         │            exactly one terminal result per campaign
+         ▼
+Synthesis: root-cause deduplication + impact expansion + chain closure
+         │
+         ▼
+Independent Verification: fresh context, every finding, every chain step
+         │
+         ▼
+Deterministic Report: final accepted findings only
 ```
 
-An intelligence card is not a finding. It may come from tool evidence, graph inference, agent exploration, or a coverage gap. Triage can promote it only after re-reading source evidence and recording closure rationale. Otherwise it remains deferred or dropped with provenance.
+### 6.1 Orchestration and concurrency model
 
-This prevents two bad outcomes:
+The main OMP process owns the workflow and launches each model-owned phase as one
+supervised asynchronous job. Job identity, terminal state, structured yield, and
+the phase validator form the completion contract. Deadlines are stored in audit
+context and a timeout closes the stable attempt rather than leaving an orphaned
+phase. IRC is limited to genuine progress transitions and peer questions.
 
-- **Compression loss:** useful context disappears because it did not fit into a final finding row.
-- **Speculation leakage:** an interesting hypothesis is published as a verified vulnerability.
+Parallelism is applied within phases where workers have disjoint ownership:
 
-## codegraph Scoping Model
+| Area | Decomposition | Bound |
+|---|---|---:|
+| Recon | Overview, trust-boundary, and input-surface research | 3 workers |
+| Tool Collection | Wraith invocations plus Poltergeist | 4 processes |
+| SAST deep dives | Hash-bound hunt-task packets | 4 quick / 8 balanced / 16 full |
+| SAST verification | Deduplicated validation candidates | 4 quick / 8 balanced / 12 full |
+| Safe reproduction | Eligible source-verified candidates | Configured `max_parallel` |
+| Intrusion | Planned campaigns | Depth-bounded waves |
+| Final Verification | Synthesized findings | Depth-bounded waves |
 
-```mermaid
-flowchart LR
-    Evidence["Evidence and hypotheses"] --> ScopePlan["Scoped plan\nfiles, questions, required flag"]
-    ScopePlan --> Context["codegraph-context.sh\nAST blast-radius on scoped files"]
-    Context --> ContextJson["codegraph-out/context.json\nnodes, edges (structural)"]
-    ContextJson --> Questions["blast-radius / callers-of / call-path\nonly planned questions"]
-    Questions --> Enrichment["enrichment or intelligence card updates"]
-```
+OMP nested task batches are synchronous from the coordinator's perspective, but
+the workers within a batch run concurrently. Queue overflow is executed in later
+waves and never silently discarded. Coordinators can spawn only their declared
+specialists, leaf workers do not create unbounded descendants, and stable IDs
+prevent a second task from representing already-active work.
 
-codegraph is an AST reasoning aid, not a replacement for deterministic evidence and not an LLM. It is always scoped: `build-intelligence.py` and `build-intrusion-plan.py` emit one `codegraph-runs/<scope_id>/codegraph-out/context.json` per planned scope by invoking `scripts/codegraph-context.sh` blast-radius on the first files of each scope. There is no full-repository mode and no LLM extraction step.
+Top-level phases do not overlap. Recon, Tool Collection, SAST, Campaign Planning,
+Intrusion, Synthesis, Final Verification, and Report form a strict evidence
+pipeline: downstream work requires the preceding immutable phase to validate.
+Campaign Planning and Synthesis therefore remain single-agent consolidation
+authorities. Deterministic scanning, bookkeeping, aggregation, empty paths, and
+reporting use no model agents.
 
-Required scopes for high-impact intelligence or intrusion work must produce a non-empty `context.json` (nodes + edges > 0). If a required scope has no parseable code, the phase fails rather than publishing graph-shaped but empty output.
+The OMP advisor is disabled independently of task execution. It would add a
+background review loop without owning a VulnOps artifact or gate; disabling it
+does not affect asynchronous jobs, phase coordinators, or canonical worker
+fanout.
 
-## Finding Lifecycle
+## 7. Phase ownership and contracts
 
-```mermaid
-stateDiagram-v2
-    [*] --> Observation
-    Observation --> Hypothesis: Intelligence card
-    Hypothesis --> Dropped: disproven or out of scope
-    Hypothesis --> Deferred: insufficient evidence
-    Hypothesis --> VerifiedFinding: triage evidence gate
-    VerifiedFinding --> Enriched: intrusion adds evidence
-    VerifiedFinding --> FinalFinding: reconciliation accepts
-    Enriched --> FinalFinding: evidence-backed upgrade/downgrade/confirm
-    FinalFinding --> Reported: reporter renders from final-reconciliation
-    Dropped --> [*]
-    Deferred --> [*]
-    Reported --> [*]
-```
+| Phase | Reads | Sole writes | Key promotion gate |
+|---|---|---|---|
+| Recon | Target source | `repo-context/` | Complete source-backed repository and surface model |
+| Tool Collection | Recon dependency files, target source | `tool-collection/` | Healthy parser receipt, exact counts/hash, sanitized normalized record |
+| SAST | Recon, tool evidence, target source | `sast/` | Adversarial source validation and coverage disposition |
+| Campaign Planning | All validated upstream evidence | `campaign-planning/` | Resolved evidence IDs, typed primitives, bounded nonfabricated plan |
+| Intrusion | Evidence index, campaign plan, target, graph snapshot | `intrusion/` | One terminal result per planned campaign; valid graph receipts |
+| Synthesis | Evidence, SAST, intrusion | `synthesis/` | Complete finding contract and closed primitive transitions |
+| Final Verification | Synthesized findings and cited source | `final-verification/` | Correct verifier identity and fresh independent verdict |
+| Report | Final verified findings | `report/` | Deterministic sanitized projection and matching counts |
 
-The report is not the lifecycle authority. `final-reconciliation/findings.json` is the source of truth for reportable verified findings. Markdown is presentation. JSON controls counts, severities, statuses, and references.
+The phase directory itself is part of the authority model. A worker artifact
+written outside its assigned directory is invalid even if its JSON is otherwise
+well formed.
 
-## Safety And Assurance Model
+### 7.1 Why SAST and Intrusion are separate phases
 
-```mermaid
-flowchart TD
-    Target["target/ repo"] -->|read-only| Agents["OMP agents"]
-    Agents -->|writes only| Scan["scans/<repo-id>/"]
-    Agents -->|runtime state| Harness[".harness/"]
-    Agents -->|no internet by default| NetworkBlock["Network blocked"]
-    Agents -->|allowed exception| LLM["Configured LLM endpoint"]
-    Validators["Validation scripts"] --> Scan
-    Validators --> Decision["Complete or fail with errors"]
-```
+SAST and Intrusion both inspect source, but they answer different questions and
+own different evidence transitions.
 
-Safety constraints:
-
-- The target repository is read-only.
-- Scan artifacts are written under `scans/`.
-- Runtime homes, caches, temporary files, logs, and generated OMP provider files stay harness-local.
-- Audit runtime is offline except for the configured LLM endpoint.
-- Secret material is redacted before downstream use.
-- Runtime PoC execution and exploit payloads are not part of the default architecture.
-- OMP main uses phase yield and IRC progress, not bash polling loops.
-- Child transcripts are not inspected with URI-style pseudo paths; filesystem artifacts are the source of truth.
-
-Assurance gates:
-
-| Gate | Purpose | Enforced by |
+| Dimension | SAST hunting | Intrusion |
 |---|---|---|
-| Runtime readiness | Tools, config, containment, codegraph readiness | `scripts/validate-config.sh` |
-| Phase checkpoint | Required artifacts and phase-specific invariants | `scripts/validate-phase.sh` |
-| Whole-scan integrity | Cross-phase provenance, counts, stale marker rejection, graph evidence | `scripts/validate-scan.sh` |
-| Status answer | Read-only current scan state without restarting work | `scripts/audit-status.sh` |
+| Primary question | Which individual security flaws exist across the modeled attack surface? | What can an attacker accomplish from the accumulated evidence? |
+| Planning unit | Source-backed security question mapping an attack-class lens to one concrete flow | Falsifiable campaign built from evidence records and typed primitives |
+| Search shape | Broad and coverage-driven | Narrow and hypothesis-driven |
+| Starting inputs | Recon, tool evidence, threat model, and target source | Evidence index, campaign plan, SAST findings, target source, and graph snapshot |
+| Main evidence transition | Candidate source trace → adversarially verified root cause or terminal disposition | Starting capability → validated downstream consumer, boundary transition, expanded impact, new root cause, or closure |
+| Composition | Establishes individual vulnerability primitives | Tests whether primitives compose and whether output capabilities satisfy later prerequisites |
+| Terminal authority | Verified findings, rejected/deferred candidates, and coverage dispositions under `sast/` | One `candidate`, `closed`, `rejected`, or `needs_environment` result per campaign under `intrusion/` |
 
-## Capability Map
+This separation prevents campaign work from becoming an unbounded second SAST
+pass. SAST spends its bounded budget establishing broad source coverage and
+validating individual root causes. Campaign Planning then converts all validated
+evidence—not only SAST findings—into prerequisites, gained capabilities,
+boundaries, and concrete hypotheses. Intrusion follows only those bounded
+hypotheses to test downstream consumption, control bypass, capability closure,
+and materially greater impact.
 
-| Capability | How it works | Evidence produced |
+Codegraph has a deliberately stronger procedural role in Intrusion: every planned
+typed question must be executed and receipted. Its evidentiary role remains weak,
+however. Graph output is navigation context in both phases and cannot establish
+attacker control, unsafe behavior, satisfied exploit conditions, or impact without
+independent source evidence.
+
+The output boundary is equally important. A source-verified SAST result may become
+a confirmed primitive, while an Intrusion worker may only return a terminal
+campaign result and bounded candidates or new primitives. Intrusion does not
+rewrite SAST evidence or publish findings. Synthesis alone decides whether the
+combined evidence supports an independently exploitable known finding, a new root
+cause, an impact expansion, or a capability-closed multi-step chain.
+
+## 8. Recon architecture
+
+Recon creates the common repository model used to prevent every later worker from
+rediscovering project structure independently. It decomposes work into focused
+overview, trust-boundary, and input-surface investigations and consolidates them
+into:
+
+- `repo.md`, a bounded human-readable repository brief;
+- `repo-context.json`, projects, languages, dependency files, build/test hints,
+  source areas, and architectural metadata;
+- `security-surfaces.json`, stable entrypoints, trust boundaries, inputs, assets,
+  and cross-references; and
+- research records beneath `repo-context/research/`.
+
+Security surfaces become immutable after Recon validation. Campaign Planning may
+reference them; Intrusion may query and reason from them; no downstream phase may
+rebuild them in a reduced shape.
+
+This ownership rule matters because a changed surface model changes the scope of
+everything downstream. Allowing a planner to regenerate it would make campaign
+results impossible to attribute to the originally validated reconnaissance.
+
+`finalize-recon.py` owns the machine handoff to Tool Collection. It ignores draft
+dependency arrays, walks the target without following symlinks or generated/vendor
+trees, discovers every input supported by the bundled offline scanner, assigns
+each input to the most specific compatible project, atomically rewrites those
+arrays, and writes the Recon phase manifest. Semantic validation independently
+repeats discovery and requires exact inventory equality. Models describe
+architecture; they do not decide which files a binary receives.
+
+## 9. Tool Collection architecture
+
+Tool Collection is deterministic and uses no model workers. `collect-tools.py`
+revalidates immutable Recon, extracts its deterministically finalized inventory,
+starts Wraith invocations and the Poltergeist scan concurrently, validates their
+individual receipts, merges normalized SCA records, finalizes the phase, and
+removes temporary tool work after success.
+
+All scanner output first lands under `.harness/tool-work/<run-id>`. Schemas,
+parse states, counts, and normalized hashes must pass in staging before the
+complete set is atomically published into `tool-collection/`. Raw scanner files
+never cross this boundary. Infrastructure failure remains fail-closed, but a
+malformed model handoff is prevented upstream rather than accepted as normal.
+
+Concurrency is capped at four invocations. This eliminates sequential scanner
+latency without introducing model scheduling overhead.
+
+### 9.1 Functional readiness
+
+`probe-toolchain.sh` establishes behavior, not presence:
+
+| Component | Fixture | Required observation |
 |---|---|---|
-| Repository cartography | Recon maps projects, entry points, trust boundaries, sensitive data, generated ignores | `repo-context/*` |
-| Dependency exposure | Wraith plus local OSV database scans lockfiles and retains advisories | `sca/raw-advisories.json` |
-| Secret detection | Poltergeist or fallback pattern detection with redacted downstream candidates | `secrets/redacted-candidates.json` |
-| AI-guided SAST | Threat model, risk decomposition, bounded deepdive fanout, adversarial verification | `sast/*` |
-| Evidence fusion | Deterministic builder plus Intelligence agent preserve cross-tool context | `intelligence/*` |
-| Scoped graph reasoning | codegraph extracts small evidence-derived AST scopes offline (no LLM) | `intelligence/codegraph-runs/*`, `intrusion/codegraph-runs/*` |
-| Triage and deduplication | Verified candidates are consolidated and ranked; false positives are closed with rationale | `triage/findings.json` |
-| Intrusion enrichment | Reachability, blast radius, dependency impact, and cross-boundary graph questions | `intrusion/enrichment.json` |
-| Final reconciliation | Applies only evidence-backed changes to verified findings | `final-reconciliation/findings.json` |
-| Reporting | Human and machine-readable report from final findings plus open intelligence context | `report/security-report.*` |
+| OMP | Contained help invocation | Process is runnable inside the harness home |
+| Wraith | Known affected Go dependency | At least one normalized offline advisory |
+| Poltergeist | Synthetic token assembled by the probe | At least one candidate with exact `<redacted>` persistence |
+| Codegraph | Small caller/callee Go program | A real meaningful relationship and matching normalized hash |
 
-## Builder Appendix
+An installed binary that emits a changed, empty, or malformed envelope fails
+readiness before model budget is spent.
 
-### Source Of Truth Files
+### 9.2 Wraith contract
 
-| Concern | Files |
+Wraith is invoked for each validated lockfile/dependency file. Exit statuses that
+represent a clean or findings-present scan are accepted by the wrapper; execution
+and parse failures are not. The adapter consumes the actual package, result, and
+vulnerability envelope and produces bounded records containing package, installed
+version, advisory identifiers, affected ranges, and source lockfile references.
+
+The normalized count must agree with the parsed envelope. A `null` result body is
+acceptable only when the associated counts are zero. Each receipt includes tool
+version, parse status, normalized result count, warnings, and SHA-256 of the
+persisted artifact.
+
+Advisories enter the evidence index as candidate vulnerability primitives. They
+do not become final dependency findings until source review proves an affected use
+is reachable.
+
+### 9.3 Poltergeist contract
+
+Poltergeist accepts both clean and matches-found outcomes as successful scanner
+execution. The adapter strips permitted log prelude, parses the real structured
+body, converts paths to target-relative locations, assigns stable IDs, and replaces
+every detected value with exactly `<redacted>` before persistence.
+
+No partial value, prefix, entropy sample, or raw value hash is retained. Multiple
+match events may normalize to fewer unique records; this is represented as a
+receipt warning rather than falsifying either count.
+
+Secret records are credential candidates. Promotion requires an exposure path and
+a supported validity state; the scanner match alone is context.
+
+### 9.4 Why raw output is excluded
+
+Raw scanner output is high-volume, unstable, and may contain sensitive material.
+Persisting it would expand the breach surface and allow final reports to depend on
+tool-specific formats. Normalized bounded records retain what later reasoning can
+use, while receipts retain enough metadata to prove that normalization came from a
+healthy execution.
+
+## 10. SAST architecture
+
+SAST combines repository-specific threat modeling with deterministic coverage
+planning and model-based source investigation.
+
+### 10.1 Threat model
+
+The threat model identifies subsystems, entrypoints, boundaries, risk, applicable
+attack classes, and repository-specific classes. Applicability is expressed only
+through source-backed hunt mappings. Each mapping binds a class to concrete
+surfaces, threats, assets, attacker, entrypoints, boundaries, source files, a
+security question, stop conditions, priority, rationale, and evidence. Attack
+doctrine lives in reusable skills; the phase agent coordinates work but does not
+duplicate specialist methodology in its prompt.
+
+### 10.2 Contextual hunt cells
+
+`build-hunt-plan.py` creates exactly one cell per declared hunt mapping. It does
+not construct a subsystem × surface × attack-class cross-product. A selected
+class with no contextual mapping fails threat-model validation rather than
+creating generic research work.
+
+Every cell retains the complete mapping context, stable ID, owner, methodology,
+specialist lenses, priority, evidence, status, and disposition rationale. Multiple
+surfaces may belong to one cell only when they form one concrete ordered source
+flow.
+
+Dependency enumeration and secret enumeration remain owned by Tool Collection.
+When those tools produced validated output, their cells are marked
+`tool_satisfied`; SAST does not pay model cost to repeat scanner work.
+
+### 10.3 Batching without losing coverage
+
+Up to four cells are placed in one hunt task only when they share a subsystem,
+domain, overlapping source files, and an entrypoint, boundary, or surface. The
+same attack class is not repeated within a batch. This lets compatible questions
+share source review without treating arbitrary cells as related.
+
+Packets are bounded in bytes and contain the authoritative task plus its exact
+cell definitions. Repository-wide trust boundaries, entrypoints, and unrelated
+scanner references are not copied into every packet. Essential context is never
+silently truncated; an oversized packet fails planning and must be split.
+
+Each worker receives a task-specific file beneath `sast/hunt-tasks/`, not the
+aggregate hunt plan. The packet embeds the exact task, exact cells, and SHA-256 of
+the plan that produced it. SAST validation requires an exact packet set and
+rejects stale, orphaned, oversized, or hash-mismatched work before promotion.
+
+### 10.4 Depth and fanout
+
+| Depth | Hunt concurrency | Maximum tasks | Maximum questions | Gapfill rounds | Verification concurrency |
+|---|---:|---:|---:|---:|---:|
+| quick | 4 | 12 | 24 | 1 | 4 |
+| balanced | 8 | 32 | 64 | 2 | 8 |
+| full | 16 | 64 | 128 | 3 | 12 |
+
+Initial work is scheduled risk-first and round-robin across subsystems so one
+large critical subsystem cannot consume the whole budget. One quarter of the task
+budget is reserved for gapfill when gapfill is enabled. Gapfill schedules
+evidence-backed rabbit holes first, cell-specific shallow/failed retries second,
+and initially deferred contextual cells last. Overflow remains explicitly
+deferred. Separate task and question ceilings prevent batching from hiding
+unbounded analysis scope. Task attempts are bounded.
+
+After the last gapfill round, the finalizer converts remaining `deferred` and
+`shallow` cells to `depth_limited`. This is a terminal coverage disposition for
+the selected audit depth, remains visible to downstream gap planning and the
+report, and does not degrade the phase. Only failed cells or environment-required
+verification degrade SAST.
+
+### 10.5 Aggregation, deduplication, and alternate traces
+
+Each worker returns exactly one `cell_results` row per assigned cell. Finding,
+clean, not-applicable, shallow, and failed states carry cell-specific review
+evidence. Candidate IDs must match the cell rows, and candidates may reference
+only cells with the same attack class. Reviewing an unassigned file or entrypoint
+fails the worker contract; adjacent work must be returned as a contextual rabbit
+hole.
+
+`finalize-sast.py` validates raw hunt results, derives outcomes from the per-cell
+rows, aggregates candidates, clusters by root cause, creates the validation queue,
+and builds the coverage ledger. One candidate in a batched task cannot mark its
+unrelated sibling cells as findings. A
+preferred trace is not allowed to suppress a valid alternate: when verification
+rejects the preferred member of a cluster, `--advance-alternates` promotes the
+next bounded alternate for verification.
+
+Gapfill is a real feedback loop:
+
+```text
+coverage ledger / rabbit holes
+          │
+          ▼
+build new bounded tasks → execute tasks → aggregate outcomes
+          │
+          └──────── repeat until no work or budget exhausted
+```
+
+Calling the planner repeatedly without executing and aggregating new tasks is not
+gapfill and is forbidden by the phase contract.
+
+### 10.6 Promotion states
+
+Source verification may establish a finding, reject it, defer it, or identify that
+environment evidence is required. Only established source findings become
+confirmed vulnerability primitives. Environment-required candidates remain
+candidates and cannot be silently upgraded.
+
+## 11. Canonical evidence index
+
+Campaign Planning begins by constructing `evidence-index.json`. It is the bridge
+between heterogeneous observations and attacker-oriented reasoning.
+
+### 11.1 Evidence records
+
+Records may originate from:
+
+- `recon`
+- `sca`
+- `secret`
+- `sast`
+- `coverage`
+- `hardening`
+- `positive_pattern`
+- `reproduction`
+- `tool_warning`
+
+Every record has a stable `E-` ID, source kind and source ID, canonical artifact
+reference, bounded summary, files, and disposition. Dispositions are `promoted`,
+`closed`, `rejected`, `needs_environment`, or `unresolved`.
+
+The index intentionally retains closures, warnings, positive controls, coverage
+gaps, and environment limits. Red-team planning benefits from knowing where
+controls held and where evidence is incomplete; dropping negative evidence would
+cause repeated work and biased campaign selection.
+
+### 11.2 Attack primitives
+
+Primitive types are:
+
+- `vulnerability`
+- `credential`
+- `access`
+- `control_gap`
+- `state_transition`
+- `environment_constraint`
+
+Trust levels are:
+
+- `confirmed`: the capability is established by acceptable evidence;
+- `candidate`: useful hypothesis that must be validated before reliance; and
+- `context_only`: navigation or planning context that cannot serve as an
+  established exploit step.
+
+Each primitive contains source-record IDs, prerequisites, capability gained,
+boundary, reachable assets, conditions, and evidence references.
+
+The capability representation is the core red-team abstraction. It permits a
+source flaw, dependency issue, credential, access path, and state transition to be
+compared through what they enable rather than through incompatible scanner labels.
+
+## 12. Campaign Planning architecture
+
+`build-campaign-plan.py` deterministically selects bounded initial campaigns. The
+campaign-planning model reviews actual source and may improve hypotheses, typed
+graph questions, validation method, stop conditions, and expected added value. It
+may not change stable IDs, canonical references, or lane budgets.
+
+### 12.1 Lane strategy
+
+`primitive_led` campaigns pair actionable primitives where possible, then examine
+individual primitives for downstream consumers. This is where known findings
+become red-team leverage.
+
+`gap_driven` campaigns examine uncovered boundaries, state transitions, coverage
+holes, and repository-specific risks for order, replay, race, parser differential,
+fallback, and implicit-trust failures.
+
+`direct_validation` campaigns establish whether candidate dependency, credential,
+or source primitives are active and reachable and then inspect at least one
+downstream consumer.
+
+The deterministic lane ceilings are 2/1/1 for quick, 5/3/2 for balanced, and
+10/7/3 for full. Fewer eligible inputs yield fewer campaigns.
+
+### 12.2 Campaign contract
+
+Every `CAM-###` contains:
+
+- starting evidence IDs;
+- primitive IDs;
+- attacker capability and target boundary;
+- a falsifiable hypothesis;
+- target-relative source files;
+- zero or more typed graph questions using `query`, `callers`, `callees`, `impact`,
+  or `affected`;
+- validation method;
+- explicit stop conditions;
+- expected added value; and
+- initial `unresolved` disposition.
+
+Files and IDs must resolve before Intrusion begins. Questions are never generic
+instructions to “use the graph”; they name an operation, subject, and reason.
+
+## 13. Codegraph architecture
+
+Codegraph's first job is to index the target's source. It does so through a
+run-local copy because the upstream tool stores `.codegraph` state inside the
+indexed project. Pointing it directly at the target would violate immutability.
+
+### 13.1 Snapshot creation
+
+`setup-codegraph.sh` copies the target to
+`.harness/codegraph/<run-id>/project`, excluding `.git`, `.codegraph`, and
+`.harness`, and then runs `codegraph init` on that snapshot.
+
+Target-internal symlinks are resolved and remapped to equivalent paths inside the
+snapshot. Broken symlinks and symlinks escaping the repository are rejected. The
+target fingerprint is checked immediately afterward to prove snapshot preparation
+did not mutate the source checkout.
+
+The snapshot is immutable audit input from the perspective of later phases; only
+Codegraph's own index lives there. It is not a second source of truth for files.
+
+### 13.2 Typed query adapter
+
+`codegraph-adapter.py` supports five operations:
+
+| Operation | Intended use |
 |---|---|
-| Orchestration contract | `.omp/main/vulnops-main.md`, `AGENTS.md` |
-| Agent definitions | `.omp/agents/vulnops-*.md` |
-| Agent behavior prompts | `config/agents/*.md` |
-| Path setup and audit context | `scripts/run-audit.sh` |
-| Runtime containment | `scripts/harness-lib.sh`, `scripts/jail.sh` |
-| Config parsing | `scripts/parse-config.py`, `scripts/load-config.sh` |
-| Intelligence planning | `scripts/build-intelligence.py` |
-| Intrusion planning/finalization | `scripts/build-intrusion-plan.py`, `scripts/finalize-intrusion.py` |
-| codegraph execution | `scripts/run-codegraph.sh`, `scripts/codegraph-context.sh` |
-| Validation | `scripts/validate-config.sh`, `scripts/validate-phase.sh`, `scripts/validate-scan.sh` |
-| Operator status | `scripts/audit-status.sh` |
+| `query` | Bounded symbol/text-like structural search |
+| `callers` | Identify inbound call relationships |
+| `callees` | Identify outbound call relationships |
+| `impact` | Explore downstream impact from a subject |
+| `affected` | Explore affected symbols or paths |
 
-### Required Artifact Contract
+Every query includes `-p <snapshot-project>`, parses the real JSON envelope, and
+emits a bounded `context.json` plus sibling `receipt.json`. Nodes are capped at 500
+and edges at 1,000. The receipt records operation, subject, tool version, status,
+parse status, result count, normalized hash, meaningful flag, and warnings.
 
-| Phase | Required artifacts |
+### 13.3 Meaningful result rule
+
+A context is meaningful when it contains a real relationship edge or a result
+node—not merely the subject echoed back by the tool. Every executed campaign query
+must appear in `graph_query_receipts`. Only meaningful receipts may also appear in
+the `graph_evidence_refs` subset or a synthesized finding.
+
+This rule does not prevent indexing or querying. It prevents an empty or
+self-referential response from being cited as corroboration.
+
+Graph context can answer “where should source review continue?” It cannot by itself
+answer “is attacker input controlled?”, “is the behavior unsafe?”, “are conditions
+met?”, or “what impact follows?” Those claims require source and, where necessary,
+contained reproduction evidence.
+
+## 14. Intrusion architecture
+
+Intrusion creates one bounded worker per planned campaign. Workers receive stable
+campaign IDs, canonical evidence, source scope, and typed graph questions. They
+read source first, use Codegraph for navigation, and do not alter planning or Recon
+artifacts.
+
+### 14.1 Terminal result invariant
+
+Every campaign produces exactly one result with status:
+
+- `candidate`: at least one complete source-backed candidate exists;
+- `closed`: the hypothesis was investigated and disproved or bounded;
+- `rejected`: the campaign premise or evidence is invalid;
+- `needs_environment`: indispensable deployment or runtime evidence is absent.
+
+Candidate status requires candidates; other statuses forbid them. Aggregate result
+order must exactly match plan order. Missing, duplicate, orphan, or malformed
+results fail finalization.
+
+### 14.2 New primitives and candidates
+
+An investigation may add `NP-` primitives with the same typed prerequisite,
+capability, boundary, asset, condition, trust, and evidence structure used by the
+canonical index. A candidate must include:
+
+- stable `IC-` ID and finding kind;
+- attacker model;
+- concrete root-cause locations;
+- ordered entrypoint-to-sink trace;
+- conditions and impact;
+- evidence references and primitive IDs; and
+- source, dynamic, or environment-required validation level.
+
+Environment-required hypotheses cannot masquerade as candidates with established
+source proof. Graph-only candidates fail.
+
+### 14.3 Empty campaign plan
+
+When the campaign plan contains no campaigns, no intrusion worker is spawned.
+`finalize-intrusion.py` emits an empty `results` wrapper, empty bounded summary,
+and `ok` phase manifest. It does not fabricate graph questions or rebuild security
+surfaces to create work.
+
+## 15. Synthesis architecture
+
+Synthesis is the sole pre-verification finding authority. It reads the evidence
+index, SAST verified findings, and terminal intrusion results. It does not simply
+concatenate them.
+
+The synthesis agent:
+
+- deduplicates standalone issues by root cause;
+- preserves independently exploitable known findings;
+- separates newly proven impact expansions;
+- promotes complete new root causes and cross-evidence discoveries;
+- constructs chains only when capability transitions close; and
+- records closure rationale and canonical source references.
+
+### 15.1 Finding origins
+
+Findings are classified as:
+
+- `standalone_known`
+- `known_impact_expansion`
+- `composite_chain`
+- `independent_discovery`
+- `cross_evidence_discovery`
+
+Origin is an analytical property, not a severity modifier. A standalone known
+issue may be critical; a novel observation may be informational.
+
+### 15.2 Chain proof
+
+A chain must contain at least two ordered primitive steps. For every adjacent pair:
+
+```text
+left.output_capability == right.input_capability
+```
+
+Each step identifies its crossed boundary and evidence. The composition must
+establish distinct exploitability, a new boundary crossing, or materially greater
+combined impact. Merely listing vulnerabilities in sequence is not a chain.
+
+A valid chain may consist entirely of known primitives. The added value is the
+newly established transition and combined effect.
+
+### 15.3 Finding-kind gates
+
+All findings require the common attacker, behavior, root cause, trace, condition,
+impact, remediation, validation, provenance, and closure fields.
+
+Dependency findings additionally require advisory ID, package, installed version,
+affected use, and `reachable` status. Secret findings require exact `<redacted>`,
+location, exposure path, and validity of `confirmed_format` or `likely` for
+promotion. Chain findings require the primitive-step proof above. Non-chain
+findings may not carry chain steps.
+
+When no candidate source exists, `empty-synthesis.py` produces the canonical empty
+wrapper and phase manifest without invoking a synthesis model.
+
+## 16. Independent verification architecture
+
+Final Verification fans out one fresh-context verifier task per synthesized
+finding. OMP resolves the worker through a generated per-agent override bound to
+the configured verifier selector. Its `pi/slow` front-matter role is only a
+runtime-supported fallback; configuration validation requires the override to
+match exactly and verifies the selected model and thinking effort against OMP's
+catalog before an audit can start. The worker assumes the claim is wrong until
+cited source proves every material field.
+
+Possible verdicts are `verified`, `corrected`, `rejected`, and
+`needs_environment`. A correction must contain a complete corrected finding plus
+field-level before/after reasons. A rejection remains visible in the final wrapper
+with its verification reference; it is not rendered as an accepted finding.
+
+For a chain, the verifier records one ordered primitive result per step and checks
+every transition. A chain cannot be accepted because its terminal impact seems
+plausible while one intermediate capability is unsupported.
+
+### 16.1 Model attribution and diversity
+
+The primary selector owns source-validation attribution. The configured verifier
+selector must appear in every independent result. `model_diversity` compares the
+normalized underlying model identities and is stored as a JSON boolean in the
+run, context, verifier results, final wrapper, and every accepted finding. Known
+thinking-effort suffixes are removed for this comparison, so high versus xhigh on
+the same model is not misrepresented as independent model diversity.
+
+The validator rejects wrong-model results or inconsistent diversity metadata.
+When normalized model identities match, the report records the limitation; it
+does not misrepresent fresh context as model diversity.
+
+When synthesis is empty, deterministic finalization emits empty accepted and
+rejected arrays with the correct diversity value. No verifier tasks are fabricated.
+
+## 17. Safe reproduction
+
+Safe reproduction is optional and configuration-controlled. `off` means no target
+code is run. `safe` permits execution only through
+`scripts/run-safe-reproduction.sh` after a successful functional bubblewrap probe.
+
+### 17.1 Support boundary
+
+The supported backend is Linux bubblewrap. Readiness is based on a real namespace
+and isolation probe, not the presence of the executable. Kernel policy, container
+restrictions, or missing user namespaces may make bubblewrap unavailable even when
+installed.
+
+An unavailable backend yields environment-required evidence. There is no Docker,
+macOS, or direct-shell fallback.
+
+### 17.2 Resource and output controls
+
+The wrapper enforces configured wall time, CPU time, memory, process count, output
+size, and parallelism. Sanitized tests and draft patches may be retained in the
+designated reproduction/fix directories. Exact proof tokens and raw command output
+are not report inputs.
+
+Integration tests run only when the same functional probe succeeds. Unit tests
+always retain fail-closed refusal coverage.
+
+## 18. Reporting and information minimization
+
+`render-report.py` is deterministic and reads only
+`final-verification/findings.json`. No reporting agent can reinterpret rejected or
+intermediate evidence at the final stage.
+
+The JSON and Markdown reports include bounded titles, finding kind, origin,
+severity, risk score, confidence, verdict, impact, remediation, and canonical
+evidence references. Summary counts are recomputed from accepted findings and
+validated against the final artifact.
+
+Sanitization removes sensitive or proof-like tokens from presentation fields.
+Whole-scan validation also enforces artifact-size limits and scans persisted
+artifacts for forbidden secret patterns. Information minimization is an
+architectural property, not a user-selectable report option.
+
+## 19. Validation architecture
+
+Validation is layered because JSON-schema correctness alone cannot establish
+workflow integrity.
+
+### 19.1 Readiness validation
+
+`validate-config.sh` verifies:
+
+- the exact supported configuration keys and value bounds;
+- primary, tiered role, and verifier selector syntax;
+- custom-provider endpoint/auth requirements;
+- generated role mapping and canonical agent/spawn graph;
+- the pinned OMP version and platform checksum;
+- registration of every selected custom model;
+- required binaries, scripts, schemas, agents, and local OSV database;
+- absence of forbidden workflow/report/config surfaces;
+- offline agent tool policy;
+- deterministic reporting ownership; and
+- real functional tool output.
+
+Unknown configuration options fail. This prevents misspellings and dead knobs from
+creating the appearance of policy without runtime effect.
+
+### 19.2 Phase validation
+
+`validate-phase.sh` applies schema and semantic checks for one phase, validates its
+manifest, and rechecks the target fingerprint. Semantic checks include:
+
+- target-relative files exist and remain inside the repository;
+- source IDs and artifact references resolve canonically;
+- tool receipt counts and hashes match normalized output;
+- hunt, validation, campaign, and result IDs are unique;
+- campaign budgets and coverage counts agree;
+- campaign results match the plan exactly;
+- graph receipts are executed, hashed, and meaningful when cited;
+- traces run from entrypoint through propagation to sink;
+- dependency, secret, and chain kind-specific rules hold; and
+- source validation names the primary selector.
+
+### 19.3 Whole-scan validation
+
+`validate-scan.sh` validates every phase and adds global invariants:
+
+- workflow and run identity consistency;
+- all required phases and tasks terminal;
+- exact primary/verifier/diversity attribution;
+- final verifier result completeness;
+- final report counts and origin breakdown;
+- reproduction references and hashes;
+- redaction and forbidden sensitive-output patterns;
+- bounded artifact sizes;
+- absence of noncanonical phase directories; and
+- exact phase-directory seals for retained recovery inputs;
+- contiguous recovery history and recovery counts; and
+- unchanged target fingerprint.
+
+Only after this gate passes may the run be marked `complete`.
+
+## 20. Failure semantics
+
+| Condition | Required behavior |
 |---|---|
-| Recon | `repo-context/repo.md`, `repo-context/repo-context.json`, `repo-context/security-surfaces.json`, `repo-context/phase-manifest.json` |
-| SCA | `sca/summary.md`, `sca/raw-advisories.json`, `sca/phase-manifest.json` |
-| Secrets | `secrets/summary.md`, `secrets/redacted-candidates.json`, `secrets/phase-manifest.json` |
-| SAST | `sast/threat-model.json`, `sast/task-manifest.json`, `sast/raw-findings.json`, `sast/verified-findings.json`, `sast/dropped-findings.json`, `sast/coverage-ledger.json`, `sast/summary.md`, `sast/phase-manifest.json` |
-| Intelligence | `intelligence/evidence-corpus.json`, `intelligence/attack-surface-map.json`, `intelligence/intel-plan.json`, `intelligence/investigation-cards.json`, `intelligence/coverage-gaps.json`, `intelligence/rule-gaps.json`, `intelligence/summary.md`, `intelligence/phase-manifest.json` |
-| Triage | `triage/consolidated.md`, `triage/findings.json`, `triage/intrusion-seeds.json`, `triage/phase-manifest.json` |
-| Intrusion | `intrusion/summary.md`, `intrusion/enrichment.json`, `intrusion/intrusion-plan.json`, required `intrusion/codegraph-runs/*/codegraph-out/context.json`, `intrusion/phase-manifest.json` |
-| Final Reconciliation | `final-reconciliation/findings.json`, `final-reconciliation/summary.md`, `final-reconciliation/phase-manifest.json` |
-| Report | `report/security-report.md`, `report/security-report.json`, `report/phase-manifest.json` |
+| Target fingerprint changes | Fail the phase/run; never reconcile against changed source |
+| Binary missing or functional probe fails | Fail readiness before audit work |
+| Safe sandbox unavailable | Continue static work; classify required reproduction as `needs_environment` |
+| Scanner clean result | Persist valid empty normalized artifact and healthy receipt |
+| Scanner parse/count/hash mismatch | Fail Tool Collection |
+| Model emits malformed or out-of-scope artifact | Repair/rerun within bounded attempts or fail task |
+| Candidate evidence disproved | Record rejected/closed disposition |
+| Deployment fact unavailable | Record `needs_environment`; do not promote to confirmed |
+| Campaign worker missing/duplicate/orphan | Fail Intrusion finalization |
+| Planned graph query unexecuted | Fail campaign finalization |
+| Graph result empty or self-only | May be recorded as executed; may not be cited as meaningful evidence |
+| No campaigns/findings | Use deterministic empty path and valid manifests |
+| Verifier selector/model mismatch | Fail Final Verification/whole scan |
+| Final counts or references disagree | Fail whole-scan validation |
+| Failed or interrupted phase | Close the current execution; next initialization seals validated upstream phases, clears the failed/downstream suffix, and resumes there |
+| Retained phase seal mismatch | Refuse recovery or whole-scan completion; never repair the retained bytes |
 
-### Consistency Checklist For Workflow Changes
+## 21. Efficiency and DRY design
 
-When adding or changing a phase, update all of these in the same pass:
+The harness minimizes cost and duplicated reasoning through structural choices:
 
-1. Add paths in `scripts/run-audit.sh`.
-2. Add or update `.omp/agents/<phase>.md`.
-3. Add or update `config/agents/<phase>.md`.
-4. Add the phase to `.omp/main/vulnops-main.md` and `AGENTS.md`.
-5. Add phase validation in `scripts/validate-phase.sh`.
-6. Add cross-phase integrity checks in `scripts/validate-scan.sh`.
-7. Add status visibility in `scripts/audit-status.sh` if it is a top-level phase.
-8. Add readiness checks in `scripts/validate-config.sh`.
-9. Update `README.md` and this architecture document.
-10. Run syntax/config checks and a representative audit or recovery validation.
+- Recon creates one shared repository model.
+- Tool Collection runs scanners concurrently without model agents.
+- Tool-owned attack cells are not repeated by SAST.
+- Compatible contextual source hunts share one bounded packet while retaining
+  validator-enforced per-cell coverage.
+- Evidence bodies are stored once and referenced.
+- Planning scripts create IDs, budgets, and initial hypotheses mechanically;
+  models refine only the reasoning fields.
+- One evidence index replaces phase-specific handoff summaries.
+- One campaign result and one finding synthesis stage prevent repeated merges.
+- Empty work is finalized deterministically.
+- Independent verification is per finding, so parallelism scales with actual
+  reportable work.
+- Reporting performs no model call.
 
-### Current Scan Caveat
+Depth budgets make marginal cost legible. Phase manifests expose actual work and
+coverage, enabling empirical tuning without changing evidence rules.
 
-Existing scans created before the codegraph-only architecture may fail the newer gates. That is expected. Regenerate Intelligence codegraph scopes, Intrusion codegraph scopes, final reconciliation, and report artifacts before treating those scans as complete under this architecture.
+## 22. Extensibility rules
 
-Validation failure is the right signal here. It prevents stale reports from looking current and prevents graph or intelligence gaps from being papered over by old phase manifests.
+### 22.1 Adding an attack doctrine
 
+Add reusable methodology beneath `.omp/skills/`, reference it from the attack
+taxonomy or repository-specific threat model, and keep phase scheduling behavior
+in `.omp/agents/`. Do not copy doctrine into multiple agent prompts.
+
+### 22.2 Adding a scanner
+
+A scanner integration must provide:
+
+1. a deterministic wrapper with contained runtime paths;
+2. a functional fixture proving expected real output;
+3. a bounded sanitizer/normalizer;
+4. a strict normalized schema;
+5. a receipt containing version, parse status, count, warnings, and normalized
+   hash;
+6. evidence-index mapping with explicit trust and disposition; and
+7. phase and whole-scan semantic validation.
+
+Binary presence or a model-authored summary is not an integration.
+
+### 22.3 Adding a phase
+
+A phase requires one clear output authority, schema, manifest, task ownership,
+validator dispatch, run-state entry, zero-item behavior, and report/evidence
+consumer. If its outputs duplicate an existing authority, extend that authority
+instead of adding a phase.
+
+### 22.4 Adding a model provider
+
+Built-in OMP providers are selected directly. A custom provider must fit the one
+configured OpenAI-compatible endpoint and register every selected custom model.
+Introducing multiple endpoint/auth blocks requires an explicit architecture change
+because endpoint identity, offline policy, bootstrap generation, and resume
+identity would all need to expand together.
+
+## 23. Canonical invariants
+
+These invariants are non-negotiable:
+
+1. The target is read-only and fingerprint-stable.
+2. Runtime writes stay under `scans/` or `.harness/`.
+3. Audit network access is limited to the configured model endpoint.
+4. Every security claim resolves to source-backed canonical evidence.
+5. Scanner, advisory, graph, or model output alone is insufficient proof.
+6. Target execution occurs only through opt-in functional bubblewrap containment.
+7. Raw output and sensitive values never enter durable scan artifacts or reports.
+8. Every evidence record and campaign receives a disposition.
+9. Fanout is bounded and overflow is queued.
+10. Downstream phases never mutate upstream artifacts.
+11. Synthesis is the sole pre-verification finding authority.
+12. Final reporting reads independently verified findings only.
+13. Primary and verifier identity are explicit, validated, and resume-critical.
+14. Schema version `2.0` is the only artifact contract.
+15. There is one workflow, one phase dispatch path, and one report authority.
+
+Together, these choices make VulnOps more than a collection of security tools or
+prompts. It is a controlled evidence system for adversarial software analysis.

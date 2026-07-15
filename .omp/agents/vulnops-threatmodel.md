@@ -7,7 +7,6 @@ tools:
   - grep
   - glob
   - bash
-  - irc
   - yield
 model:
   - pi/slow
@@ -41,19 +40,41 @@ Inputs:
 - `.harness/audit-context.json`
 - `paths.repo_md`
 - `paths.repo_context_json`
+- `paths.security_surfaces_json`
+- `paths.sca_raw_advisories`
+- `paths.secrets_redacted_candidates`
+- `config/attack-taxonomy-v2.json`
 
 Write:
 - `paths.sast_threat_model_md`
 - `paths.sast_threat_model`
 
-Threat model JSON must include assets, trust boundaries, entrypoints, threats, assumptions, evidence_refs, warnings, and errors. Every threat must map to a real entrypoint, asset, or trust boundary.
+Threat model JSON must match `schemas/v2/threat-model.schema.json`. Select only
+applicable upstream attack classes and invent repository-specific classes when
+the mapped architecture requires them. Each selected class must have at least
+one source-backed `hunt_mapping`; never express applicability as a broad
+subsystem label or a cross-product suggestion.
 
-IRC progress:
-- Send `irc op=send to=Main message="<short phase status>"` at start, each material stage boundary, before validation, and before yielding.
-- Keep progress messages short. Do not include secrets, full findings, payloads, or raw tool output.
-- Do not send fake timer heartbeats; only report real state changes.
+Each hunt mapping defines one concrete security question and binds exactly the
+relevant class, subsystem, surfaces, threats, assets, attacker, entrypoints,
+boundaries, source files, stop conditions, priority, rationale, and evidence.
+Combine multiple surfaces only when the question follows one ordered source
+flow across them. If the class cannot be contextualized to a specific attacker
+path and source range, omit the class and mapping rather than creating generic
+work. Dependency and secret enumeration remain tool-owned; contextual mappings
+may record their validated coverage but must not schedule SAST enumeration.
 
-Before yielding, run `bash scripts/validate-phase.sh <scan_base> sast-threatmodel`.
+Emit strict, stable IDs and evidence-backed objects for assets, trust boundaries,
+entrypoints, subsystems, threats, classes, and mappings. Every mapping source
+file and entrypoint path must exist under the target; every cross-reference must
+resolve to an ID in the same document.
+
+Before yielding, validate the JSON and semantics directly:
+
+```bash
+python3 scripts/validate-json.py schemas/v2/threat-model.schema.json \
+  <paths.sast_threat_model> --semantic threat-model --target <repo_path>
+```
 
 Yield only after validation completes. Yield structured status with:
 - `status`
@@ -64,4 +85,10 @@ Yield only after validation completes. Yield structured status with:
 
 ## Skills
 
-None. This phase does not load SAST specialist lens skills.
+- `skill://vulnops-audit-core`
+- `skill://vulnops-attack-general`
+- `skill://vulnops-attack-ai-llm`
+- `skill://vulnops-attack-http-auth`
+- `skill://vulnops-attack-client`
+- `skill://vulnops-attack-native`
+- `skill://vulnops-attack-mobile`

@@ -1,0 +1,170 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "VulnOps v2 Dynamic Threat Model",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "repository_profile", "assets", "trust_boundaries", "entrypoints", "subsystems", "attack_classes", "threats", "hunt_mappings", "assumptions", "evidence_refs", "warnings", "errors"],
+  "properties": {
+    "schema_version": {"const": "2.0"},
+    "repository_profile": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kinds", "tags", "comparable"],
+      "properties": {
+        "kinds": {"type": "array", "items": {"enum": ["backend", "frontend", "library", "mobile", "cli", "infra", "native", "ai_llm", "http_protocol", "other"]}, "minItems": 1},
+        "tags": {"type": "array", "items": {"type": "string"}},
+        "comparable": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["name", "basis", "confidence"],
+          "properties": {
+            "name": {"type": ["string", "null"]},
+            "basis": {"type": "string", "minLength": 1},
+            "confidence": {"enum": ["low", "medium", "high", "not_applicable"]}
+          }
+        }
+      }
+    },
+    "assets": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "name", "sensitivity", "description", "evidence_refs"],
+        "properties": {
+          "id": {"type": "string", "pattern": "^(?!.*\\.\\.)[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$"},
+          "name": {"type": "string", "minLength": 1},
+          "sensitivity": {"enum": ["critical", "high", "medium", "low"]},
+          "description": {"type": "string", "minLength": 1},
+          "evidence_refs": {"type": "array", "items": {"type": "string", "minLength": 1}, "minItems": 1}
+        }
+      }
+    },
+    "trust_boundaries": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "source_trust", "target_trust", "description", "evidence_refs"],
+        "properties": {
+          "id": {"type": "string", "pattern": "^(?!.*\\.\\.)[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$"},
+          "source_trust": {"type": "string", "minLength": 1},
+          "target_trust": {"type": "string", "minLength": 1},
+          "description": {"type": "string", "minLength": 1},
+          "evidence_refs": {"type": "array", "items": {"type": "string", "minLength": 1}, "minItems": 1}
+        }
+      }
+    },
+    "entrypoints": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "path", "kind", "subsystem_ids", "trust_boundary_ids", "evidence_refs"],
+        "properties": {
+          "id": {"type": "string", "pattern": "^(?!.*\\.\\.)[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$"},
+          "path": {"type": "string", "minLength": 1},
+          "kind": {"enum": ["http", "cli", "worker", "library", "ipc", "file", "queue", "webhook", "browser", "mobile", "other"]},
+          "subsystem_ids": {"type": "array", "items": {"type": "string"}, "minItems": 1},
+          "trust_boundary_ids": {"type": "array", "items": {"type": "string"}},
+          "evidence_refs": {"type": "array", "items": {"type": "string", "minLength": 1}, "minItems": 1}
+        }
+      }
+    },
+    "subsystems": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "name", "files", "entrypoints", "security_surface_ids", "risk", "evidence_refs"],
+        "properties": {
+          "id": {"type": "string", "pattern": "^(?!.*\\.\\.)[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$"},
+          "name": {"type": "string", "minLength": 1},
+          "files": {"type": "array", "items": {"type": "string"}, "minItems": 1},
+          "entrypoints": {"type": "array", "items": {"type": "string"}},
+          "security_surface_ids": {"type": "array", "items": {"type": "string"}},
+          "risk": {"enum": ["critical", "high", "medium", "low"]},
+          "evidence_refs": {"type": "array", "items": {"type": "string"}, "minItems": 1}
+        }
+      }
+    },
+    "attack_classes": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "title", "domain", "owner", "methodology_ref", "reason", "evidence_refs", "custom"],
+        "properties": {
+          "id": {"type": "string", "pattern": "^(?!.*\\.\\.)[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$"},
+          "title": {"type": "string", "minLength": 1},
+          "domain": {"enum": ["general", "ai_llm", "http_auth", "client", "native", "mobile", "iac", "etl"]},
+          "owner": {"enum": ["sast", "sca", "secrets"]},
+          "methodology_ref": {"type": "string", "minLength": 1},
+          "lenses": {"type": "array", "items": {"type": "string", "minLength": 1}, "uniqueItems": true},
+          "reason": {"type": "string", "minLength": 1},
+          "evidence_refs": {"type": "array", "items": {"type": "string"}, "minItems": 1},
+          "custom": {"type": "boolean"}
+        }
+      }
+    },
+    "hunt_mappings": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id", "attack_class_id", "subsystem_id", "surface_ids",
+          "threat_ids", "asset_ids", "attacker", "entrypoint_ids",
+          "boundary_ids", "source_files", "security_question",
+          "stop_conditions", "priority", "applicability_reason",
+          "evidence_refs"
+        ],
+        "properties": {
+          "id": {"type": "string", "pattern": "^(?!.*\\.\\.)[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$"},
+          "attack_class_id": {"type": "string", "pattern": "^(?!.*\\.\\.)[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$"},
+          "subsystem_id": {"type": "string", "minLength": 1},
+          "surface_ids": {"type": "array", "items": {"type": "string", "minLength": 1}, "minItems": 1, "uniqueItems": true},
+          "threat_ids": {"type": "array", "items": {"type": "string", "minLength": 1}, "minItems": 1, "uniqueItems": true},
+          "asset_ids": {"type": "array", "items": {"type": "string", "minLength": 1}, "minItems": 1, "uniqueItems": true},
+          "attacker": {"type": "string", "minLength": 1},
+          "entrypoint_ids": {"type": "array", "items": {"type": "string", "minLength": 1}, "minItems": 1, "uniqueItems": true},
+          "boundary_ids": {"type": "array", "items": {"type": "string", "minLength": 1}, "minItems": 1, "uniqueItems": true},
+          "source_files": {"type": "array", "items": {"type": "string", "minLength": 1}, "minItems": 1, "uniqueItems": true},
+          "security_question": {"type": "string", "minLength": 12},
+          "stop_conditions": {"type": "array", "items": {"type": "string", "minLength": 1}, "minItems": 1},
+          "priority": {"enum": ["critical", "high", "medium", "low"]},
+          "applicability_reason": {"type": "string", "minLength": 12},
+          "evidence_refs": {"type": "array", "items": {"type": "string", "minLength": 1}, "minItems": 1}
+        }
+      }
+    },
+    "threats": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "title", "attacker", "asset_ids", "entrypoint_ids", "attack_class_ids", "description", "evidence_refs"],
+        "properties": {
+          "id": {"type": "string", "pattern": "^(?!.*\\.\\.)[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$"},
+          "title": {"type": "string", "minLength": 1},
+          "attacker": {"type": "string", "minLength": 1},
+          "asset_ids": {"type": "array", "items": {"type": "string"}, "minItems": 1},
+          "entrypoint_ids": {"type": "array", "items": {"type": "string"}, "minItems": 1},
+          "attack_class_ids": {"type": "array", "items": {"type": "string"}, "minItems": 1},
+          "description": {"type": "string", "minLength": 1},
+          "evidence_refs": {"type": "array", "items": {"type": "string", "minLength": 1}, "minItems": 1}
+        }
+      }
+    },
+    "assumptions": {"type": "array", "items": {"type": "string"}},
+    "evidence_refs": {"type": "array", "items": {"type": "string"}, "minItems": 1},
+    "warnings": {"type": "array", "items": {"type": "string"}},
+    "errors": {"type": "array", "items": {"type": "string"}}
+  }
+}

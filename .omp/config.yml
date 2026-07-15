@@ -6,12 +6,16 @@ startup:
   setupWizard: false
 
 modelRoles:
-  default: 'on-prem/claude-opus-4-6'
-  task: 'on-prem/claude-opus-4-6'
-  slow: 'on-prem/claude-opus-4-6'
-  smol: 'on-prem/claude-opus-4-6'
-  plan: 'on-prem/claude-opus-4-6'
-  advisor: 'on-prem/claude-opus-4-6'
+  default: 'openai-codex/gpt-5.5:low'
+  task: 'openai-codex/gpt-5.5:medium'
+  slow: 'openai-codex/gpt-5.5:high'
+  smol: 'openai-codex/gpt-5.5:minimal'
+  plan: 'openai-codex/gpt-5.5:medium'
+  advisor: 'openai-codex/gpt-5.5:low'
+  vision: 'openai-codex/gpt-5.5:high'
+  designer: 'openai-codex/gpt-5.5:high'
+  commit: 'openai-codex/gpt-5.5:minimal'
+  tiny: 'openai-codex/gpt-5.5:minimal'
 
 memory:
   enabled: false
@@ -25,8 +29,22 @@ search:
   enabled: false
 remote:
   enabled: false
+defaultThinkingLevel: low
+async:
+  enabled: true
+  maxJobs: 32
+  pollWaitDuration: smart
+task:
+  batch: true
+  maxConcurrency: 16
+  maxRecursionDepth: 2
+  agentModelOverrides:
+    vulnops-independent-verify-one: 'openai-codex/gpt-5.4:xhigh'
+  isolation:
+    mode: none
 tools:
   approvalMode: yolo
 advisor:
-  enabled: true
+  enabled: false
+  subagents: false
   immuneTurns: 3

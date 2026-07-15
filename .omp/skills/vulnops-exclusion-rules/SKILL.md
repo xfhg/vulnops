@@ -1,6 +1,6 @@
 ---
 name: vulnops-exclusion-rules
-description: VulnOps security audit exclusion rules for reducing false positives in SAST, triage, and verification
+description: VulnOps security audit exclusion rules for reducing false positives in source validation, synthesis, and verification
 ---
 
 # VulnOps Exclusion Rules

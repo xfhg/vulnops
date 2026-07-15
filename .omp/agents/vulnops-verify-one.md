@@ -7,7 +7,6 @@ tools:
   - grep
   - glob
   - bash
-  - irc
   - yield
 model:
   - pi/slow
@@ -16,7 +15,7 @@ blocking: false
 output:
   properties:
     status:
-      enum: [verified, false-positive, deferred]
+      enum: [source_verified, rejected, deferred, environment_required]
     finding_id:
       type: string
     confidence:
@@ -31,7 +30,10 @@ output:
         type: string
 ---
 
-Verify exactly one SAST raw finding. Assume it is wrong until source review proves otherwise.
+Verify exactly one deduplicated v2 SAST candidate. Assume it is wrong until
+source review proves otherwise. Apply the VulnOps adversarial tests,
+including concrete exploitation, impact, baseline, mitigation, and actual
+parser/runtime behavior.
 
 Path contract:
 - Read `.harness/audit-context.json` before analysis.
@@ -48,16 +50,18 @@ Procedure:
 1. Open the cited source and sink files at the cited lines.
 2. Walk callers backward to an external or lower-privileged entrypoint.
 3. Hunt for upstream validation, encoding, allow-lists, auth/authz gates, framework protections, feature flags, dead code, generated code, test-only scope, and non-production assumptions.
-4. Return `verified` only when the path is reachable, unmitigated, concrete, in scope, and cited.
-5. Return `false-positive` when any required proof fails.
-6. Return `deferred` only when required evidence is unavailable or contradictory.
+4. Return `source_verified` only when the path is reachable, unmitigated,
+   concrete, in scope, and cited.
+5. Return `rejected` when any required proof fails.
+6. Return `environment_required` when deployment/runtime evidence outside the
+   repository is essential; return `deferred` only for contradictory evidence.
 
-Write one verifier JSON under `<paths.sast_verify>/<finding_id>.json`. Include closure_reason for every outcome.
-
-IRC progress:
-- Send `irc op=send to=Main message="<short phase status>"` at start, each material stage boundary, before validation, and before yielding.
-- Keep progress messages short. Do not include secrets, full findings, payloads, or raw tool output.
-- Do not send fake timer heartbeats; only report real state changes.
+Write one verifier JSON matching `schemas/v2/validation-result.schema.json`
+under `<paths.sast_verify>/<finding_id>.json`. Include closure reason,
+corrections, model selector, and mechanical-check results for every outcome.
+If any promoted claim changes, include a complete strict `corrected_candidate`
+with the same safe ID; otherwise set it to `null`. Never emit corrections that
+the corrected candidate does not apply.
 
 Before yielding, confirm your verifier JSON exists, is valid JSON, and its absolute path starts with `<scan_base>/sast/verify/`. The SAST lead validates the aggregate `sast-verify` phase.
 
@@ -80,3 +84,10 @@ Yield structured status with:
 - `skill://vulnops-logic-bug`
 - `skill://vulnops-deserialization`
 - `skill://vulnops-crypto`
+- `skill://vulnops-audit-core`
+- `skill://vulnops-attack-general`
+- `skill://vulnops-attack-ai-llm`
+- `skill://vulnops-attack-http-auth`
+- `skill://vulnops-attack-client`
+- `skill://vulnops-attack-native`
+- `skill://vulnops-attack-mobile`

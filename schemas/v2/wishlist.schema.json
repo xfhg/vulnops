@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "VulnOps v2 Audit Wishlist",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "run_id", "items"],
+  "properties": {
+    "schema_version": {"const": "2.0"},
+    "run_id": {"type": "string", "minLength": 1},
+    "items": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "finding_id", "kind", "request", "reason", "status", "evidence_refs"],
+        "properties": {
+          "id": {"type": "string", "minLength": 1},
+          "finding_id": {"type": ["string", "null"]},
+          "kind": {"enum": ["build_dependency", "runtime_environment", "deployment_context", "sandbox", "tool", "configuration"]},
+          "request": {"type": "string", "minLength": 1},
+          "reason": {"type": "string", "minLength": 1},
+          "status": {"enum": ["open", "resolved", "unavailable"]},
+          "evidence_refs": {"type": "array", "items": {"type": "string"}}
+        }
+      }
+    }
+  }
+}

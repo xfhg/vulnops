@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "VulnOps v2 Sanitized Report",
+  "type": "object", "additionalProperties": false,
+  "required": ["schema_version", "run_id", "repository", "commit", "date", "summary", "findings", "hardening_notes", "positive_patterns", "coverage", "limitations", "scans"],
+  "properties": {
+    "schema_version": {"const": "2.0"}, "run_id": {"type": "string", "minLength": 1}, "repository": {"type": "string", "minLength": 1}, "commit": {"type": "string", "minLength": 1}, "date": {"type": "string", "minLength": 1},
+    "summary": {"type": "object"},
+    "findings": {
+      "type": "array",
+      "items": {
+        "type": "object", "additionalProperties": false,
+        "required": ["id", "title", "finding_kind", "origin", "severity", "risk_score", "confidence", "verdict", "description", "impact", "remediation", "evidence_refs"],
+        "properties": {
+          "id": {"type": "string", "pattern": "^F-[0-9]{3}$"}, "title": {"type": "string", "minLength": 1},
+          "finding_kind": {"enum": ["code", "dependency", "secret", "chain"]}, "origin": {"type": "string", "minLength": 1},
+          "severity": {"type": "string", "minLength": 1}, "risk_score": {"type": "integer"}, "confidence": {"type": "string", "minLength": 1},
+          "verdict": {"type": "string", "minLength": 1}, "description": {"type": "string", "minLength": 1}, "impact": {"type": "string", "minLength": 1},
+          "remediation": {"type": "string", "minLength": 1}, "evidence_refs": {"type": "array", "items": {"type": "string"}}
+        }
+      }
+    },
+    "hardening_notes": {"type": "array"}, "positive_patterns": {"type": "array"}, "coverage": {"type": "object"}, "limitations": {"type": "array", "items": {"type": "string"}}, "scans": {"type": "object"}
+  }
+}

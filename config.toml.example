@@ -11,9 +11,24 @@ base_url = ""
 # API key — empty string if no auth required
 api_key = ""
 
-# Default model name (used by OMP model discovery)
-# Must match a model ID served by the endpoint, or a [[llm.provider.models]] entry.
-model = "mimo-v2.5"
+# Canonical primary selector used for source-validation identity.
+selector = "openai-codex/gpt-5.5:high"
+
+# Model ID retained only for custom-provider metadata consistency.
+model = "gpt-5.5:high"
+
+# Use the same underlying model at lower effort for orchestration and mechanical
+# work. These selectors are part of run/resume identity.
+[llm.roles]
+orchestrator = "openai-codex/gpt-5.5:low"
+task = "openai-codex/gpt-5.5:medium"
+slow = "openai-codex/gpt-5.5:high"
+smol = "openai-codex/gpt-5.5:minimal"
+
+# Independent verification may use a different model/provider. Empty inherits
+# llm.selector.
+[llm.verification]
+selector = "openai-codex/gpt-5.4:xhigh"
 
 # Provider metadata (used by scripts/bootstrap-omp.sh to generate
 # .harness/home/.omp/agent/models.yml)
@@ -40,92 +55,44 @@ discovery = "proxy"
 # ── Harness scan settings ─────────────────────────────────────────────
 [harness]
 # default_depth: scan intensity level
-#   "quick"     — ~5 min, focused on high-confidence vectors
-#   "balanced"  — ~15 min, broader coverage
-#   "full"      — ~30 min+, comprehensive (requires confirmation)
+#   "quick"     — 12 hunt tasks / 24 questions, 1 gapfill round
+#   "balanced"  — 32 hunt tasks / 64 questions, 2 gapfill rounds
+#   "full"      — 64 hunt tasks / 128 questions, 3 gapfill rounds
 default_depth = "balanced"
 
-[harness.runtime]
-# audit_offline: audit runtime must not perform internet bootstrap work.
-# The configured [llm].base_url is still allowed as the on-prem model endpoint.
-audit_offline = true
-allow_configured_llm_endpoint = true
-# Keep tool homes, temp files, caches, logs, and agent outputs inside this repo.
-contained = true
-approved_write_roots = ["scans", ".harness", "work", "bins"]
-# OMP session tool allowlist (--tools), --approval-mode, and --advisor are
-# single-sourced in run.sh (the OMP launch script); not duplicated here.
-
-[harness.scans.sca]
-# Path to wraith binary (relative to harness root)
-binary = "bins/wraith"
-# Extra CLI flags passed to wraith
-#   "--offline" — use local OSV database, no network calls
-extra_flags = ["--offline"]
-
 [harness.scans.sast]
-# Maximum parallel workers for file analysis
-max_workers = 5
-# Number of candidate files per analysis batch
-batch_size = 10
+# Maximum UTF-8 size of one exact contextual hunt packet. Adjacent source work
+# must be returned as a bounded rabbit hole rather than widening the packet.
+context_packet_bytes = 65536
 
-[harness.scans.sast.fanout.quick]
-deepdive_chunks = 4
-verify_findings = 4
+[harness.scans.sast.budget.quick]
+max_hunt_tasks = 12
+max_hunt_questions = 24
+max_gapfill_rounds = 1
+max_attempts = 2
 
-[harness.scans.sast.fanout.balanced]
-deepdive_chunks = 8
-verify_findings = 8
+[harness.scans.sast.budget.balanced]
+max_hunt_tasks = 32
+max_hunt_questions = 64
+max_gapfill_rounds = 2
+max_attempts = 2
 
-[harness.scans.sast.fanout.full]
-deepdive_chunks = 16
-verify_findings = 12
+[harness.scans.sast.budget.full]
+max_hunt_tasks = 64
+max_hunt_questions = 128
+max_gapfill_rounds = 3
+max_attempts = 2
 
-[harness.scans.secrets]
-# Path to poltergeist binary (relative to harness root)
-binary = "bins/poltergeist"
-# Extra CLI flags passed to poltergeist
-extra_flags = []
-
-[harness.scans.intelligence]
-# Intelligence uses codegraph AST analysis. Optional because the audit can
-# fall back to triage + intrusion + report when the intelligence phase
-# cannot run.
-optional = true
-
-[harness.scans.intrusion]
-# Intrusion uses codegraph AST analysis (no LLM extraction step). Optional
-# because the audit can still terminate with status ok when the target has
-# no parseable code for codegraph.
-optional = true
-
-[harness.scans.reconciliation]
-# Reconcile triage findings with intrusion enrichment before report generation.
-enabled = true
-
-# ── Output ────────────────────────────────────────────────────────────
-[output]
-# Directory for all scan results (relative to harness root)
-scan_dir = "scans"
-# Report output format
-#   "markdown" — human-readable .md report only
-#   "json"     — machine-readable .json report only
-#   "both"     — generate both markdown and json
-format = "both"
-# Include raw tool stdout/stderr in the report
-#   true  — full tool output appended to report
-#   false — summary only, raw output in scans/<tool>/raw/ for reference
-include_raw = false
-
-# ── Logging ───────────────────────────────────────────────────────────
-[logging]
-# Log verbosity
-#   "debug" — full trace output (verbose)
-#   "info"  — progress and milestones (default)
-#   "warn"  — warnings and errors only
-#   "error" — errors only
-level = "info"
-# Directory for harness log files (relative to harness root)
-dir = ".harness/logs"
-# Number of recent scan log sets to retain (older logs are pruned)
-retain = 5
+# Safe reproduction is config-only and off by default. When enabled, target
+# code may run only through the fail-closed disposable sandbox wrapper.
+[harness.reproduction]
+mode = "off" # off | safe
+sandbox = "auto" # auto | bubblewrap
+timeout_seconds = 120
+cpu_seconds = 60
+memory_mb = 1024
+max_processes = 64
+max_output_kb = 256
+max_parallel = 1
+# Sanitized regression tests and draft patches are retained under the run.
+# Exact proof tokens and raw command output are never rendered into reports.

@@ -143,6 +143,12 @@ The control plane consists of:
 The control plane decides whether work is compatible, complete, and safe to
 promote. It never manufactures a security conclusion.
 
+Deterministic Tool Collection uses `ok` for every contract-valid scanner result,
+including findings and normal deduplication. Match occurrences and unique
+normalized records are separate coverage counts, not health warnings. There is
+no successful degraded state for this phase; deterministic contract violations
+fail closed.
+
 Model-owned top-level phases are supervised OMP jobs. The lead captures one job
 ID per stable phase task, observes that job through the OMP job lifecycle, and
 enforces the depth-specific deadline stored in audit context. A job is not
@@ -183,12 +189,24 @@ repository path
 + exact orchestrator, task, slow, and smol role selectors
 + normalized verifier selector
 + workflow identity
++ harness contract fingerprint
++ resolved SAST budget snapshot
 ```
 
-Only the current incomplete run resumes when every field matches. `complete` and
-`failed` are terminal run states. A changed role selector creates a new run even
-if the underlying model happens to be similar; exact selector identity is the
-reproducible execution configuration available to the harness.
+Only the current incomplete run resumes when immutable target and model/policy
+identity matches. `complete` is closed; `failed` and interrupted executions are
+recoverable states. A changed role selector creates a new run even if the
+underlying model happens to be similar. A harness-contract or resolved-budget
+change starts a recorded recovery generation inside the same audit.
+
+The harness contract fingerprint binds schemas, planning and aggregation code,
+validators, recovery code, and phase-agent contracts. Each successful phase also
+receives a deterministic whole-directory seal. Recovery preserves those bytes,
+removes the failed phase and every downstream phase, resets their task entries,
+and resumes from the first unfinished phase. When the harness contract changed,
+whole-scan validation accepts a retained prior-contract phase only by verifying
+its recorded seal and prior successful phase state; rerun phases must pass current
+semantic validation.
 
 ### 5.1 Why commit alone is insufficient
 
@@ -205,6 +223,8 @@ Run statuses are:
 initialized → running → complete
                     ├→ degraded
                     └→ failed
+                         │
+                         └→ recover → initialized
 ```
 
 Phase statuses are `pending`, `running`, `ok`, `degraded`, `failed`, or `skipped`.
@@ -214,13 +234,25 @@ status is synchronized into the run manifest.
 
 The state updater enforces phase order and mutual exclusion in code. A top-level
 task has one stable ID, at most two real attempts, and may run only with its owning
-phase. Successful artifacts must be existing scan-relative files; failed tasks
-have null artifacts and bounded errors. Stopping a run closes every running
-phase/task, and a successful phase cannot be restarted or mutated.
+phase. Successful artifacts must be existing scan-relative files and the owning
+phase directory is sealed after validation; failed tasks have null artifacts and
+bounded errors. Stopping closes every running phase/task. Recovery never restarts
+or mutates successful upstream phases: it retains their seals and discards the
+failed/downstream suffix. The two-attempt ceiling applies per recovery generation.
 
-`degraded` is not a schema escape hatch. It represents structurally valid output
-with bounded limitations such as `needs_environment`; malformed or inconsistent
-output fails.
+`degraded` is not a schema escape hatch and does not mean “less than exhaustive.”
+It represents structurally valid output with a material loss of audit capability,
+such as `needs_environment` or a failed SAST cell. Expected bounded behavior—tool
+deduplication, findings-present scanner exits, normal negative results, and
+configured depth/task/question/round/attempt ceilings—remains `ok`. Malformed or
+inconsistent output fails.
+
+The semantic phase validator derives the permitted status from canonical
+coverage rather than trusting a producer-supplied label. Recon, healthy Tool
+Collection, and Campaign Planning close `ok`. Intrusion, Synthesis, Final
+Verification, and Report may close `degraded` only when their canonical coverage
+contains `needs_environment`. SAST may close `degraded` only for a failed cell or
+environment-required verification.
 
 ## 6. Canonical workflow
 
@@ -307,6 +339,42 @@ fanout.
 The phase directory itself is part of the authority model. A worker artifact
 written outside its assigned directory is invalid even if its JSON is otherwise
 well formed.
+
+### 7.1 Why SAST and Intrusion are separate phases
+
+SAST and Intrusion both inspect source, but they answer different questions and
+own different evidence transitions.
+
+| Dimension | SAST hunting | Intrusion |
+|---|---|---|
+| Primary question | Which individual security flaws exist across the modeled attack surface? | What can an attacker accomplish from the accumulated evidence? |
+| Planning unit | Source-backed security question mapping an attack-class lens to one concrete flow | Falsifiable campaign built from evidence records and typed primitives |
+| Search shape | Broad and coverage-driven | Narrow and hypothesis-driven |
+| Starting inputs | Recon, tool evidence, threat model, and target source | Evidence index, campaign plan, SAST findings, target source, and graph snapshot |
+| Main evidence transition | Candidate source trace → adversarially verified root cause or terminal disposition | Starting capability → validated downstream consumer, boundary transition, expanded impact, new root cause, or closure |
+| Composition | Establishes individual vulnerability primitives | Tests whether primitives compose and whether output capabilities satisfy later prerequisites |
+| Terminal authority | Verified findings, rejected/deferred candidates, and coverage dispositions under `sast/` | One `candidate`, `closed`, `rejected`, or `needs_environment` result per campaign under `intrusion/` |
+
+This separation prevents campaign work from becoming an unbounded second SAST
+pass. SAST spends its bounded budget establishing broad source coverage and
+validating individual root causes. Campaign Planning then converts all validated
+evidence—not only SAST findings—into prerequisites, gained capabilities,
+boundaries, and concrete hypotheses. Intrusion follows only those bounded
+hypotheses to test downstream consumption, control bypass, capability closure,
+and materially greater impact.
+
+Codegraph has a deliberately stronger procedural role in Intrusion: every planned
+typed question must be executed and receipted. Its evidentiary role remains weak,
+however. Graph output is navigation context in both phases and cannot establish
+attacker control, unsafe behavior, satisfied exploit conditions, or impact without
+independent source evidence.
+
+The output boundary is equally important. A source-verified SAST result may become
+a confirmed primitive, while an Intrusion worker may only return a terminal
+campaign result and bounded candidates or new primitives. Intrusion does not
+rewrite SAST evidence or publish findings. Synthesis alone decides whether the
+combined evidence supports an independently exploitable known finding, a new root
+cause, an impact expansion, or a capability-closed multi-step chain.
 
 ## 8. Recon architecture
 
@@ -416,15 +484,24 @@ planning and model-based source investigation.
 ### 10.1 Threat model
 
 The threat model identifies subsystems, entrypoints, boundaries, risk, applicable
-attack classes, and repository-specific classes. Attack doctrine lives in reusable
-skills; the phase agent coordinates work but does not duplicate specialist
-methodology in its prompt.
+attack classes, and repository-specific classes. Applicability is expressed only
+through source-backed hunt mappings. Each mapping binds a class to concrete
+surfaces, threats, assets, attacker, entrypoints, boundaries, source files, a
+security question, stop conditions, priority, rationale, and evidence. Attack
+doctrine lives in reusable skills; the phase agent coordinates work but does not
+duplicate specialist methodology in its prompt.
 
-### 10.2 Area × attack-class cells
+### 10.2 Contextual hunt cells
 
-`build-hunt-plan.py` expands applicable subsystems and security surfaces across the
-attack taxonomy. Every cell has a stable ID, owner, priority, evidence references,
-status, and disposition rationale.
+`build-hunt-plan.py` creates exactly one cell per declared hunt mapping. It does
+not construct a subsystem × surface × attack-class cross-product. A selected
+class with no contextual mapping fails threat-model validation rather than
+creating generic research work.
+
+Every cell retains the complete mapping context, stable ID, owner, methodology,
+specialist lenses, priority, evidence, status, and disposition rationale. Multiple
+surfaces may belong to one cell only when they form one concrete ordered source
+flow.
 
 Dependency enumeration and secret enumeration remain owned by Tool Collection.
 When those tools produced validated output, their cells are marked
@@ -432,36 +509,56 @@ When those tools produced validated output, their cells are marked
 
 ### 10.3 Batching without losing coverage
 
-Up to four compatible attack-class cells for the same subsystem are placed in one
-hunt task. The batch shares source context and avoids rereading the same subsystem,
-but each underlying cell remains independently visible in the coverage ledger.
+Up to four cells are placed in one hunt task only when they share a subsystem,
+domain, overlapping source files, and an entrypoint, boundary, or surface. The
+same attack class is not repeated within a batch. This lets compatible questions
+share source review without treating arbitrary cells as related.
 
-Context packets are bounded in bytes. If necessary, broad context is removed
-before the packet is allowed to exceed its configured size; workers can still read
-specific source through tools. This prevents prompt size from growing with the
-repository while preserving source access.
+Packets are bounded in bytes and contain the authoritative task plus its exact
+cell definitions. Repository-wide trust boundaries, entrypoints, and unrelated
+scanner references are not copied into every packet. Essential context is never
+silently truncated; an oversized packet fails planning and must be split.
 
 Each worker receives a task-specific file beneath `sast/hunt-tasks/`, not the
-aggregate hunt plan. The packet embeds the exact task and the SHA-256 of the plan
-that produced it. SAST validation requires an exact packet set and rejects stale,
-orphaned, or hash-mismatched work before promotion.
+aggregate hunt plan. The packet embeds the exact task, exact cells, and SHA-256 of
+the plan that produced it. SAST validation requires an exact packet set and
+rejects stale, orphaned, oversized, or hash-mismatched work before promotion.
 
 ### 10.4 Depth and fanout
 
-| Depth | Hunt concurrency | Maximum tasks | Gapfill rounds | Verification concurrency |
-|---|---:|---:|---:|---:|
-| quick | 4 | 12 | 1 | 4 |
-| balanced | 8 | 32 | 2 | 8 |
-| full | 16 | 64 | 3 | 12 |
+| Depth | Hunt concurrency | Maximum tasks | Maximum questions | Gapfill rounds | Verification concurrency |
+|---|---:|---:|---:|---:|---:|
+| quick | 4 | 12 | 24 | 1 | 4 |
+| balanced | 8 | 32 | 64 | 2 | 8 |
+| full | 16 | 64 | 128 | 3 | 12 |
 
-One quarter of the task budget is reserved for gapfill when gapfill is enabled.
-Overflow is queued. Task attempts are bounded; lack of capacity becomes an
-explicit deferred disposition rather than silent omission.
+Initial work is scheduled risk-first and round-robin across subsystems so one
+large critical subsystem cannot consume the whole budget. One quarter of the task
+budget is reserved for gapfill when gapfill is enabled. Gapfill schedules
+evidence-backed rabbit holes first, cell-specific shallow/failed retries second,
+and initially deferred contextual cells last. Overflow remains explicitly
+deferred. Separate task and question ceilings prevent batching from hiding
+unbounded analysis scope. Task attempts are bounded.
+
+After the last gapfill round, the finalizer converts remaining `deferred` and
+`shallow` cells to `depth_limited`. This is a terminal coverage disposition for
+the selected audit depth, remains visible to downstream gap planning and the
+report, and does not degrade the phase. Only failed cells or environment-required
+verification degrade SAST.
 
 ### 10.5 Aggregation, deduplication, and alternate traces
 
-`finalize-sast.py` validates raw hunt results, aggregates candidates, clusters by
-root cause, creates the validation queue, and builds the coverage ledger. A
+Each worker returns exactly one `cell_results` row per assigned cell. Finding,
+clean, not-applicable, shallow, and failed states carry cell-specific review
+evidence. Candidate IDs must match the cell rows, and candidates may reference
+only cells with the same attack class. Reviewing an unassigned file or entrypoint
+fails the worker contract; adjacent work must be returned as a contextual rabbit
+hole.
+
+`finalize-sast.py` validates raw hunt results, derives outcomes from the per-cell
+rows, aggregates candidates, clusters by root cause, creates the validation queue,
+and builds the coverage ledger. One candidate in a batched task cannot mark its
+unrelated sibling cells as findings. A
 preferred trace is not allowed to suppress a valid alternate: when verification
 rejects the preferred member of a cluster, `--advance-alternates` promotes the
 next bounded alternate for verification.
@@ -739,8 +836,12 @@ wrapper and phase manifest without invoking a synthesis model.
 ## 16. Independent verification architecture
 
 Final Verification fans out one fresh-context verifier task per synthesized
-finding. The worker runs with `pi/verifier`, not a primary role. It assumes the
-claim is wrong until cited source proves every material field.
+finding. OMP resolves the worker through a generated per-agent override bound to
+the configured verifier selector. Its `pi/slow` front-matter role is only a
+runtime-supported fallback; configuration validation requires the override to
+match exactly and verifies the selected model and thinking effort against OMP's
+catalog before an audit can start. The worker assumes the claim is wrong until
+cited source proves every material field.
 
 Possible verdicts are `verified`, `corrected`, `rejected`, and
 `needs_environment`. A correction must contain a complete corrected finding plus
@@ -862,6 +963,8 @@ manifest, and rechecks the target fingerprint. Semantic checks include:
 - redaction and forbidden sensitive-output patterns;
 - bounded artifact sizes;
 - absence of noncanonical phase directories; and
+- exact phase-directory seals for retained recovery inputs;
+- contiguous recovery history and recovery counts; and
 - unchanged target fingerprint.
 
 Only after this gate passes may the run be marked `complete`.
@@ -884,6 +987,8 @@ Only after this gate passes may the run be marked `complete`.
 | No campaigns/findings | Use deterministic empty path and valid manifests |
 | Verifier selector/model mismatch | Fail Final Verification/whole scan |
 | Final counts or references disagree | Fail whole-scan validation |
+| Failed or interrupted phase | Close the current execution; next initialization seals validated upstream phases, clears the failed/downstream suffix, and resumes there |
+| Retained phase seal mismatch | Refuse recovery or whole-scan completion; never repair the retained bytes |
 
 ## 21. Efficiency and DRY design
 
@@ -892,8 +997,8 @@ The harness minimizes cost and duplicated reasoning through structural choices:
 - Recon creates one shared repository model.
 - Tool Collection runs scanners concurrently without model agents.
 - Tool-owned attack cells are not repeated by SAST.
-- Compatible source hunts share one bounded context packet while retaining
-  per-cell coverage.
+- Compatible contextual source hunts share one bounded packet while retaining
+  validator-enforced per-cell coverage.
 - Evidence bodies are stored once and referenced.
 - Planning scripts create IDs, budgets, and initial hypotheses mechanically;
   models refine only the reasoning fields.

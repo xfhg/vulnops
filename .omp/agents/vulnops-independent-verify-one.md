@@ -2,7 +2,7 @@
 name: vulnops-independent-verify-one
 description: Fresh-context verifier for one synthesized finding or chain
 tools: [read, grep, glob, bash, write, yield]
-model: [pi/verifier]
+model: [pi/slow]
 thinkingLevel: xhigh
 blocking: false
 output:

@@ -52,10 +52,11 @@ Sequence:
 1. Send an IRC status to `Main` that SAST started.
 2. Run `vulnops-threatmodel` as task ID `ThreatModel`, then validate its yield.
 3. Run `python3 scripts/build-hunt-plan.py <repo_path> <scan_base>`. This
-   deterministically batches up to four compatible attack cells for the same
-   subsystem without losing per-cell coverage. Read only task IDs, round, and
-   budget from `paths.sast_hunt_plan`; workers receive their derived packets
-   from `paths.sast_hunt_tasks`.
+   schedules only source-backed contextual hunt mappings, fairly across
+   subsystems, and batches up to four cells only when their source flow and
+   specialist context overlap. Read only task IDs, round, and budget from
+   `paths.sast_hunt_plan`; workers receive their derived packets from
+   `paths.sast_hunt_tasks`.
 4. Fan out `vulnops-deepdive-chunk` by hunt task, respecting bounded fanout:
    - quick: max 4 concurrent chunks
    - balanced: max 8 concurrent chunks
@@ -63,16 +64,19 @@ Sequence:
    Queue overflow batches; do not drop chunks. Use one OMP 16.4.4 `task` batch
    per wave with `agent: vulnops-deepdive-chunk`, a short shared `context`, and
    per-item `id`/`assignment` naming the task ID and packet path. Nested task
-   calls are synchronous; validate every structured yield before continuing.
+   calls are synchronous. For every completed worker, run
+   `python3 <tools.sast_contract> <repo_path> <packet> <result>` and repair or
+   retry an invalid result before aggregation.
 5. Run `python3 scripts/finalize-sast.py <repo_path> <scan_base>` to
    mechanically validate, aggregate, root-cause deduplicate, and build the
    coverage ledger and validation queue.
 6. Run bounded gapfill as a real loop: call `scripts/build-hunt-plan.py
    --gapfill`, execute only newly queued tasks, and re-aggregate; then repeat
    until no task is added or the plan's task/round/attempt cap is reached.
-   Reserved high-risk cells and distinct rabbit-hole leads consume the same
-   budget. Never call gapfill repeatedly without executing and aggregating its
-   newly added tasks.
+   Evidence-backed rabbit holes run first, then bounded shallow/failed retries,
+   then contextual cells deferred by the initial fair schedule. All consume the
+   same total task budget. Never call gapfill repeatedly without executing and
+   aggregating its newly added tasks.
 7. Fan out `vulnops-verify-one` by deduplicated validation-queue candidate:
    - quick: max 4 concurrent findings
    - balanced: max 8 concurrent findings

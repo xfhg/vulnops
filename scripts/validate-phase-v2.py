@@ -4,6 +4,9 @@ from __future__ import annotations
 import argparse, hashlib, importlib.util, json, os, subprocess, sys
 from pathlib import Path
 from typing import Any
+from artifact_policy import oversized_artifacts, phase_for_artifact
+from harness_contract import harness_contract_sha256
+from sast_contract import validate_hunt_result
 PHASE_DIR={"recon":"repo-context","tool-collection":"tool-collection","sast":"sast","campaign-planning":"campaign-planning","intrusion":"intrusion","synthesis":"synthesis","final-verification":"final-verification","report":"report"}
 def load(path:Path,errors:list[str])->Any:
     try:return json.loads(path.read_text(encoding="utf-8"))
@@ -59,6 +62,8 @@ def semantic_campaign(scan:Path,target:Path,index:dict,plan:dict,errors:list[str
     for primitive in primitives.values():
         for rid in primitive.get("source_record_ids",[]):
             if rid not in records:errors.append(f"primitive {primitive.get('id')} references unknown record {rid}")
+            elif primitive.get("type")=="credential" and records[rid].get("source_kind")=="secret" and records[rid].get("disposition")=="unresolved":
+                errors.append(f"primitive {primitive.get('id')} promotes an unverified secret scanner candidate")
     campaigns=plan.get("campaigns",[]); ids=[x.get("id") for x in campaigns if isinstance(x,dict)]
     if len(ids)!=len(set(ids)):errors.append("campaign IDs must be unique")
     counts={lane:0 for lane in ("primitive_led","gap_driven","direct_validation")}
@@ -142,8 +147,13 @@ def main()->int:
     if Path(str(context.get("scan_base",""))).resolve()!=scan:errors.append("audit context scan mismatch")
     if context.get("run_id")!=run.get("run_id"):errors.append("audit context run mismatch")
     if context.get("workflow")!="canonical-redteam-v2":errors.append("audit context is not the canonical greenfield workflow")
+    current_contract=harness_contract_sha256(root)
+    if context.get("harness_contract_sha256")!=current_contract or run.get("harness_contract_sha256")!=current_contract:errors.append("harness contract fingerprint mismatch")
+    if context.get("sast_budget")!=run.get("sast_budget"):errors.append("SAST budget snapshot mismatch")
     if not target.is_dir():errors.append("audit target is unavailable")
     phase=a.phase
+    for relative,size,limit in oversized_artifacts(scan):
+        if phase_for_artifact(relative)==phase:errors.append(f"artifact exceeds bounded size policy: {relative} ({size}>{limit})")
     if phase=="recon":
         for path in (scan/"repo-context/repo.md",):
             if not path.is_file():errors.append(f"missing {path}")
@@ -154,12 +164,30 @@ def main()->int:
         for name,artifact_name in (("wraith-receipt.json","sca-advisories.json"),("poltergeist-receipt.json","secrets-redacted.json")):
             schema(root,"tool-receipt.schema.json",scan/"tool-collection"/name,errors); receipt=load(scan/"tool-collection"/name,errors)
             if isinstance(receipt,dict) and (scan/"tool-collection"/artifact_name).is_file() and receipt.get("normalized_sha256")!=hashlib.sha256((scan/"tool-collection"/artifact_name).read_bytes()).hexdigest():errors.append(f"{name} normalized hash mismatch")
+            if isinstance(receipt,dict) and (receipt.get("status")!="ok" or receipt.get("parse_status")!="ok" or receipt.get("warnings")):errors.append(f"{name} must be healthy and warning-free")
+        collection_doc=load(scan/"tool-collection/collection.json",errors) or {}
+        if collection_doc.get("warnings"):errors.append("tool collection must not publish warnings")
     elif phase=="sast":
         schema(root,"threat-model.schema.json",scan/"sast/threat-model.json",errors,semantic="threat-model",target=target); schema(root,"hunt-plan.schema.json",scan/"sast/hunt-plan.json",errors,semantic="hunt-plan",target=target); schema(root,"candidate-finding.schema.json",scan/"sast/raw-findings.json",errors,True,"candidate",target); schema(root,"validation-result.schema.json",scan/"sast/validation-results.json",errors,True,"validation-result",target); schema(root,"coverage-ledger.schema.json",scan/"sast/coverage-ledger.json",errors); schema(root,"wishlist.schema.json",scan/"sast/wishlist.json",errors)
-        hunt_plan=load(scan/"sast/hunt-plan.json",errors) or {}; plan_sha=hashlib.sha256((scan/"sast/hunt-plan.json").read_bytes()).hexdigest() if (scan/"sast/hunt-plan.json").is_file() else ""; expected_packets=set()
+        hunt_plan=load(scan/"sast/hunt-plan.json",errors) or {}; threat_doc=load(scan/"sast/threat-model.json",errors) or {}; plan_sha=hashlib.sha256((scan/"sast/hunt-plan.json").read_bytes()).hexdigest() if (scan/"sast/hunt-plan.json").is_file() else ""; expected_packets=set();cell_map={str(cell.get("id")):cell for cell in hunt_plan.get("cells",[]) if isinstance(cell,dict)};packet_limit=int((hunt_plan.get("budget") or {}).get("context_packet_bytes",65536))
+        if hunt_plan.get("budget")!=run.get("sast_budget"):errors.append("hunt plan budget differs from the run identity snapshot")
+        mapping_map={str(mapping.get("id")):mapping for mapping in threat_doc.get("hunt_mappings",[]) if isinstance(mapping,dict)};base_cells=[cell for cell in cell_map.values() if cell.get("lead_key") is None]
+        if {str(cell.get("mapping_id")) for cell in base_cells}!=set(mapping_map):errors.append("hunt plan cells do not match the threat-model mapping set")
+        for cell in base_cells:
+            mapping=mapping_map.get(str(cell.get("mapping_id")))
+            if not mapping:continue
+            expected={"surface_ids":mapping.get("surface_ids"),"subsystem":mapping.get("subsystem_id"),"attack_class_id":mapping.get("attack_class_id"),"priority":mapping.get("priority"),"threat_ids":mapping.get("threat_ids"),"asset_ids":mapping.get("asset_ids"),"attacker":mapping.get("attacker"),"entrypoint_ids":mapping.get("entrypoint_ids"),"boundary_ids":mapping.get("boundary_ids"),"files":mapping.get("source_files"),"security_question":mapping.get("security_question"),"stop_conditions":mapping.get("stop_conditions"),"applicability_reason":mapping.get("applicability_reason")}
+            if any(cell.get(key)!=value for key,value in expected.items()):errors.append(f"hunt cell does not preserve contextual mapping: {cell.get('id')}")
         for task in hunt_plan.get("tasks",[]):
             task_id=str(task.get("id","")); expected_packets.add(f"{task_id}.json"); packet=load(scan/"sast/hunt-tasks"/f"{task_id}.json",errors) or {}
-            if packet.get("run_id")!=hunt_plan.get("run_id") or packet.get("hunt_plan_ref")!="sast/hunt-plan.json" or packet.get("hunt_plan_sha256")!=plan_sha or packet.get("task")!=task:errors.append(f"hunt task packet mismatch: {task_id}")
+            expected_cells=[cell_map.get(str(cell_id)) for cell_id in task.get("cell_ids",[])]
+            if packet.get("run_id")!=hunt_plan.get("run_id") or packet.get("hunt_plan_ref")!="sast/hunt-plan.json" or packet.get("hunt_plan_sha256")!=plan_sha or packet.get("task")!=task or packet.get("cells")!=expected_cells:errors.append(f"hunt task packet mismatch: {task_id}")
+            packet_path=scan/"sast/hunt-tasks"/f"{task_id}.json"
+            if packet_path.is_file() and packet_path.stat().st_size>packet_limit:errors.append(f"hunt task packet exceeds bounded context: {task_id}")
+            result_path=scan/"sast/deepdive"/f"{task_id}.json"; result=load(result_path,errors)
+            if isinstance(result,dict):
+                result_errors=validate_hunt_result(root,target,task,[cell for cell in expected_cells if isinstance(cell,dict)],result,threat_doc)
+                errors.extend(f"{task_id}: {message}" for message in result_errors)
         actual_packets={path.name for path in (scan/"sast/hunt-tasks").glob("*.json")} if (scan/"sast/hunt-tasks").is_dir() else set()
         if actual_packets!=expected_packets:errors.append("hunt task packet set does not match hunt plan")
         for name in ("verified-findings.json","dropped-findings.json","dedup-clusters.json"):
@@ -183,7 +211,34 @@ def main()->int:
             if artifact(scan,str(item.get("independent_verification_ref",""))) is None:errors.append(f"{item.get('id')} rejection reference does not resolve")
     elif phase=="report":schema(root,"report.schema.json",scan/"report/security-report.json",errors)
     schema(root,"phase-manifest.schema.json",scan/PHASE_DIR[phase]/"phase-manifest.json",errors)
-    manifest(scan,phase,errors)
+    phase_manifest=manifest(scan,phase,errors)
+    coverage=phase_manifest.get("coverage",{}) if isinstance(phase_manifest.get("coverage"),dict) else {}
+    expected_phase_status={
+        "recon":"ok",
+        "tool-collection":"ok",
+        "campaign-planning":"ok",
+        "intrusion":"degraded" if coverage.get("needs_environment") else "ok",
+        "synthesis":"degraded" if coverage.get("needs_environment") else "ok",
+        "final-verification":"degraded" if coverage.get("needs_environment") else "ok",
+        "report":"degraded" if coverage.get("needs_environment") else "ok",
+    }.get(phase)
+    if expected_phase_status is not None and phase_manifest.get("status")!=expected_phase_status:
+        errors.append(f"{phase} manifest must close {expected_phase_status}; status must reflect material capability loss, not normal operating results")
+    if phase=="tool-collection" and (phase_manifest.get("status")!="ok" or phase_manifest.get("warnings")):
+        errors.append("healthy deterministic tool collection must close ok and warning-free")
+    if phase=="sast":
+        ledger_doc=load(scan/"sast/coverage-ledger.json",errors) or {}
+        funnel=ledger_doc.get("funnel",{}) if isinstance(ledger_doc,dict) else {}
+        cells=ledger_doc.get("cells",[]) if isinstance(ledger_doc,dict) else []
+        material_loss=bool(funnel.get("environment_required")) or any(isinstance(cell,dict) and cell.get("status")=="failed" for cell in cells)
+        expected_status="degraded" if material_loss else "ok"
+        if phase_manifest.get("status")!=expected_status:
+            errors.append(f"SAST manifest must close {expected_status}; configured depth limits are BAU coverage, not degradation")
+        if any(isinstance(cell,dict) and cell.get("status") in {"deferred","shallow"} for cell in cells):
+            errors.append("final SAST coverage must close deferred/shallow cells as depth_limited")
+        expected_depth_limited=sum(1 for cell in cells if isinstance(cell,dict) and cell.get("status")=="depth_limited")
+        if (phase_manifest.get("coverage") or {}).get("depth_limited")!=expected_depth_limited:
+            errors.append("SAST manifest depth_limited count does not match the coverage ledger")
     if target.is_dir():
         result=subprocess.run([sys.executable,str(root/"scripts/target-fingerprint.py"),str(target)],capture_output=True,text=True,check=False)
         if result.returncode or result.stdout.strip()!=run.get("target_fingerprint"):errors.append("target working tree changed during audit")

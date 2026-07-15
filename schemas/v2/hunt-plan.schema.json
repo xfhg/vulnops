@@ -11,10 +11,11 @@
     "budget": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["max_concurrency", "max_hunt_tasks", "max_gapfill_rounds", "max_attempts", "context_packet_bytes"],
+      "required": ["max_concurrency", "max_hunt_tasks", "max_hunt_questions", "max_gapfill_rounds", "max_attempts", "context_packet_bytes"],
       "properties": {
         "max_concurrency": {"type": "integer", "minimum": 1},
         "max_hunt_tasks": {"type": "integer", "minimum": 1},
+        "max_hunt_questions": {"type": "integer", "minimum": 1},
         "max_gapfill_rounds": {"type": "integer", "minimum": 0},
         "max_attempts": {"type": "integer", "minimum": 1},
         "context_packet_bytes": {"type": "integer", "minimum": 1024}
@@ -39,19 +40,38 @@
       "items": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["id", "surface_id", "subsystem", "attack_class_id", "domain", "status", "priority", "evidence_refs", "owner", "lead_key", "disposition_reason"],
+        "required": [
+          "id", "mapping_id", "surface_ids", "subsystem", "attack_class_id",
+          "domain", "methodology_refs", "lenses", "status", "priority",
+          "threat_ids", "asset_ids", "attacker", "entrypoint_ids",
+          "boundary_ids", "files", "security_question", "stop_conditions",
+          "applicability_reason", "evidence_refs", "owner", "lead_key",
+          "disposition_reason"
+        ],
         "properties": {
           "id": {"type": "string", "pattern": "^(?!.*\\.\\.)[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$"},
-          "surface_id": {"type": "string", "minLength": 1},
+          "mapping_id": {"type": "string", "minLength": 1},
+          "surface_ids": {"type": "array", "items": {"type": "string", "minLength": 1}, "minItems": 1, "uniqueItems": true},
           "subsystem": {"type": "string", "minLength": 1},
           "attack_class_id": {"type": "string", "minLength": 1},
           "domain": {"enum": ["general", "ai_llm", "http_auth", "client", "native", "mobile", "iac", "etl"]},
+          "methodology_refs": {"type": "array", "items": {"type": "string", "minLength": 1}, "minItems": 1, "uniqueItems": true},
+          "lenses": {"type": "array", "items": {"type": "string", "minLength": 1}, "uniqueItems": true},
           "status": {"enum": ["planned", "tool_satisfied", "finding", "clean", "not_applicable", "deferred", "shallow", "failed"]},
           "priority": {"enum": ["critical", "high", "medium", "low"]},
-          "evidence_refs": {"type": "array", "items": {"type": "string"}},
+          "threat_ids": {"type": "array", "items": {"type": "string", "minLength": 1}, "minItems": 1, "uniqueItems": true},
+          "asset_ids": {"type": "array", "items": {"type": "string", "minLength": 1}, "minItems": 1, "uniqueItems": true},
+          "attacker": {"type": "string", "minLength": 1},
+          "entrypoint_ids": {"type": "array", "items": {"type": "string", "minLength": 1}, "minItems": 1, "uniqueItems": true},
+          "boundary_ids": {"type": "array", "items": {"type": "string", "minLength": 1}, "minItems": 1, "uniqueItems": true},
+          "files": {"type": "array", "items": {"type": "string", "minLength": 1}, "minItems": 1, "uniqueItems": true},
+          "security_question": {"type": "string", "minLength": 12},
+          "stop_conditions": {"type": "array", "items": {"type": "string", "minLength": 1}, "minItems": 1},
+          "applicability_reason": {"type": "string", "minLength": 12},
+          "evidence_refs": {"type": "array", "items": {"type": "string", "minLength": 1}, "minItems": 1},
           "owner": {"enum": ["sast", "sca", "secrets"]},
           "lead_key": {"type": ["string", "null"]},
-          "disposition_reason": {"type": "string"}
+          "disposition_reason": {"type": "string", "minLength": 1}
         }
       }
     },
@@ -60,10 +80,10 @@
       "items": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["id", "cell_ids", "subsystem", "attack_class_ids", "domain", "methodology_refs", "lenses", "files", "entrypoints", "context_packet", "evidence_refs", "attempt", "round"],
+        "required": ["id", "cell_ids", "subsystem", "attack_class_ids", "domain", "methodology_refs", "lenses", "files", "entrypoints", "evidence_refs", "attempt", "round"],
         "properties": {
           "id": {"type": "string", "pattern": "^(?!.*\\.\\.)[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$"},
-          "cell_ids": {"type": "array", "items": {"type": "string", "pattern": "^(?!.*\\.\\.)[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$"}, "minItems": 1},
+          "cell_ids": {"type": "array", "items": {"type": "string", "pattern": "^(?!.*\\.\\.)[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$"}, "minItems": 1, "maxItems": 4, "uniqueItems": true},
           "subsystem": {"type": "string", "minLength": 1},
           "attack_class_ids": {"type": "array", "items": {"type": "string", "minLength": 1}, "minItems": 1, "maxItems": 4, "uniqueItems": true},
           "domain": {"enum": ["general", "ai_llm", "http_auth", "client", "native", "mobile", "iac", "etl"]},
@@ -71,7 +91,6 @@
           "lenses": {"type": "array", "items": {"type": "string", "minLength": 1}},
           "files": {"type": "array", "items": {"type": "string"}, "minItems": 1},
           "entrypoints": {"type": "array", "items": {"type": "string"}},
-          "context_packet": {"type": "string", "minLength": 1},
           "evidence_refs": {"type": "array", "items": {"type": "string"}, "minItems": 1},
           "attempt": {"type": "integer", "minimum": 1},
           "round": {"type": "integer", "minimum": 0}

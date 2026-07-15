@@ -33,6 +33,8 @@ def main()->int:
     limitations=[]
     if not context.get("model_diversity"):limitations.append("Discovery and independent verification used fresh contexts with the same underlying model identity; reasoning effort alone is not model diversity.")
     if context.get("reproduction_mode")=="off":limitations.append("Safe reproduction was disabled; dynamic claims are limited to other cited deterministic evidence.")
+    if int(context.get("recovery_count",0)):
+        limitations.append(f"The audit recovered {int(context.get('recovery_count',0))} time(s); previously validated upstream phases were retained under immutable artifact seals and failed/downstream phases were rerun.")
     scans={}
     for phase,directory in (("recon","repo-context"),("tool-collection","tool-collection"),("sast","sast"),("campaign-planning","campaign-planning"),("intrusion","intrusion"),("synthesis","synthesis"),("final-verification","final-verification")):
         manifest=load(a.scan_base/directory/"phase-manifest.json",{});scans[phase]={"status":manifest.get("status"),"coverage":manifest.get("coverage",{})}

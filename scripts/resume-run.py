@@ -1,11 +1,13 @@
 #!/usr/bin/env python3
-"""Return the resumable v2 run matching the complete audit identity, if any."""
+"""Return the matching incomplete v2 run and whether it needs recovery."""
 
 from __future__ import annotations
 
 import argparse
 import json
 from pathlib import Path
+
+from harness_contract import harness_contract_sha256, resolved_sast_budget
 
 
 TASK_PHASE = {
@@ -42,6 +44,9 @@ def main() -> int:
     context = load(args.context)
     if context is None or context.get("schema_version") != "2.0" or context.get("workflow") != "canonical-redteam-v2":
         return 0
+    root = Path(__file__).resolve().parent.parent
+    current_contract = harness_contract_sha256(root)
+    current_budget = resolved_sast_budget(args.depth)
     identity = (
         ("repo_path", args.repo_path),
         ("short_sha", args.commit),
@@ -64,11 +69,25 @@ def main() -> int:
         return 0
 
     scan_base = Path(str(context.get("scan_base", "")))
+    try:
+        scan_base.resolve().relative_to((root / "scans").resolve())
+    except ValueError:
+        return 0
     manifest = load(scan_base / "run-manifest.json")
     ledger = load(scan_base / "task-ledger.json")
     if manifest is None or ledger is None:
         return 0
+    if manifest.get("run_id") != context.get("run_id") or ledger.get("run_id") != context.get("run_id"):
+        return 0
     if manifest.get("workflow") != "canonical-redteam-v2":
+        return 0
+    manifest_identity = (
+        ("commit", args.commit),
+        ("depth", args.depth),
+        ("target_fingerprint", args.target_fingerprint),
+        ("reproduction_mode", args.reproduction_mode),
+    )
+    if any(str(manifest.get(key)) != expected for key, expected in manifest_identity):
         return 0
     if str(manifest.get("model", "")) != args.model.strip():
         return 0
@@ -76,43 +95,54 @@ def main() -> int:
         return 0
     if manifest.get("model_roles") != expected_roles:
         return 0
-    if manifest.get("status") in {"complete", "failed"}:
+    if manifest.get("status") == "complete":
         return 0
 
     phases = manifest.get("phases", {})
-    running_phases = [phase for phase, status in phases.items() if status == "running"] if isinstance(phases, dict) else []
+    phases_valid = isinstance(phases, dict)
+    if not phases_valid:
+        phases = {}
+    running_phases = [phase for phase, status in phases.items() if status == "running"]
     tasks = ledger.get("tasks", []) if isinstance(ledger.get("tasks"), list) else []
     task_ids = [str(item.get("id")) for item in tasks if isinstance(item, dict)]
     running_tasks = [item for item in tasks if isinstance(item, dict) and item.get("status") == "running"]
-    if len(task_ids) != len(set(task_ids)) or len(running_phases) > 1 or len(running_tasks) > 1:
-        return 0
-    if any(task_id not in TASK_PHASE for task_id in task_ids):
-        return 0
-    if any(int(item.get("attempts", 0)) > 2 for item in tasks if isinstance(item, dict)):
-        return 0
-    if running_tasks:
-        running = running_tasks[0]
-        if len(running_phases) != 1 or TASK_PHASE.get(str(running.get("id"))) != running_phases[0] or running.get("phase") != running_phases[0]:
-            return 0
-    elif running_phases:
-        return 0
+    inconsistent = (
+        not phases_valid
+        or set(phases) != set(TASK_PHASE.values())
+        or len(task_ids) != len(set(task_ids))
+        or len(running_phases) > 1
+        or len(running_tasks) > 1
+        or any(task_id not in TASK_PHASE for task_id in task_ids)
+    )
+    interrupted = bool(running_phases or running_tasks)
     for item in tasks:
         if not isinstance(item, dict) or item.get("status") not in {"ok", "degraded", "shallow"}:
             continue
         ref = item.get("artifact")
         if not isinstance(ref, str) or not ref or Path(ref).is_absolute():
-            return 0
+            inconsistent = True
+            continue
         artifact = (scan_base / ref).resolve()
         try:
             artifact.relative_to(scan_base.resolve())
         except ValueError:
-            return 0
+            inconsistent = True
         if not artifact.is_file():
-            return 0
+            inconsistent = True
 
     run_id = str(context.get("run_id", ""))
     if run_id and str(scan_base):
-        print(f"{run_id}\t{scan_base}")
+        needs_recovery = (
+            manifest.get("status") == "failed"
+            or any(status == "failed" for status in phases.values())
+            or interrupted
+            or inconsistent
+            or context.get("harness_contract_sha256") != current_contract
+            or manifest.get("harness_contract_sha256") != current_contract
+            or context.get("sast_budget") != current_budget
+            or manifest.get("sast_budget") != current_budget
+        )
+        print(f"{run_id}\t{scan_base}\t{'recover' if needs_recovery else 'resume'}")
     return 0
 
 

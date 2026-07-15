@@ -9,7 +9,7 @@ def load(path: Path, fallback: Any) -> Any:
     try: return json.loads(path.read_text(encoding="utf-8"))
     except (OSError,json.JSONDecodeError): return fallback
 def write(path: Path, doc: object) -> None:
-    path.parent.mkdir(parents=True,exist_ok=True); tmp=path.with_name(f".{path.name}.{os.getpid()}.tmp"); tmp.write_text(json.dumps(doc,indent=2,sort_keys=True)+"\n"); tmp.replace(path)
+    path.parent.mkdir(parents=True,exist_ok=True); tmp=path.with_name(f".{path.name}.{os.getpid()}.tmp"); tmp.write_text(json.dumps(doc,separators=(",",":"),sort_keys=True)+"\n"); tmp.replace(path)
 def stable(prefix: str, *parts: object) -> str:
     return prefix+hashlib.sha256("\0".join(str(x) for x in parts).encode()).hexdigest()[:12].upper()
 def strings(items: object) -> list[str]: return [str(x) for x in items] if isinstance(items,list) else []
@@ -30,7 +30,10 @@ def main() -> int:
         sid=str(item.get("id")); ref=f"tool-collection/sca-advisories.json:{sid}"; rid=record("sca",sid,ref,"unresolved",f"{item.get('advisory_id')} affects {item.get('package')} {item.get('version')}",[str(item.get("source_lockfile"))]); primitive("vulnerability","candidate",rid,["Affected dependency use is reachable from an attacker-controlled path."],f"Potential capability described by {item.get('advisory_id')}","Dependency boundary",[str(item.get("package"))],[],[ref])
     secrets=load(a.scan_base/"tool-collection/secrets-redacted.json",{})
     for item in secrets.get("candidates",[]) if isinstance(secrets,dict) else []:
-        sid=str(item.get("id")); ref=f"tool-collection/secrets-redacted.json:{sid}"; rid=record("secret",sid,ref,"unresolved",f"Redacted {item.get('type')} candidate",[str(item.get("file"))]); primitive("credential","candidate",rid,["Candidate is a valid, active credential and is exposed to the attacker."],"Authenticate or access the credential's associated service","Credential boundary",[str(item.get("file"))],[str(item.get("exposure_path"))],[ref])
+        # Scanner-only secret candidates have no proven credential capability.
+        # Preserve every disposition in the evidence ledger, but do not inflate
+        # unverified matches into attack primitives before source validation.
+        sid=str(item.get("id")); ref=f"tool-collection/secrets-redacted.json:{sid}"; record("secret",sid,ref,"unresolved",f"Redacted {item.get('type')} candidate",[str(item.get("file"))])
     for receipt_name in ("wraith-receipt.json","poltergeist-receipt.json"):
         receipt=load(a.scan_base/"tool-collection"/receipt_name,{})
         for offset,message in enumerate(receipt.get("warnings",[]) if isinstance(receipt,dict) else [],1):

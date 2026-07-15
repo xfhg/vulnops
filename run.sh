@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # run.sh — Validate prepared audit runtime, load config, and run OMP.
-# Usage: bash run.sh "audit the target repo"
-#        bash run.sh                   (opens OMP interactive)
+# Usage: ./run.sh "audit the target repo"
+#        ./run.sh                   (opens OMP interactive)
 set -euo pipefail
 
 HARNESS_ROOT="$(cd "$(dirname "$0")" && pwd)"
@@ -41,6 +41,28 @@ fi
 # such as install-tools.sh, fetch-osv-db.sh, dependency setup, and clone-target.sh
 # stay outside this path.
 "${HARNESS_ROOT}/scripts/validate-config.sh" >/dev/null
+
+# Tag audit context initialized or resumed by this launcher so shutdown can
+# fail-close only work owned by this OMP session.
+AUDIT_CONTEXT_PATH="${VULNOPS_AUDIT_CONTEXT:-${HARNESS_ROOT}/.harness/audit-context.json}"
+VULNOPS_LAUNCHER_SESSION_ID="$(date -u +%Y%m%dT%H%M%SZ)-$$-${RANDOM}${RANDOM}"
+export VULNOPS_LAUNCHER_SESSION_ID
+
+close_interrupted_audit() {
+    if ! python3 "${HARNESS_ROOT}/scripts/close-interrupted-run.py" \
+        "$AUDIT_CONTEXT_PATH" --launcher-session-id "$VULNOPS_LAUNCHER_SESSION_ID"; then
+        echo "[warning] could not close interrupted audit state; the next initialization will recover it" >&2
+    fi
+}
+finish_launcher() {
+    local status="${1:-$?}"
+    trap - EXIT INT TERM
+    close_interrupted_audit
+    exit "$status"
+}
+trap 'finish_launcher $?' EXIT
+trap 'finish_launcher 130' INT
+trap 'finish_launcher 143' TERM
 
 # Tool allowlist is the single source of truth for the OMP session tool set
 # (operator preference: only real OMP tool names, single-sourced here).

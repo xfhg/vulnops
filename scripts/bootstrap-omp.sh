@@ -159,8 +159,6 @@ config_lines = [
     "modelRoles:",
 ]
 config_lines.extend(f"  {role}: {q(value)}" for role, value in role_selectors.items())
-config_lines.append(f"  primary: {q(selector)}")
-config_lines.append(f"  verifier: {q(verifier_selector)}")
 config_lines.extend(
     [
         "",
@@ -185,6 +183,8 @@ config_lines.extend(
         "  batch: true",
         "  maxConcurrency: 16",
         "  maxRecursionDepth: 2",
+        "  agentModelOverrides:",
+        f"    vulnops-independent-verify-one: {q(verifier_selector)}",
         "  isolation:",
         "    mode: none",
         "tools:",

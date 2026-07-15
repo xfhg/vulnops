@@ -73,12 +73,41 @@ Repository ── Recon ── Tool Collection ── SAST ── Campaign Plann
 |---|---|---|
 | Recon | Model projects, inputs, entrypoints, assets, and trust boundaries | Repository context and immutable security surfaces |
 | Tool Collection | Run deterministic scanners concurrently and normalize healthy output | SCA records, redacted secret records, tool receipts |
-| SAST | Threat-model and hunt source across risk-prioritized subsystem/attack-class cells | Validated source findings, closures, and coverage ledger |
+| SAST | Threat-model concrete attacker paths and hunt source-backed security questions | Validated source findings, closures, and coverage ledger |
 | Campaign Planning | Convert all prior evidence into typed primitives and bounded hypotheses | Evidence index and campaign plan |
 | Intrusion | Test capability transitions, impact expansion, and uncovered attack paths | Exactly one terminal result per campaign |
 | Synthesis | Deduplicate root causes and establish standalone or composed findings | Sole pre-verification finding set |
 | Independent Verification | Challenge each finding in a fresh verifier context | Accepted findings and explicit rejections |
 | Report | Render bounded verified output | Sanitized JSON and Markdown |
+
+### SAST hunting and Intrusion
+
+SAST hunting asks **what security flaws exist in each part of the codebase**.
+It works broadly across risk-prioritized, source-backed hunt mappings. Each
+mapping contextualizes an attack-class lens to a concrete attacker, source flow,
+boundary, files, and security question. The planner never expands a class across
+every surface merely because it applies somewhere in the subsystem. Workers
+trace attacker-controlled input through source, verify individual root causes,
+and record a separate disposition for every assigned question.
+
+Intrusion asks **what an attacker can accomplish with the evidence already
+available**. Campaigns start from SAST findings and other canonical evidence, then
+investigate downstream consumers, capability transitions, control bypasses,
+impact expansions, and composed attack paths. This work is narrower and
+hypothesis-driven rather than a second general source hunt.
+
+For example, SAST may establish that an attacker can write outside an archive
+extraction directory. Campaign Planning can turn that write primitive into a
+hypothesis about a privileged configuration consumer, and Intrusion can determine
+whether the primitive crosses another boundary or produces materially greater
+impact. Codegraph helps Intrusion navigate those paths, but its output never
+replaces source-backed proof.
+
+SAST therefore owns systematic flaw discovery and initial source verification;
+Intrusion owns adversarial follow-through. Neither publishes the final finding
+set. Both feed Synthesis, the sole authority that deduplicates root causes and
+decides whether the evidence supports a standalone finding, an impact expansion,
+or a closed multi-step chain.
 
 ### Orchestration, subagents, and parallelism
 
@@ -102,7 +131,8 @@ Nested task batches block their coordinator until the batch returns, while the
 workers inside the batch execute concurrently. Every coordinator may spawn only
 its declared specialist workers. Stable task IDs prevent duplicate launches, and
 overflow is queued rather than silently dropped. SAST workers receive small,
-hash-bound task packets instead of the aggregate hunt plan.
+hash-bound task packets containing only their exact contextual cells instead of
+the aggregate hunt plan or repository-wide boundary context.
 
 The phase order remains sequential by design:
 
@@ -143,11 +173,11 @@ Campaigns are selected through three complementary lanes:
 
 Budgets are deterministic and depth-bounded:
 
-| Depth | Primitive-led | Gap-driven | Direct validation | Maximum SAST hunt tasks | Gapfill rounds |
-|---|---:|---:|---:|---:|---:|
-| `quick` | 2 | 1 | 1 | 12 | 1 |
-| `balanced` | 5 | 3 | 2 | 32 | 2 |
-| `full` | 10 | 7 | 3 | 64 | 3 |
+| Depth | Primitive-led | Gap-driven | Direct validation | Maximum SAST hunt tasks | Maximum hunt questions | Gapfill rounds |
+|---|---:|---:|---:|---:|---:|---:|
+| `quick` | 2 | 1 | 1 | 12 | 24 | 1 |
+| `balanced` | 5 | 3 | 2 | 32 | 64 | 2 |
+| `full` | 10 | 7 | 3 | 64 | 128 | 3 |
 
 These are ceilings, not quotas to fabricate. Empty lanes remain empty. An audit
 with no campaigns, no synthesized findings, or no verification work follows a
@@ -221,7 +251,10 @@ selector = "provider/verifier-model" # empty inherits the primary selector
 The audit lead uses the low-cost orchestration tier, phase coordinators use the
 task tier, and evidence-heavy investigators use the slow tier. Source-validation
 metadata remains attributed to the primary selector. The fresh-context
-independent verifier uses the generated `pi/verifier` role. One custom
+independent verifier uses an exact OMP per-agent model override generated from
+`llm.verification.selector`; its agent front matter retains `pi/slow` only as a
+supported fail-safe default. Readiness validation rejects a missing or
+unresolvable verifier override before an audit starts. One custom
 OpenAI-compatible endpoint is supported; all selectors may choose models on it,
 and any selector may instead use an OMP-known built-in provider.
 
@@ -278,6 +311,15 @@ invoke `bash scripts/run-audit.sh balanced` before handing control to OMP.
 `quick`, `balanced`, and `full` control bounded investigation depth. The main OMP
 process is the single audit lead and follows [AGENTS.md](AGENTS.md). For design
 rationale and exact trust contracts, see [ARCHITECTURE.md](ARCHITECTURE.md).
+If the launcher exits after a run is initialized, it fail-closes active work so
+the next compatible invocation can recover deterministically from the first
+unfinished phase.
+
+Status is health, not volume. Normal scanner deduplication and reaching the
+configured SAST depth budget close `ok`; their occurrence/unique and
+`depth_limited` counts remain visible as coverage. `degraded` is reserved for a
+material capability loss such as a failed hunt cell or evidence that requires an
+unavailable environment.
 
 ### Offline and controlled deployment
 
@@ -312,7 +354,7 @@ small deliberately:
 - LLM base URL, API key, primary selector, tiered role selectors, verifier
   selector, and one optional custom-provider model registry;
 - default depth;
-- SAST context-packet size and per-depth task/gapfill/attempt bounds; and
+- SAST packet-size and per-depth task/question/gapfill/attempt bounds; and
 - safe-reproduction resource limits.
 
 Scanner binary choices, raw-output switches, model-authored reporting, redundant
@@ -337,14 +379,23 @@ max_parallel = 1
 
 Each run records repository path, commit, exact target fingerprint, depth,
 reproduction mode, primary selector, every orchestration role selector, verifier
-selector, and workflow identity. Only the current incomplete run resumes when
-every field matches. Completed and failed runs are terminal. A source change,
-dirty-tree change, depth change, reproduction-policy change, or role/model change
-creates an isolated run.
+selector, workflow identity, resolved SAST budget, and a fingerprint of the
+schemas, planners, validators, recovery tools, and phase-agent contracts that
+govern the workflow. Only the current incomplete run
+resumes when its immutable target and model/policy identity matches. Completed
+runs are closed. Failed or interrupted runs recover at the first unfinished phase:
+already validated upstream phase directories are sealed and retained, while the
+failed phase and everything downstream are deleted and rerun with fresh attempt
+counters. A harness-contract or SAST-budget change is recorded as a recovery
+generation instead of discarding completed work. A source change, dirty-tree
+change, depth change, reproduction-policy change, or role/model change creates an
+isolated run.
 
 This makes results attributable to a specific input and operating policy, and
 prevents resumed investigations from silently mixing evidence produced under
-different assumptions.
+different assumptions. Cross-contract recovery is explicit in the run manifest
+and final report; retained prior-contract phases are accepted only while their
+whole-directory seals remain unchanged.
 
 ## Canonical artifacts
 

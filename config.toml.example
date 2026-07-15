@@ -28,7 +28,7 @@ smol = "openai-codex/gpt-5.5:minimal"
 # Independent verification may use a different model/provider. Empty inherits
 # llm.selector.
 [llm.verification]
-selector = "openai-codex/gpt-5.5:xhigh"
+selector = "openai-codex/gpt-5.4:xhigh"
 
 # Provider metadata (used by scripts/bootstrap-omp.sh to generate
 # .harness/home/.omp/agent/models.yml)
@@ -55,28 +55,31 @@ discovery = "proxy"
 # ── Harness scan settings ─────────────────────────────────────────────
 [harness]
 # default_depth: scan intensity level
-#   "quick"     — 12 hunt tasks, 1 gapfill round
-#   "balanced"  — 32 hunt tasks, 2 gapfill rounds
-#   "full"      — 64 hunt tasks, 3 gapfill rounds
+#   "quick"     — 12 hunt tasks / 24 questions, 1 gapfill round
+#   "balanced"  — 32 hunt tasks / 64 questions, 2 gapfill rounds
+#   "full"      — 64 hunt tasks / 128 questions, 3 gapfill rounds
 default_depth = "balanced"
 
 [harness.scans.sast]
-# Maximum UTF-8 size of the architecture/evidence packet injected into one
-# hunter. Agents may read additional source through tools.
+# Maximum UTF-8 size of one exact contextual hunt packet. Adjacent source work
+# must be returned as a bounded rabbit hole rather than widening the packet.
 context_packet_bytes = 65536
 
 [harness.scans.sast.budget.quick]
 max_hunt_tasks = 12
+max_hunt_questions = 24
 max_gapfill_rounds = 1
 max_attempts = 2
 
 [harness.scans.sast.budget.balanced]
 max_hunt_tasks = 32
+max_hunt_questions = 64
 max_gapfill_rounds = 2
 max_attempts = 2
 
 [harness.scans.sast.budget.full]
 max_hunt_tasks = 64
+max_hunt_questions = 128
 max_gapfill_rounds = 3
 max_attempts = 2
 

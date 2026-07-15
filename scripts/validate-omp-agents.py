@@ -56,7 +56,7 @@ ROLE_CONTRACT = {
     "vulnops-intrusion": ("pi/task", "medium"),
     "vulnops-synthesis": ("pi/slow", "high"),
     "vulnops-final-verification": ("pi/task", "medium"),
-    "vulnops-independent-verify-one": ("pi/verifier", "xhigh"),
+    "vulnops-independent-verify-one": ("pi/slow", "xhigh"),
 }
 
 

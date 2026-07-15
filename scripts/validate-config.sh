@@ -42,8 +42,8 @@ scans=harness.get("scans",{});only(scans,{"sast"},"harness.scans");sast=scans.ge
 if int(sast.get("context_packet_bytes",65536))<1024:raise SystemExit("SAST context_packet_bytes must be at least 1024")
 for depth,item in sast.get("budget",{}).items():
     if depth not in {"quick","balanced","full"}:raise SystemExit(f"unknown SAST budget depth: {depth}")
-    only(item,{"max_hunt_tasks","max_gapfill_rounds","max_attempts"},f"SAST {depth} budget")
-    if int(item.get("max_hunt_tasks",0))<1 or int(item.get("max_attempts",0))<1 or int(item.get("max_gapfill_rounds",-1))<0:raise SystemExit(f"invalid SAST {depth} budget")
+    only(item,{"max_hunt_tasks","max_hunt_questions","max_gapfill_rounds","max_attempts"},f"SAST {depth} budget")
+    if int(item.get("max_hunt_tasks",0))<1 or int(item.get("max_hunt_questions",0))<1 or int(item.get("max_attempts",0))<1 or int(item.get("max_gapfill_rounds",-1))<0:raise SystemExit(f"invalid SAST {depth} budget")
 reproduction=harness.get("reproduction",{});only(reproduction,{"mode","sandbox","timeout_seconds","cpu_seconds","memory_mb","max_processes","max_output_kb","max_parallel"},"harness.reproduction")
 if reproduction.get("mode","off") not in {"off","safe"} or reproduction.get("sandbox","auto") not in {"auto","bubblewrap"}:raise SystemExit("reproduction mode or sandbox is invalid")
 for key in ("timeout_seconds","cpu_seconds","memory_mb","max_processes","max_output_kb","max_parallel"):
@@ -66,7 +66,8 @@ if [ -f "$omp_lock" ]; then
 else
     err "OMP platform lock missing: $omp_lock"
 fi
-for script in run-audit.sh validate-phase.sh validate-scan.sh validate-omp-agents.py init-run.py resume-run.py update-run-state.py dependency_contract.py finalize-recon.py build-hunt-plan.py finalize-sast.py collect-tools.py run-wraith.sh run-poltergeist.sh normalize-wraith.py normalize-poltergeist.py setup-codegraph.sh codegraph-adapter.py build-evidence-index.py build-campaign-plan.py finalize-intrusion.py empty-synthesis.py finalize-synthesis.py finalize-verification.py render-report.py probe-bubblewrap.sh probe-toolchain.sh; do check_exec "${HARNESS_ROOT}/scripts/${script}" "runtime ${script}"; done
+for script in run-audit.sh validate-phase.sh validate-scan.sh validate-omp-agents.py init-run.py resume-run.py recover-run.py phase_seal.py update-run-state.py dependency_contract.py finalize-recon.py build-hunt-plan.py finalize-sast.py sast_contract.py harness_contract.py collect-tools.py run-wraith.sh run-poltergeist.sh normalize-wraith.py normalize-poltergeist.py setup-codegraph.sh codegraph-adapter.py build-evidence-index.py build-campaign-plan.py finalize-intrusion.py empty-synthesis.py finalize-synthesis.py finalize-verification.py render-report.py probe-bubblewrap.sh probe-toolchain.sh probe-verifier-model.py; do check_exec "${HARNESS_ROOT}/scripts/${script}" "runtime ${script}"; done
+for module in artifact_policy.py close-interrupted-run.py model_identity.py; do check_file "${HARNESS_ROOT}/scripts/${module}" "runtime ${module}"; done
 for schema in run-manifest task-ledger phase-manifest recon-research repo-context security-surfaces sca-advisories secrets-redacted tool-receipt tool-collection threat-model hunt-plan hunt-result candidate-finding validation-result reproduction-result coverage-ledger wishlist evidence-index campaign-plan intrusion-results synthesis-findings independent-verification-result final-findings report; do check_file "${HARNESS_ROOT}/schemas/v2/${schema}.schema.json" "schema ${schema}"; done
 for agent in recon recon-overview recon-trust recon-inputs sast-lead threatmodel deepdive-chunk verify-one reproduce-one campaign-planning intrusion intrusion-campaign synthesis final-verification independent-verify-one; do check_file "${HARNESS_ROOT}/.omp/agents/vulnops-${agent}.md" "OMP agent ${agent}"; done
 if python3 "${HARNESS_ROOT}/scripts/validate-omp-agents.py" "$HARNESS_ROOT"; then ok "canonical OMP agent graph"; else err "canonical OMP agent graph invalid"; fi
@@ -81,22 +82,35 @@ for selector_name in OMP_MODEL_SELECTOR OMP_ORCHESTRATOR_MODEL_SELECTOR OMP_TASK
     value="${!selector_name:-}"; [[ "$value" =~ ^[^/[:space:]]+/[^[:space:]]+$ ]] && ok "$selector_name syntax" || err "$selector_name syntax invalid"
 done
 
-python3 - "${PI_CODING_AGENT_DIR}/config.yml" "${OMP_MODEL_SELECTOR:-}" "${OMP_ORCHESTRATOR_MODEL_SELECTOR:-}" "${OMP_TASK_MODEL_SELECTOR:-}" "${OMP_SLOW_MODEL_SELECTOR:-}" "${OMP_SMOL_MODEL_SELECTOR:-}" "${OMP_VERIFIER_MODEL_SELECTOR:-}" <<'PY' || err "generated model roles do not match selectors"
+python3 - "${PI_CODING_AGENT_DIR}/config.yml" "${OMP_MODEL_SELECTOR:-}" "${OMP_ORCHESTRATOR_MODEL_SELECTOR:-}" "${OMP_TASK_MODEL_SELECTOR:-}" "${OMP_SLOW_MODEL_SELECTOR:-}" "${OMP_SMOL_MODEL_SELECTOR:-}" "${OMP_VERIFIER_MODEL_SELECTOR:-}" <<'PY' || err "generated model configuration does not match selectors"
 import sys
 from pathlib import Path
 path=Path(sys.argv[1]); primary,orchestrator,task,slow,smol,verifier=sys.argv[2:]
 if not path.is_file():raise SystemExit("generated OMP config missing")
-roles={};active=False
+roles={};overrides={};section=None
 for line in path.read_text().splitlines():
-    if line.startswith("modelRoles:"):active=True;continue
-    if active and line and not line.startswith((" ","\t")):active=False
-    if active and ":" in line:
+    if line.startswith("modelRoles:"):section="roles";continue
+    if line.startswith("task:"):section="task";continue
+    if section and line and not line.startswith((" ","\t")):section=None
+    if section=="roles" and ":" in line:
         k,v=line.strip().split(":",1);roles[k]=v.strip().strip("'\"")
-expected={"default":orchestrator,"task":task,"slow":slow,"smol":smol,"plan":task,"advisor":orchestrator,"vision":primary,"designer":primary,"commit":smol,"tiny":smol,"primary":primary}
+    if section=="task" and line.strip()=="agentModelOverrides:":section="overrides";continue
+    if section=="overrides" and line.startswith("  ") and not line.startswith("    "):section="task"
+    if section=="overrides" and line.startswith("    ") and ":" in line:
+        k,v=line.strip().split(":",1);overrides[k]=v.strip().strip("'\"")
+expected={"default":orchestrator,"task":task,"slow":slow,"smol":smol,"plan":task,"advisor":orchestrator,"vision":primary,"designer":primary,"commit":smol,"tiny":smol}
 for role,value in expected.items():
     if roles.get(role)!=value:raise SystemExit(f"{role} mismatch")
-if roles.get("verifier")!=verifier:raise SystemExit("verifier role mismatch")
+for unsupported in ("primary","verifier"):
+    if unsupported in roles:raise SystemExit(f"unsupported OMP model role present: {unsupported}")
+if overrides.get("vulnops-independent-verify-one")!=verifier:raise SystemExit("verifier agent override mismatch")
 PY
+
+if python3 "${HARNESS_ROOT}/scripts/probe-verifier-model.py" "${HARNESS_ROOT}/bins/omp" "${OMP_VERIFIER_MODEL_SELECTOR:-}"; then
+    ok "independent verifier model resolution"
+else
+    err "independent verifier model resolution failed"
+fi
 
 custom_provider="${ON_PREM_PROVIDER_NAME:-on-prem}"
 custom_models=()

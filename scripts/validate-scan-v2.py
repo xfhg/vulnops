@@ -4,7 +4,10 @@ from __future__ import annotations
 import argparse, hashlib, json, os, re, subprocess, sys
 from pathlib import Path
 from typing import Any
+from artifact_policy import artifact_size_limit
+from harness_contract import harness_contract_sha256
 from model_identity import model_diversity
+from phase_seal import directory_sha256
 PHASES=("recon","tool-collection","sast","campaign-planning","intrusion","synthesis","final-verification","report")
 DIRS={"recon":"repo-context",**{x:x for x in PHASES if x!="recon"}}
 TASKS={"recon":"Recon","tool-collection":"ToolCollection","sast":"SASTLead","campaign-planning":"CampaignPlanning","intrusion":"Intrusion","synthesis":"Synthesis","final-verification":"FinalVerification","report":"Report"}
@@ -24,6 +27,8 @@ def main()->int:
     if run.get("workflow")!="canonical-redteam-v2" or context.get("workflow")!="canonical-redteam-v2":errors.append("non-canonical workflow identity is rejected")
     if run.get("status") not in {"running","degraded","complete"}:errors.append("run is not in a final-validation state")
     if context.get("run_id")!=run.get("run_id") or Path(str(context.get("scan_base",""))).resolve()!=scan:errors.append("audit context identity mismatch")
+    if context.get("harness_contract_sha256")!=harness_contract_sha256(root) or run.get("harness_contract_sha256")!=harness_contract_sha256(root):errors.append("harness contract fingerprint mismatch")
+    if context.get("sast_budget")!=run.get("sast_budget"):errors.append("SAST budget snapshot mismatch")
     primary=str(run.get("model",""));verifier=str(run.get("verifier_model",""));diversity=model_diversity(primary,verifier)
     if not verifier:errors.append("verifier_model is required")
     if run.get("model_diversity") is not diversity or context.get("model_diversity") is not diversity:errors.append("model diversity metadata mismatch")
@@ -31,10 +36,25 @@ def main()->int:
     for schema_name,document in (("run-manifest.schema.json",scan/"run-manifest.json"),("task-ledger.schema.json",scan/"task-ledger.json")):
         result=subprocess.run([sys.executable,str(root/"scripts/validate-json.py"),str(root/"schemas/v2"/schema_name),str(document)],capture_output=True,text=True,check=False)
         if result.returncode:errors.append(result.stderr.strip() or f"schema validation failed: {document}")
+    current_contract=harness_contract_sha256(root);seals=run.get("phase_seals",{}) if isinstance(run.get("phase_seals"),dict) else {}
+    history=run.get("recovery_history",[]) if isinstance(run.get("recovery_history"),list) else []
+    if run.get("recovery_count")!=len(history):errors.append("recovery count does not match recovery history")
+    if [item.get("generation") for item in history if isinstance(item,dict)]!=list(range(1,len(history)+1)):errors.append("recovery generations are not contiguous")
     for phase in PHASES:
-        result=subprocess.run([sys.executable,str(root/"scripts/validate-phase-v2.py"),str(root),str(scan),phase],capture_output=True,text=True,check=False)
-        if result.returncode:errors.append(result.stderr.strip() or f"{phase} validation failed")
+        seal=seals.get(phase);retained=bool(isinstance(seal,dict) and seal.get("validation")=="retained_prior_gate" and seal.get("contract_sha256")!=current_contract)
+        if retained:
+            try:digest,count=directory_sha256(scan,phase)
+            except ValueError as exc:errors.append(str(exc));digest="";count=-1
+            if digest!=seal.get("artifact_sha256") or count!=seal.get("file_count"):errors.append(f"retained phase seal mismatch: {phase}")
+        else:
+            result=subprocess.run([sys.executable,str(root/"scripts/validate-phase-v2.py"),str(root),str(scan),phase],capture_output=True,text=True,check=False)
+            if result.returncode:errors.append(result.stderr.strip() or f"{phase} validation failed")
+            if isinstance(seal,dict):
+                try:digest,count=directory_sha256(scan,phase)
+                except ValueError as exc:errors.append(str(exc));digest="";count=-1
+                if digest!=seal.get("artifact_sha256") or count!=seal.get("file_count"):errors.append(f"phase seal mismatch: {phase}")
         phase_doc=load(scan/DIRS[phase]/"phase-manifest.json",errors) or {}; actual=phase_doc.get("status")
+        if retained and actual not in {"ok","degraded"}:errors.append(f"retained phase {phase} lacks a successful prior manifest")
         if (run.get("phases") or {}).get(phase)!=actual:errors.append(f"run manifest status for {phase} does not match phase manifest")
     obsolete=["sca","secrets","intelligence","triage","final-reconciliation"]
     for name in obsolete:
@@ -78,7 +98,7 @@ def main()->int:
     for path in scan.rglob("*"):
         if path.is_file():
             size=path.stat().st_size
-            limit=64*1024 if path.name.endswith("receipt.json") else 2*1024*1024 if path.name=="context.json" or "report" in path.parts else 16*1024*1024
+            limit=artifact_size_limit(path.relative_to(scan))
             if size>limit:errors.append(f"artifact exceeds bounded size policy: {path.relative_to(scan)} ({size}>{limit})")
             text=path.read_text(encoding="utf-8",errors="ignore")
             if any(pattern.search(text) for pattern in secret_patterns):errors.append(f"possible raw secret in {path.relative_to(scan)}")

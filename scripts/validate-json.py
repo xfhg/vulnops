@@ -157,6 +157,12 @@ def safe_repo_file(repo: Path, relative: str) -> Path | None:
     return resolved
 
 
+def text_line_count(path: Path) -> int:
+    """Return a source file's line count without materializing all lines."""
+    with path.open("r", encoding="utf-8", errors="replace", newline=None) as handle:
+        return max(1, sum(1 for _ in handle))
+
+
 def validate_trace(trace: Any, label: str, repo: Path | None, errors: list[str]) -> None:
     if not isinstance(trace, list) or len(trace) < 2:
         errors.append(f"{label}: code trace must have at least entrypoint and sink steps")
@@ -349,7 +355,10 @@ def semantic_errors(document: Any, kind: str, repo: Path | None) -> list[str]:
     elif kind == "secrets-redacted" and isinstance(document, dict) and repo is not None:
         if document.get("candidate_count") != len(document.get("candidates", [])):
             errors.append("$.candidate_count does not match candidates")
+        if not isinstance(document.get("match_count"), int) or document.get("match_count", -1) < document.get("candidate_count", 0):
+            errors.append("$.match_count must be at least the unique candidate count")
         seen: set[str] = set()
+        file_line_counts: dict[str, int] = {}
         for index, candidate in enumerate(document.get("candidates", [])):
             if not isinstance(candidate, dict):
                 continue
@@ -362,43 +371,85 @@ def semantic_errors(document: Any, kind: str, repo: Path | None) -> list[str]:
             if path is None or not path.is_file():
                 errors.append(f"$.candidates[{index}].file does not exist")
                 continue
-            lines = path.read_text(encoding="utf-8", errors="replace").splitlines()
+            if relative not in file_line_counts:
+                file_line_counts[relative] = text_line_count(path)
             line = candidate.get("line")
-            if not isinstance(line, int) or line < 1 or line > max(1, len(lines)):
+            if not isinstance(line, int) or line < 1 or line > file_line_counts[relative]:
                 errors.append(f"$.candidates[{index}].line is outside {relative!r}")
     elif kind == "hunt-plan" and isinstance(document, dict):
-        cell_ids = [str(cell.get("id")) for cell in document.get("cells", []) if isinstance(cell, dict)]
+        cells = [cell for cell in document.get("cells", []) if isinstance(cell, dict)]
+        cell_ids = [str(cell.get("id")) for cell in cells]
         if len(cell_ids) != len(set(cell_ids)):
             errors.append("$.cells contains duplicate IDs")
-        known = set(cell_ids)
+        mapping_ids = [str(cell.get("mapping_id")) for cell in cells]
+        if len(mapping_ids) != len(set(mapping_ids)):
+            errors.append("$.cells contains duplicate mapping IDs")
+        cell_map = {str(cell.get("id")): cell for cell in cells}
+        known = set(cell_map)
+        assigned: set[str] = set()
+        for index, cell in enumerate(cells):
+            if repo is not None:
+                for file_index, relative in enumerate(cell.get("files", [])):
+                    path = safe_repo_file(repo, str(relative))
+                    if path is None or not path.is_file():
+                        errors.append(f"$.cells[{index}].files[{file_index}] is not an existing target-relative file")
         task_ids: set[str] = set()
         budget = document.get("budget", {})
         tasks = document.get("tasks", [])
         if isinstance(budget, dict) and len(tasks) > int(budget.get("max_hunt_tasks", len(tasks))):
             errors.append("$.tasks exceeds budget.max_hunt_tasks")
+        if isinstance(budget, dict) and sum(len(task.get("cell_ids", [])) for task in tasks if isinstance(task, dict)) > int(budget.get("max_hunt_questions", 0)):
+            errors.append("$.tasks exceeds budget.max_hunt_questions")
         for index, task in enumerate(tasks):
             task_id = str(task.get("id", ""))
             if task_id in task_ids:
                 errors.append(f"$.tasks[{index}].id is duplicated")
             task_ids.add(task_id)
+            referenced: list[dict] = []
             for cell_id in task.get("cell_ids", []):
                 if str(cell_id) not in known:
                     errors.append(f"$.tasks[{index}] references unknown cell {cell_id!r}")
-            packet = str(task.get("context_packet", ""))
-            limit = int(budget.get("context_packet_bytes", 65536)) if isinstance(budget, dict) else 65536
-            if len(packet.encode("utf-8")) > limit:
-                errors.append(f"$.tasks[{index}].context_packet exceeds {limit} bytes")
+                else:
+                    referenced.append(cell_map[str(cell_id)])
+                    assigned.add(str(cell_id))
+            if referenced:
+                expected_classes = list(dict.fromkeys(str(cell.get("attack_class_id")) for cell in referenced))
+                expected_methods = list(dict.fromkeys(str(ref) for cell in referenced for ref in cell.get("methodology_refs", [])))
+                expected_lenses = list(dict.fromkeys(str(ref) for cell in referenced for ref in cell.get("lenses", [])))
+                expected_files = list(dict.fromkeys(str(path) for cell in referenced for path in cell.get("files", [])))
+                expected_entrypoints = list(dict.fromkeys(str(item) for cell in referenced for item in cell.get("entrypoint_ids", [])))
+                expected_evidence = list(dict.fromkeys(str(ref) for cell in referenced for ref in cell.get("evidence_refs", [])))
+                if any(cell.get("subsystem") != task.get("subsystem") for cell in referenced):
+                    errors.append(f"$.tasks[{index}] mixes subsystems")
+                if any(cell.get("domain") != task.get("domain") for cell in referenced):
+                    errors.append(f"$.tasks[{index}] mixes domains")
+                if task.get("attack_class_ids") != expected_classes:
+                    errors.append(f"$.tasks[{index}].attack_class_ids do not match referenced cells")
+                if task.get("methodology_refs") != expected_methods:
+                    errors.append(f"$.tasks[{index}].methodology_refs do not match referenced cells")
+                if task.get("lenses") != expected_lenses:
+                    errors.append(f"$.tasks[{index}].lenses do not match referenced cells")
+                if task.get("files") != expected_files:
+                    errors.append(f"$.tasks[{index}].files do not match referenced cells")
+                if task.get("entrypoints") != expected_entrypoints:
+                    errors.append(f"$.tasks[{index}].entrypoints do not match referenced cells")
+                if task.get("evidence_refs") != expected_evidence:
+                    errors.append(f"$.tasks[{index}].evidence_refs do not match referenced cells")
             if repo is not None:
                 for file_index, relative in enumerate(task.get("files", [])):
                     path = safe_repo_file(repo, str(relative))
                     if path is None or not path.is_file():
                         errors.append(f"$.tasks[{index}].files[{file_index}] is not an existing target-relative file")
+        for index, cell in enumerate(cells):
+            if cell.get("owner") == "sast" and cell.get("status") == "planned" and cell.get("id") not in assigned:
+                errors.append(f"$.cells[{index}] is planned but has no task")
     elif kind == "threat-model" and isinstance(document, dict):
         subsystems = document.get("subsystems", [])
         subsystem_ids = [str(item.get("id")) for item in subsystems if isinstance(item, dict)]
         if len(subsystem_ids) != len(set(subsystem_ids)):
             errors.append("$.subsystems contains duplicate IDs")
         known = set(subsystem_ids)
+        subsystem_map = {str(item.get("id")): item for item in subsystems if isinstance(item, dict)}
         for index, subsystem in enumerate(subsystems):
             if not isinstance(subsystem, dict):
                 continue
@@ -415,9 +466,6 @@ def semantic_errors(document: Any, kind: str, repo: Path | None) -> list[str]:
             if attack_id in class_ids:
                 errors.append(f"$.attack_classes[{index}].id is duplicated")
             class_ids.add(attack_id)
-            for subsystem_id in attack_class.get("applicable_subsystems", []):
-                if str(subsystem_id) not in known:
-                    errors.append(f"$.attack_classes[{index}] references unknown subsystem {subsystem_id!r}")
         boundary_ids = {str(item.get("id")) for item in document.get("trust_boundaries", []) if isinstance(item, dict)}
         asset_ids = {str(item.get("id")) for item in document.get("assets", []) if isinstance(item, dict)}
         entrypoint_ids: set[str] = set()
@@ -438,9 +486,14 @@ def semantic_errors(document: Any, kind: str, repo: Path | None) -> list[str]:
             for boundary_id in entrypoint.get("trust_boundary_ids", []):
                 if str(boundary_id) not in boundary_ids:
                     errors.append(f"$.entrypoints[{index}] references unknown trust boundary {boundary_id!r}")
+        threat_map: dict[str, dict] = {}
         for index, threat in enumerate(document.get("threats", [])):
             if not isinstance(threat, dict):
                 continue
+            threat_id = str(threat.get("id", ""))
+            if threat_id in threat_map:
+                errors.append(f"$.threats[{index}].id is duplicated")
+            threat_map[threat_id] = threat
             for asset_id in threat.get("asset_ids", []):
                 if str(asset_id) not in asset_ids:
                     errors.append(f"$.threats[{index}] references unknown asset {asset_id!r}")
@@ -450,6 +503,75 @@ def semantic_errors(document: Any, kind: str, repo: Path | None) -> list[str]:
             for attack_id in threat.get("attack_class_ids", []):
                 if str(attack_id) not in class_ids:
                     errors.append(f"$.threats[{index}] references unknown attack class {attack_id!r}")
+        mapping_ids: set[str] = set()
+        mapped_classes: set[str] = set()
+        for index, mapping in enumerate(document.get("hunt_mappings", [])):
+            if not isinstance(mapping, dict):
+                continue
+            mapping_id = str(mapping.get("id", ""))
+            if mapping_id in mapping_ids:
+                errors.append(f"$.hunt_mappings[{index}].id is duplicated")
+            mapping_ids.add(mapping_id)
+            attack_id = str(mapping.get("attack_class_id", ""))
+            subsystem_id = str(mapping.get("subsystem_id", ""))
+            mapped_classes.add(attack_id)
+            if attack_id not in class_ids:
+                errors.append(f"$.hunt_mappings[{index}] references unknown attack class {attack_id!r}")
+            subsystem = subsystem_map.get(subsystem_id)
+            if subsystem is None:
+                errors.append(f"$.hunt_mappings[{index}] references unknown subsystem {subsystem_id!r}")
+            else:
+                allowed_surfaces = {str(item) for item in subsystem.get("security_surface_ids", [])}
+                for surface_id in mapping.get("surface_ids", []):
+                    if str(surface_id) not in allowed_surfaces:
+                        errors.append(f"$.hunt_mappings[{index}] references surface {surface_id!r} outside subsystem {subsystem_id!r}")
+                subsystem_files = {str(item) for item in subsystem.get("files", [])}
+                mapping_files = {str(item) for item in mapping.get("source_files", [])}
+                if not subsystem_files.intersection(mapping_files):
+                    errors.append(f"$.hunt_mappings[{index}] has no source file in subsystem {subsystem_id!r}")
+            if repo is not None:
+                for file_index, relative in enumerate(mapping.get("source_files", [])):
+                    path = safe_repo_file(repo, str(relative))
+                    if path is None or not path.is_file():
+                        errors.append(f"$.hunt_mappings[{index}].source_files[{file_index}] is not an existing target-relative file")
+            mapping_entrypoints = {str(item) for item in mapping.get("entrypoint_ids", [])}
+            mapping_boundaries = {str(item) for item in mapping.get("boundary_ids", [])}
+            for entrypoint_id in mapping_entrypoints:
+                if entrypoint_id not in entrypoint_ids:
+                    errors.append(f"$.hunt_mappings[{index}] references unknown entrypoint {entrypoint_id!r}")
+                    continue
+                entrypoint = next(item for item in document.get("entrypoints", []) if isinstance(item, dict) and str(item.get("id")) == entrypoint_id)
+                if subsystem_id not in {str(item) for item in entrypoint.get("subsystem_ids", [])}:
+                    errors.append(f"$.hunt_mappings[{index}] entrypoint {entrypoint_id!r} does not belong to subsystem {subsystem_id!r}")
+            for boundary_id in mapping_boundaries:
+                if boundary_id not in boundary_ids:
+                    errors.append(f"$.hunt_mappings[{index}] references unknown trust boundary {boundary_id!r}")
+            if mapping_entrypoints and mapping_boundaries:
+                entrypoint_boundaries = {
+                    str(boundary_id)
+                    for item in document.get("entrypoints", [])
+                    if isinstance(item, dict) and str(item.get("id")) in mapping_entrypoints
+                    for boundary_id in item.get("trust_boundary_ids", [])
+                }
+                if not mapping_boundaries.intersection(entrypoint_boundaries):
+                    errors.append(f"$.hunt_mappings[{index}] has no boundary connected to its entrypoints")
+            cited_threats = [threat_map.get(str(item)) for item in mapping.get("threat_ids", [])]
+            if any(item is None for item in cited_threats):
+                errors.append(f"$.hunt_mappings[{index}] references an unknown threat")
+            for threat in (item for item in cited_threats if item is not None):
+                if attack_id not in {str(item) for item in threat.get("attack_class_ids", [])}:
+                    errors.append(f"$.hunt_mappings[{index}] attack class is absent from cited threat {threat.get('id')!r}")
+            cited_entrypoints = {str(entrypoint) for threat in cited_threats if threat is not None for entrypoint in threat.get("entrypoint_ids", [])}
+            if not cited_entrypoints.intersection(mapping_entrypoints):
+                errors.append(f"$.hunt_mappings[{index}] has no entrypoint shared with its cited threats")
+            for asset_id in mapping.get("asset_ids", []):
+                if str(asset_id) not in asset_ids:
+                    errors.append(f"$.hunt_mappings[{index}] references unknown asset {asset_id!r}")
+            cited_assets = {str(asset) for threat in cited_threats if threat is not None for asset in threat.get("asset_ids", [])}
+            if not cited_assets.intersection(str(item) for item in mapping.get("asset_ids", [])):
+                errors.append(f"$.hunt_mappings[{index}] has no asset shared with its cited threats")
+        for attack_id in sorted(class_ids - mapped_classes):
+            errors.append(f"$.attack_classes class {attack_id!r} has no contextual hunt mapping")
     return errors
 
 

@@ -143,6 +143,7 @@ main() {
     local run_id=""
     local scan_base=""
     local resumed=false
+    local resume_mode=""
 
     # Resume only the current incomplete v2 run for the same repository,
     # commit, depth, and exact working-tree fingerprint. Completed runs are
@@ -154,7 +155,7 @@ main() {
             "$reproduction_mode" "$primary_model" "$orchestrator_model" \
             "$task_model" "$slow_model" "$smol_model" "$verifier_model")"
         if [ -n "$resume_fields" ]; then
-            IFS=$'\t' read -r run_id scan_base <<<"$resume_fields"
+            IFS=$'\t' read -r run_id scan_base resume_mode <<<"$resume_fields"
             resumed=true
         fi
     fi
@@ -164,6 +165,13 @@ main() {
         scan_base="${repo_scan_root}/runs/${run_id}"
     fi
     harness_require_allowed_output "$HARNESS_ROOT" "$scan_base"
+
+    if [ "$resume_mode" = "recover" ]; then
+        local recovery_fields recovery_phase retained_count cleared_count
+        recovery_fields="$(python3 "${HARNESS_ROOT}/scripts/recover-run.py" "$scan_base" "$ctx" "$depth")"
+        IFS=$'\t' read -r recovery_phase retained_count cleared_count <<<"$recovery_fields"
+        log "  Recovery:   reset ${recovery_phase}; retained ${retained_count} validated phase(s), cleared ${cleared_count} phase(s)"
+    fi
 
     # ── Create scan directories ──
     mkdir -p "${scan_base}/repo-context"
@@ -230,7 +238,7 @@ main() {
     log "  Depth:      ${depth}"
     log "  Reproduction: ${reproduction_mode}"
     if [ "$resumed" = true ]; then
-        log "  Resume:     current incomplete canonical v2 run"
+        log "  Resume:     current recoverable canonical v2 run (${resume_mode})"
     fi
     log ""
     log "Context: ${ctx}"

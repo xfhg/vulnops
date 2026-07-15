@@ -3,7 +3,7 @@
   "title": "VulnOps v2 Dynamic Threat Model",
   "type": "object",
   "additionalProperties": false,
-  "required": ["schema_version", "repository_profile", "assets", "trust_boundaries", "entrypoints", "subsystems", "attack_classes", "threats", "assumptions", "evidence_refs", "warnings", "errors"],
+  "required": ["schema_version", "repository_profile", "assets", "trust_boundaries", "entrypoints", "subsystems", "attack_classes", "threats", "hunt_mappings", "assumptions", "evidence_refs", "warnings", "errors"],
   "properties": {
     "schema_version": {"const": "2.0"},
     "repository_profile": {
@@ -97,17 +97,49 @@
       "items": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["id", "title", "domain", "owner", "methodology_ref", "applicable_subsystems", "reason", "evidence_refs", "custom"],
+        "required": ["id", "title", "domain", "owner", "methodology_ref", "reason", "evidence_refs", "custom"],
         "properties": {
           "id": {"type": "string", "pattern": "^(?!.*\\.\\.)[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$"},
           "title": {"type": "string", "minLength": 1},
           "domain": {"enum": ["general", "ai_llm", "http_auth", "client", "native", "mobile", "iac", "etl"]},
           "owner": {"enum": ["sast", "sca", "secrets"]},
           "methodology_ref": {"type": "string", "minLength": 1},
-          "applicable_subsystems": {"type": "array", "items": {"type": "string"}, "minItems": 1},
+          "lenses": {"type": "array", "items": {"type": "string", "minLength": 1}, "uniqueItems": true},
           "reason": {"type": "string", "minLength": 1},
           "evidence_refs": {"type": "array", "items": {"type": "string"}, "minItems": 1},
           "custom": {"type": "boolean"}
+        }
+      }
+    },
+    "hunt_mappings": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id", "attack_class_id", "subsystem_id", "surface_ids",
+          "threat_ids", "asset_ids", "attacker", "entrypoint_ids",
+          "boundary_ids", "source_files", "security_question",
+          "stop_conditions", "priority", "applicability_reason",
+          "evidence_refs"
+        ],
+        "properties": {
+          "id": {"type": "string", "pattern": "^(?!.*\\.\\.)[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$"},
+          "attack_class_id": {"type": "string", "pattern": "^(?!.*\\.\\.)[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$"},
+          "subsystem_id": {"type": "string", "minLength": 1},
+          "surface_ids": {"type": "array", "items": {"type": "string", "minLength": 1}, "minItems": 1, "uniqueItems": true},
+          "threat_ids": {"type": "array", "items": {"type": "string", "minLength": 1}, "minItems": 1, "uniqueItems": true},
+          "asset_ids": {"type": "array", "items": {"type": "string", "minLength": 1}, "minItems": 1, "uniqueItems": true},
+          "attacker": {"type": "string", "minLength": 1},
+          "entrypoint_ids": {"type": "array", "items": {"type": "string", "minLength": 1}, "minItems": 1, "uniqueItems": true},
+          "boundary_ids": {"type": "array", "items": {"type": "string", "minLength": 1}, "minItems": 1, "uniqueItems": true},
+          "source_files": {"type": "array", "items": {"type": "string", "minLength": 1}, "minItems": 1, "uniqueItems": true},
+          "security_question": {"type": "string", "minLength": 12},
+          "stop_conditions": {"type": "array", "items": {"type": "string", "minLength": 1}, "minItems": 1},
+          "priority": {"enum": ["critical", "high", "medium", "low"]},
+          "applicability_reason": {"type": "string", "minLength": 12},
+          "evidence_refs": {"type": "array", "items": {"type": "string", "minLength": 1}, "minItems": 1}
         }
       }
     },

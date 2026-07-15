@@ -77,7 +77,7 @@
     "impact": {"type": "string", "minLength": 1},
     "remediation": {"type": "string", "minLength": 1},
     "evidence_refs": {"type": "array", "items": {"type": "string"}, "minItems": 1},
-    "lenses": {"type": "array", "items": {"type": "string"}, "minItems": 1},
+    "lenses": {"type": "array", "items": {"type": "string"}, "uniqueItems": true},
     "mitigations_checked": {"type": "array", "items": {"type": "string"}, "minItems": 1}
   }
 }

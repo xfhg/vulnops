@@ -16,7 +16,7 @@
         "required": ["id", "status", "task_ids", "evidence_refs", "reason"],
         "properties": {
           "id": {"type": "string", "minLength": 1},
-          "status": {"enum": ["tool_satisfied", "finding", "clean", "not_applicable", "deferred", "shallow", "failed"]},
+          "status": {"enum": ["tool_satisfied", "finding", "clean", "not_applicable", "deferred", "shallow", "depth_limited", "failed"]},
           "task_ids": {"type": "array", "items": {"type": "string"}},
           "evidence_refs": {"type": "array", "items": {"type": "string"}},
           "reason": {"type": "string", "minLength": 1}

@@ -66,6 +66,11 @@ Start OMP through the contained launcher:
 ./run.sh "audit the target repository"
 ```
 
+If the launcher terminates after initializing or resuming an audit, it closes any
+active top-level phase and task through the canonical state updater and marks the
+run failed. The next compatible initialization then performs deterministic
+recovery from the first unfinished phase.
+
 Inside the audit session, initialize the requested depth exactly once:
 
 ```bash
@@ -91,6 +96,8 @@ depth
 repo_path
 scan_base
 target_fingerprint
+harness_contract_sha256
+sast_budget
 reproduction_mode
 model
 model_roles
@@ -106,10 +113,12 @@ bare relative artifact such as `sast/findings.json` as the path authority. Artif
 references inside JSON remain target- or scan-relative as defined by their schema;
 filesystem operations use the context's absolute paths.
 
-Resume only the incomplete run selected by `run-audit.sh`. Resume identity requires
-the same repository path, commit, exact fingerprint, depth, reproduction mode,
-primary selector, all tiered role selectors, verifier selector, and workflow.
-Never consume completed or failed runs as input.
+Resume or recover only the incomplete run selected by `run-audit.sh`. Immutable
+identity requires the same repository path, commit, exact fingerprint, depth,
+reproduction mode, primary selector, all tiered role selectors, verifier selector,
+and workflow. A harness-contract or resolved-budget change triggers deterministic
+recovery rather than discarding the run. Completed runs are closed; failed and
+interrupted runs are recoverable.
 
 ## 5. Run-state protocol
 
@@ -117,9 +126,10 @@ Use `scripts/update-run-state.py`; do not edit manifests or the task ledger by
 hand.
 
 The state updater enforces canonical phase order, exactly one running top-level
-phase/task, a maximum of two attempts per stable task ID, immutable successful
-phases, scan-relative successful artifacts, and null artifacts for failures. Do not
-work around a rejected state transition.
+phase/task, a maximum of two attempts per stable task ID in one recovery
+generation, immutable and hash-sealed successful phases, scan-relative successful
+artifacts, and null artifacts for failures. Do not work around a rejected state
+transition.
 
 At the start of active work:
 
@@ -166,6 +176,15 @@ close that attempt as failed before retrying the same stable task ID. Retry only
 once. IRC messages never change task state and cannot repair an attempt. Never create repair/replacement
 top-level tasks. When stopping, pass the failed phase, stable task, sanitized error,
 and `--run-status failed` together so no phase or task remains running.
+
+On the next `run-audit.sh` invocation with the same immutable identity,
+`recover-run.py` must select the first non-successful phase, preserve and seal the
+already validated phase directories before it, delete and recreate that phase and
+every downstream phase directory, remove their ledger tasks, reset their attempt
+counters by absence, record a bounded recovery event, and return the run to
+`initialized`. Never edit a retained artifact or finding. A recovery after harness
+changes may retain prior-gate phases only through their immutable directory seals;
+new and rerun phases use the current contract.
 
 Only after report validation and whole-scan validation succeed:
 
@@ -264,6 +283,14 @@ Require parse success, count consistency, and normalized hashes. A Wraith adviso
 is a reachability candidate. A Poltergeist record must contain exact `<redacted>`
 and no recoverable part of the detected value.
 
+Deduplication is ordinary deterministic normalization, never a warning or degraded
+condition. Preserve Poltergeist occurrence count as `match_count` and the unique
+normalized record count as `candidate_count`. When both scanner receipts are
+healthy and all parse, schema, count, and hash checks pass, Tool Collection must
+close `ok` with empty warnings. Tool Collection has no successful degraded path;
+an actual invocation, parse, schema, count, hash, identity, or publication failure
+closes the task and phase as failed and stops the workflow.
+
 Canonical task artifact: `tool-collection/collection.json`.
 
 ### 7.3 SAST
@@ -275,6 +302,8 @@ Required sequence inside the coordinator:
 1. Launch `ThreatModel` with `vulnops-threatmodel` and validate its yield.
 2. Run `python3 scripts/build-hunt-plan.py <repo_path> <scan_base>`.
 3. Launch one `vulnops-deepdive-chunk` task per hunt task.
+   Validate every worker artifact with `python3 <tools.sast_contract>
+   <repo_path> <hunt-task-packet> <hunt-result>` before aggregation.
 4. Run `python3 scripts/finalize-sast.py <repo_path> <scan_base>`.
 5. Execute bounded gapfill: build new tasks with `--gapfill`, run only new tasks,
    aggregate them, and repeat until no new task or budget exhaustion.
@@ -289,16 +318,37 @@ Required sequence inside the coordinator:
 
 Fanout limits:
 
-| Depth | Deep-dive concurrency | Verification concurrency | Hunt-task ceiling | Gapfill rounds |
-|---|---:|---:|---:|---:|
-| `quick` | 4 | 4 | 12 | 1 |
-| `balanced` | 8 | 8 | 32 | 2 |
-| `full` | 16 | 12 | 64 | 3 |
+| Depth | Deep-dive concurrency | Verification concurrency | Hunt-task ceiling | Hunt-question ceiling | Gapfill rounds |
+|---|---:|---:|---:|---:|---:|
+| `quick` | 4 | 4 | 12 | 24 | 1 |
+| `balanced` | 8 | 8 | 32 | 64 | 2 |
+| `full` | 16 | 12 | 64 | 128 | 3 |
 
-Batch up to four compatible attack-class cells for one subsystem, but retain a
-disposition for every cell. Do not repeat dependency or secret enumeration owned
-by Tool Collection. Queue overflow and rabbit-hole work within the same total
-budget.
+The threat model must define source-backed contextual hunt mappings. Each mapping
+binds one attack class to concrete surfaces, threats, assets, attacker,
+entrypoints, boundaries, source files, a security question, stop conditions, and
+evidence. The planner creates cells only from these mappings; it never constructs
+a subsystem × surface × attack-class cross-product.
+
+Batch up to four cells only when they share a source flow, subsystem, domain, and
+compatible specialist context. Every packet contains the exact cell definitions,
+and every worker returns exactly one cell-specific disposition. A candidate may
+mark only the cells it cites. Review outside the assigned files or entrypoints is
+returned as a contextual rabbit hole rather than silently widening the task. Do
+not repeat dependency or secret enumeration owned by Tool Collection.
+
+Initial scheduling is risk-weighted and round-robin across subsystems. Gapfill
+spends its reserve on evidence-backed rabbit holes first, then bounded
+shallow/failed retries, then initially deferred contextual mappings. Queue
+overflow and all gapfill work remain within the same total budget.
+
+At final SAST closure, any remaining `shallow` or `deferred` cell becomes the
+terminal coverage disposition `depth_limited`. Reaching a configured depth,
+task, question, round, or attempt ceiling is normal bounded-audit behavior and
+must not mark SAST degraded. SAST is degraded only for a material capability
+loss represented by a `failed` cell or an `environment_required` verified
+candidate. Preserve the depth-limited count in coverage so the report remains
+honest about scope without mislabelling expected budget enforcement as failure.
 
 Required canonical artifacts include:
 
@@ -452,8 +502,10 @@ Read the synthesized finding count.
 
 If findings exist, launch top-level task `FinalVerification` with agent
 `vulnops-final-verification`. It launches one fresh-context
-`vulnops-independent-verify-one` task per finding with the generated
-`pi/verifier` role.
+`vulnops-independent-verify-one` task per finding. The generated
+`task.agentModelOverrides` entry must resolve that agent to the exact configured
+verifier selector; `pi/slow` in the agent front matter is only a supported
+fallback and is not authoritative in a valid audit.
 
 Every verifier must:
 
@@ -570,7 +622,9 @@ Generated OMP roles use the same underlying primary model with tiered reasoning:
 `pi/default` for low-effort orchestration, `pi/task` for medium-effort
 coordination and Recon, `pi/slow` for high-effort security investigation, and
 `pi/smol`/`pi/tiny` for minimal-effort mechanical work. Independent verification
-uses `pi/verifier` at its configured effort.
+uses the exact configured verifier selector through OMP's per-agent model
+override; readiness validation must prove that the override, model, and effort
+resolve before an audit begins.
 
 The exact role-selector map is part of run and resume identity. The primary
 high-effort selector must be recorded in source-validation metadata. The
@@ -634,7 +688,9 @@ Persist only bounded sanitized tests, result metadata, and allowed draft patches
 
 Retry only when the failure is recoverable and within the configured attempt
 budget. Reuse the stable task ID, increment the attempt, and record the previous
-error. Do not broaden scope or relax a schema to rescue malformed output.
+error. Do not broaden scope or relax a schema to rescue malformed output. Exhausting
+the in-generation attempt budget fails the current execution, not the audit
+forever; deterministic recovery starts a new generation at the failed phase.
 
 Stop the workflow when:
 
@@ -645,6 +701,11 @@ Stop the workflow when:
 - a downstream phase would require mutating upstream evidence; or
 - whole-scan validation fails.
 
+Stopping closes the current execution safely. If target and model/policy identity
+remain unchanged, the next initialization recovers from the first unfinished
+phase. A target fingerprint or model/policy identity change starts a distinct run
+instead of reusing evidence.
+
 Safe sandbox unavailability is not a reason to execute unsafely. Continue static
 analysis and record the environment limitation.
 
@@ -652,14 +713,14 @@ analysis and record the environment limitation.
 
 | Tool | Operational responsibility |
 |---|---|
-| `run-audit.sh`, `init-run.py`, `resume-run.py` | Target discovery, identity, isolated run creation/resume |
-| `update-run-state.py`, `audit-status.sh` | Atomic lifecycle updates and read-only status |
+| `run-audit.sh`, `init-run.py`, `resume-run.py`, `recover-run.py`, `harness_contract.py` | Target discovery, identity, isolated run creation/resume, failed-phase recovery |
+| `update-run-state.py`, `close-interrupted-run.py`, `phase_seal.py`, `audit-status.sh` | Atomic lifecycle updates, fail-closed launcher cleanup, immutable successful-phase seals, read-only status |
 | `dependency_contract.py`, `finalize-recon.py` | Complete deterministic dependency discovery and Recon sealing |
 | `collect-tools.py` | Concurrent deterministic scanner orchestration |
 | `run-wraith.sh`, `normalize-wraith.py`, `merge-wraith.py` | Real SCA execution and bounded canonical records |
 | `run-poltergeist.sh`, `normalize-poltergeist.py` | Real secret scanning and exact redaction |
 | `setup-codegraph.sh`, `run-codegraph.sh`, `codegraph-adapter.py` | Snapshot indexing and typed query receipts |
-| `build-hunt-plan.py`, `finalize-sast.py` | Bounded SAST planning, aggregation, deduplication, coverage |
+| `build-hunt-plan.py`, `sast_contract.py`, `finalize-sast.py` | Contextual SAST planning, per-cell validation, aggregation, deduplication, coverage |
 | `build-evidence-index.py`, `build-campaign-plan.py` | Evidence/primitive catalog and campaign selection |
 | `finalize-intrusion.py` | Exact campaign-result closure |
 | `empty-synthesis.py`, `finalize-synthesis.py` | Empty path and strict finding closure |

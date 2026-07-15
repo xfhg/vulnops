@@ -51,15 +51,30 @@ Write:
 
 Threat model JSON must match `schemas/v2/threat-model.schema.json`. Select only
 applicable upstream attack classes and invent repository-specific classes when
-the mapped architecture requires them. Each class names applicable subsystem
-IDs, evidence, owner (`sast`, `sca`, or `secrets`), methodology reference, and
-reason. Dependency and secret enumeration are tool-owned; do not schedule them
-as SAST work. Emit strict, stable IDs and evidence-backed objects for assets,
-trust boundaries, entrypoints, subsystems, and threats. Every subsystem file
-and entrypoint path must exist under the target; every cross-reference must
+the mapped architecture requires them. Each selected class must have at least
+one source-backed `hunt_mapping`; never express applicability as a broad
+subsystem label or a cross-product suggestion.
+
+Each hunt mapping defines one concrete security question and binds exactly the
+relevant class, subsystem, surfaces, threats, assets, attacker, entrypoints,
+boundaries, source files, stop conditions, priority, rationale, and evidence.
+Combine multiple surfaces only when the question follows one ordered source
+flow across them. If the class cannot be contextualized to a specific attacker
+path and source range, omit the class and mapping rather than creating generic
+work. Dependency and secret enumeration remain tool-owned; contextual mappings
+may record their validated coverage but must not schedule SAST enumeration.
+
+Emit strict, stable IDs and evidence-backed objects for assets, trust boundaries,
+entrypoints, subsystems, threats, classes, and mappings. Every mapping source
+file and entrypoint path must exist under the target; every cross-reference must
 resolve to an ID in the same document.
 
-Before yielding, run `bash scripts/validate-phase.sh <scan_base> sast-threatmodel`.
+Before yielding, validate the JSON and semantics directly:
+
+```bash
+python3 scripts/validate-json.py schemas/v2/threat-model.schema.json \
+  <paths.sast_threat_model> --semantic threat-model --target <repo_path>
+```
 
 Yield only after validation completes. Yield structured status with:
 - `status`

@@ -98,6 +98,7 @@ def main() -> None:
         exports.extend(
             [
                 (f"{prefix}_MAX_HUNT_TASKS", str(item.get("max_hunt_tasks", defaults[0]))),
+                (f"{prefix}_MAX_HUNT_QUESTIONS", str(item.get("max_hunt_questions", defaults[0] * 2))),
                 (f"{prefix}_MAX_GAPFILL_ROUNDS", str(item.get("max_gapfill_rounds", defaults[1]))),
                 (f"{prefix}_MAX_ATTEMPTS", str(item.get("max_attempts", defaults[2]))),
             ]

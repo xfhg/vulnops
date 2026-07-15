@@ -10,6 +10,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from phase_seal import directory_sha256
+
 
 PHASE_STATUS = {"pending", "running", "ok", "degraded", "failed", "skipped"}
 RUN_STATUS = {"initialized", "running", "degraded", "failed", "complete"}
@@ -218,6 +220,18 @@ def main() -> int:
 
     if args.phase:
         manifest["phases"][args.phase] = phase_status
+        if phase_status in SUCCESS_PHASE:
+            try:
+                digest, file_count = directory_sha256(scan, args.phase)
+            except ValueError as exc:
+                parser.error(f"cannot seal validated phase: {exc}")
+            manifest.setdefault("phase_seals", {})[args.phase] = {
+                "contract_sha256": str(manifest.get("harness_contract_sha256", "")),
+                "artifact_sha256": digest,
+                "file_count": file_count,
+                "sealed_at": timestamp(),
+                "validation": "current_gate",
+            }
     if args.run_status:
         manifest["status"] = args.run_status
     if task is not None and task_status is not None:
@@ -247,6 +261,10 @@ def main() -> int:
         incomplete_tasks = [task_id for task_id in TOP_LEVEL_TASKS if by_id.get(task_id, {}).get("status") not in SUCCESS_TASK]
         if incomplete_tasks:
             parser.error(f"cannot complete run; task {incomplete_tasks[0]!r} is not terminal-success")
+        seals = manifest.get("phase_seals", {})
+        missing_seals = [phase for phase in PHASES if not isinstance(seals.get(phase), dict)] if isinstance(seals, dict) else list(PHASES)
+        if missing_seals:
+            parser.error(f"cannot complete run; phase {missing_seals[0]!r} is not sealed")
 
     manifest["updated_at"] = timestamp()
     tasks.sort(key=lambda item: (PHASES.index(str(item.get("phase"))) if str(item.get("phase")) in PHASES else 999, str(item.get("id"))))

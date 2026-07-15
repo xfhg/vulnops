@@ -13,9 +13,12 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from sast_contract import validate_hunt_result
+
 
 SEVERITY = {"informational": 0, "low": 1, "medium": 2, "high": 3, "critical": 4}
 CONFIDENCE = {"low": 0, "medium": 1, "high": 2}
+EXPECTED_DEPTH_LIMITS = {"deferred", "shallow"}
 
 
 def now() -> str:
@@ -41,6 +44,25 @@ def write_text(path: Path, value: str) -> None:
     temporary = path.with_name(f".{path.name}.{os.getpid()}.tmp")
     temporary.write_text(value, encoding="utf-8")
     temporary.replace(path)
+
+
+def close_depth_limited_cells(ledger: dict) -> int:
+    """Turn exhausted bounded work into an explicit terminal BAU disposition."""
+    closed = 0
+    for cell in ledger.get("cells", []):
+        if isinstance(cell, dict) and cell.get("status") in EXPECTED_DEPTH_LIMITS:
+            cell["status"] = "depth_limited"
+            closed += 1
+    return closed
+
+
+def sast_phase_status(ledger: dict) -> str:
+    funnel = ledger.get("funnel", {}) if isinstance(ledger.get("funnel"), dict) else {}
+    cells = ledger.get("cells", []) if isinstance(ledger.get("cells"), list) else []
+    material_loss = bool(funnel.get("environment_required")) or any(
+        isinstance(cell, dict) and cell.get("status") == "failed" for cell in cells
+    )
+    return "degraded" if material_loss else "ok"
 
 
 def validator_module(root: Path):
@@ -80,14 +102,6 @@ def canonical_candidate_id(task_id: str, offset: int) -> str:
     return f"C-{safe_task[:96]}-{offset:03d}-{digest}"
 
 
-def is_shallow(result: dict) -> bool:
-    if result.get("status") in {"shallow", "failed"}:
-        return True
-    if result.get("candidates"):
-        return False
-    return any(not result.get(key) for key in ("files_reviewed", "entrypoints_traced", "sinks_reviewed", "mitigations_checked"))
-
-
 def aggregate(root: Path, repo: Path, scan: Path) -> tuple[list[dict], list[dict], dict]:
     plan = load(scan / "sast/hunt-plan.json", {})
     raw: list[dict] = []
@@ -96,9 +110,11 @@ def aggregate(root: Path, repo: Path, scan: Path) -> tuple[list[dict], list[dict
     positives: list[dict] = []
     wishlist_items: list[dict] = []
     task_rows: list[dict] = []
-    cell_outcomes: dict[str, list[tuple[str, str, list[str], int, int]]] = {}
+    cell_outcomes: dict[str, list[tuple[str, str, str, list[str], int, int]]] = {}
     raw_count = 0
     seen_candidate_ids: set[str] = set()
+    plan_cells = {str(cell.get("id")): cell for cell in plan.get("cells", []) if isinstance(cell, dict)}
+    threat = load(scan / "sast/threat-model.json", {})
 
     for task in plan.get("tasks", []):
         task_id = str(task.get("id", ""))
@@ -106,12 +122,27 @@ def aggregate(root: Path, repo: Path, scan: Path) -> tuple[list[dict], list[dict
         result = load(result_path, {})
         if not isinstance(result, dict):
             result = {}
-        shallow = is_shallow(result)
-        status = "shallow" if shallow else "ok"
-        if result.get("status") == "failed":
-            status = "failed"
+        assigned_cells = [plan_cells[str(cell_id)] for cell_id in task.get("cell_ids", []) if str(cell_id) in plan_cells]
+        result_errors = validate_hunt_result(root, repo, task, assigned_cells, result, threat if isinstance(threat, dict) else None)
+        valid_result = not result_errors
+        if valid_result:
+            cell_results = [row for row in result.get("cell_results", []) if isinstance(row, dict)]
+        else:
+            bounded = f"hunt result failed {len(result_errors) or 1} schema or per-cell semantic check(s)"
+            cell_results = [{
+                "cell_id": str(cell_id),
+                "status": "failed",
+                "reason": bounded,
+                "files_reviewed": [],
+                "entrypoints_traced": [],
+                "sinks_reviewed": [],
+                "mitigations_checked": [],
+                "candidate_ids": [],
+                "evidence_refs": [str(result_path.relative_to(scan))],
+            } for cell_id in task.get("cell_ids", [])]
         candidate_ids: list[str] = []
-        submitted_candidates = result.get("candidates", [])
+        source_to_canonical: dict[str, str] = {}
+        submitted_candidates = result.get("candidates", []) if valid_result else []
         if not isinstance(submitted_candidates, list):
             submitted_candidates = []
         for offset, candidate in enumerate(submitted_candidates, start=1):
@@ -146,9 +177,11 @@ def aggregate(root: Path, repo: Path, scan: Path) -> tuple[list[dict], list[dict
             seen_candidate_ids.add(candidate_id)
             raw.append(candidate)
             candidate_ids.append(str(candidate["id"]))
-        hardening.extend(item for item in result.get("hardening_notes", []) if isinstance(item, dict))
-        positives.extend(item for item in result.get("positive_patterns", []) if isinstance(item, dict))
-        for item in result.get("wishlist_items", []):
+            source_to_canonical[source_candidate_id] = str(candidate["id"])
+        if valid_result:
+            hardening.extend(item for item in result.get("hardening_notes", []) if isinstance(item, dict))
+            positives.extend(item for item in result.get("positive_patterns", []) if isinstance(item, dict))
+        for item in result.get("wishlist_items", []) if valid_result else []:
             if not isinstance(item, dict):
                 continue
             wishlist_items.append({
@@ -160,24 +193,39 @@ def aggregate(root: Path, repo: Path, scan: Path) -> tuple[list[dict], list[dict
                 "status": str(item.get("status", "open")),
                 "evidence_refs": list(item.get("evidence_refs", [])),
             })
-        if submitted_candidates and not candidate_ids and status != "failed":
-            status = "shallow"
+        cell_statuses: list[str] = []
+        for cell_result in cell_results:
+            cell_id = str(cell_result.get("cell_id", ""))
+            source_ids = [str(item) for item in cell_result.get("candidate_ids", [])]
+            surviving = [source_to_canonical[item] for item in source_ids if item in source_to_canonical]
+            outcome = str(cell_result.get("status", "failed"))
+            reason = str(cell_result.get("reason", "cell result missing rationale"))
+            if outcome == "finding" and not surviving:
+                outcome = "shallow"
+                reason = "all candidates for this cell failed mechanical validation"
+            cell_statuses.append(outcome)
+            evidence = list(dict.fromkeys([*cell_result.get("evidence_refs", []), str(result_path.relative_to(scan))]))
+            cell_outcomes.setdefault(cell_id, []).append((
+                task_id,
+                outcome,
+                reason,
+                evidence,
+                int(task.get("round", 0)),
+                int(task.get("attempt", 1)),
+            ))
+        status = "failed" if "failed" in cell_statuses else "shallow" if "shallow" in cell_statuses else "ok"
         row = {
             "id": task_id,
             "status": status,
             "attempts": int(task.get("attempt", 1)),
-            "files_reviewed": list(result.get("files_reviewed", [])),
-            "entrypoints_traced": list(result.get("entrypoints_traced", [])),
-            "sinks_reviewed": list(result.get("sinks_reviewed", [])),
-            "mitigations_checked": list(result.get("mitigations_checked", [])),
+            "files_reviewed": list(result.get("files_reviewed", [])) if valid_result else [],
+            "entrypoints_traced": list(result.get("entrypoints_traced", [])) if valid_result else [],
+            "sinks_reviewed": list(result.get("sinks_reviewed", [])) if valid_result else [],
+            "mitigations_checked": list(result.get("mitigations_checked", [])) if valid_result else [],
             "candidate_ids": candidate_ids,
-            "rabbit_holes": [str(item.get("reason", "")) for item in result.get("rabbit_holes", []) if isinstance(item, dict)],
+            "rabbit_holes": [str(item.get("reason", "")) for item in result.get("rabbit_holes", []) if isinstance(item, dict)] if valid_result else [],
         }
         task_rows.append(row)
-        for cell_id in task.get("cell_ids", []):
-            outcome = "finding" if candidate_ids else status
-            evidence = [str(result_path.relative_to(scan))]
-            cell_outcomes.setdefault(str(cell_id), []).append((task_id, outcome, evidence, int(task.get("round", 0)), int(task.get("attempt", 1))))
 
     clusters: dict[str, list[dict]] = {}
     for candidate in raw:
@@ -209,11 +257,11 @@ def aggregate(root: Path, repo: Path, scan: Path) -> tuple[list[dict], list[dict
             task_ids: list[str] = []
             evidence = list(cell.get("evidence_refs", []))
         elif outcomes:
-            latest = max(outcomes, key=lambda item: (item[3], item[4]))
+            latest = max(outcomes, key=lambda item: (item[4], item[5]))
             status = latest[1]
-            reason = "candidate produced" if status == "finding" else "focused review completed" if status == "clean" else "task needs bounded gapfill"
+            reason = latest[2]
             task_ids = [item[0] for item in outcomes]
-            evidence = [ref for item in outcomes for ref in item[2]]
+            evidence = [ref for item in outcomes for ref in item[3]]
         else:
             status = "deferred" if cell.get("status") == "deferred" else "failed"
             reason = str(cell.get("disposition_reason") or "no completed task")
@@ -284,6 +332,8 @@ def advance_alternates(scan: Path) -> int:
 
 
 def finalize(root: Path, repo: Path, scan: Path) -> None:
+    hunt_plan = load(scan / "sast/hunt-plan.json", {})
+    plan_cells = {str(cell.get("id")): cell for cell in hunt_plan.get("cells", []) if isinstance(cell, dict)}
     prior_queue = load(scan / "sast/validation-queue.json", [])
     queue, dropped, ledger = aggregate(root, repo, scan)
     queued_ids = {str(item.get("id")) for item in queue if isinstance(item, dict)}
@@ -404,6 +454,12 @@ def finalize(root: Path, repo: Path, scan: Path) -> None:
     ledger["funnel"]["source_verified"] = sum(1 for item in verified if item.get("verification_level") == "source_verified")
     ledger["funnel"]["dynamic_verified"] = sum(1 for item in verified if item.get("verification_level") == "dynamic_verified")
     ledger["funnel"]["environment_required"] = sum(1 for item in verified if item.get("verification_level") == "environment_required")
+    close_depth_limited_cells(ledger)
+    depth_limited_count = sum(1 for cell in ledger.get("cells", []) if isinstance(cell, dict) and cell.get("status") == "depth_limited")
+    mapping_count = sum(1 for cell in plan_cells.values() if cell.get("lead_key") is None)
+    rabbit_count = sum(1 for cell in plan_cells.values() if cell.get("lead_key") is not None)
+    question_count = sum(len(task.get("cell_ids", [])) for task in hunt_plan.get("tasks", []))
+    not_applicable_count = sum(1 for cell in ledger["cells"] if cell.get("status") == "not_applicable")
     write(scan / "sast/verified-findings.json", verified)
     write(scan / "sast/dropped-findings.json", validation_dropped)
     write(scan / "sast/coverage-ledger.json", ledger)
@@ -415,14 +471,31 @@ def finalize(root: Path, repo: Path, scan: Path) -> None:
         f"- Source verified: {ledger['funnel']['source_verified']}\n"
         f"- Dynamically verified: {ledger['funnel']['dynamic_verified']}\n"
         f"- Environment required: {ledger['funnel']['environment_required']}\n"
+        f"- Contextual mappings: {mapping_count}\n"
+        f"- Hunt questions executed: {question_count}\n"
+        f"- Rabbit-hole cells: {rabbit_count}\n"
+        f"- Not applicable: {not_applicable_count}\n"
+        f"- Depth-limited cells: {depth_limited_count}\n"
         f"- Rejected/deferred: {len(validation_dropped)}\n",
     )
     manifest = {
-        "phase": "sast", "status": "degraded" if ledger["funnel"]["environment_required"] or any(cell["status"] in {"deferred", "shallow", "failed"} for cell in ledger["cells"]) else "ok",
+        "phase": "sast", "status": sast_phase_status(ledger),
         "started_at": now(), "completed_at": now(),
         "inputs": ["repo-context/security-surfaces.json", "tool-collection/sca-advisories.json", "tool-collection/secrets-redacted.json", "sast/threat-model.json", "sast/hunt-plan.json"],
-        "outputs": ["sast/raw-findings.json", "sast/validation-results.json", "sast/verified-findings.json", "sast/dropped-findings.json", "sast/coverage-ledger.json", "sast/wishlist.json"],
-        "coverage": {"cells": len(ledger["cells"]), "tasks": len(ledger["tasks"]), **ledger["funnel"]},
+        "outputs": [
+            "sast/threat-model.json", "sast/hunt-plan.json",
+            "sast/raw-findings.json", "sast/validation-results.json",
+            "sast/verified-findings.json", "sast/dropped-findings.json",
+            "sast/dedup-clusters.json", "sast/coverage-ledger.json",
+            "sast/wishlist.json", "sast/summary.md",
+        ],
+        "coverage": {
+            "cells": len(ledger["cells"]), "contextual_mappings": mapping_count,
+            "rabbit_hole_cells": rabbit_count, "tasks": len(ledger["tasks"]),
+            "hunt_questions": question_count, "not_applicable": not_applicable_count,
+            "depth_limited": depth_limited_count,
+            **ledger["funnel"],
+        },
         "tool_versions": {"vulnops_audit_doctrine": "2.0"},
         "warnings": ledger["warnings"], "errors": ledger["errors"],
     }

@@ -9,6 +9,7 @@ import os
 from datetime import datetime, timezone
 from pathlib import Path
 
+from harness_contract import harness_contract_sha256, resolved_sast_budget
 from model_identity import model_diversity
 
 
@@ -69,6 +70,8 @@ def main() -> int:
     diversity = model_diversity(model, verifier_model)
 
     root = args.harness_root.resolve()
+    contract_sha256 = harness_contract_sha256(root)
+    sast_budget = resolved_sast_budget(args.depth)
     repo = args.repo_path.resolve()
     scan = args.scan_base.resolve()
     try:
@@ -81,6 +84,14 @@ def main() -> int:
     if args.resume:
         if not manifest_path.is_file() or not ledger_path.is_file():
             parser.error("resume requested without an existing run manifest and task ledger")
+        try:
+            existing_manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as exc:
+            parser.error(f"cannot read resume manifest: {exc}")
+        if existing_manifest.get("harness_contract_sha256") != contract_sha256:
+            parser.error("resume manifest was created by a different harness contract")
+        if existing_manifest.get("sast_budget") != sast_budget:
+            parser.error("resume manifest was created with a different SAST budget")
     else:
         created = now()
         atomic_write(
@@ -98,12 +109,17 @@ def main() -> int:
                 "created_at": created,
                 "updated_at": created,
                 "target_fingerprint": args.target_fingerprint,
+                "harness_contract_sha256": contract_sha256,
+                "sast_budget": sast_budget,
                 "model": model,
                 "model_roles": model_roles,
                 "verifier_model": verifier_model,
                 "model_diversity": diversity,
                 "reproduction_mode": args.reproduction_mode,
                 "phases": {phase: "pending" for phase in PHASES},
+                "phase_seals": {},
+                "recovery_count": 0,
+                "recovery_history": [],
             },
         )
         atomic_write(
@@ -179,6 +195,8 @@ def main() -> int:
         "validate_json": root / "scripts/validate-json.py",
         "target_fingerprint": root / "scripts/target-fingerprint.py",
         "build_hunt_plan": root / "scripts/build-hunt-plan.py",
+        "sast_contract": root / "scripts/sast_contract.py",
+        "harness_contract": root / "scripts/harness_contract.py",
         "finalize_recon": root / "scripts/finalize-recon.py",
         "finalize_sast": root / "scripts/finalize-sast.py",
         "safe_reproduction": root / "scripts/run-safe-reproduction.sh",
@@ -196,11 +214,16 @@ def main() -> int:
         "short_sha": args.commit,
         "depth": args.depth,
         "target_fingerprint": args.target_fingerprint,
+        "harness_contract_sha256": contract_sha256,
+        "sast_budget": sast_budget,
         "model": model,
         "model_roles": model_roles,
         "verifier_model": verifier_model,
         "model_diversity": diversity,
         "reproduction_mode": args.reproduction_mode,
+        "recovery_count": int(existing_manifest.get("recovery_count", 0)) if args.resume else 0,
+        "last_recovery": (existing_manifest.get("recovery_history") or [None])[-1] if args.resume else None,
+        "launcher_session_id": os.environ.get("VULNOPS_LAUNCHER_SESSION_ID"),
         "harness_root": str(root),
         "repo_path": str(repo),
         "repo_scan_root": str(scan.parent.parent),

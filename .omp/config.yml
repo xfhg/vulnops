@@ -16,8 +16,6 @@ modelRoles:
   designer: 'openai-codex/gpt-5.5:high'
   commit: 'openai-codex/gpt-5.5:minimal'
   tiny: 'openai-codex/gpt-5.5:minimal'
-  primary: 'openai-codex/gpt-5.5:high'
-  verifier: 'openai-codex/gpt-5.5:xhigh'
 
 memory:
   enabled: false
@@ -40,6 +38,8 @@ task:
   batch: true
   maxConcurrency: 16
   maxRecursionDepth: 2
+  agentModelOverrides:
+    vulnops-independent-verify-one: 'openai-codex/gpt-5.4:xhigh'
   isolation:
     mode: none
 tools:

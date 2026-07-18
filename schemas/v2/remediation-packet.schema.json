@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "VulnOps V2 Per-Finding Remediation Packet",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version", "remediation_id", "source_run_id", "finding_id",
+    "classification", "classification_reason", "report_sha256",
+    "final_findings_sha256", "finding_sha256", "finding", "artifact_refs",
+    "source_files"
+  ],
+  "properties": {
+    "schema_version": {"const": "2.0"},
+    "remediation_id": {"type": "string", "minLength": 1},
+    "source_run_id": {"type": "string", "minLength": 1},
+    "finding_id": {"type": "string", "pattern": "^F-[0-9]{3}$"},
+    "classification": {"enum": ["eligible", "manual_only"]},
+    "classification_reason": {"type": "string", "minLength": 1},
+    "report_sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+    "final_findings_sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+    "finding_sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+    "finding": {"type": "object"},
+    "artifact_refs": {"type": "array", "items": {"type": "string", "minLength": 1}, "uniqueItems": true},
+    "source_files": {"type": "array", "items": {"type": "string", "minLength": 1}, "uniqueItems": true}
+  }
+}

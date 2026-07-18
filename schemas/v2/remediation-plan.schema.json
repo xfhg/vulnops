@@ -1,0 +1,43 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "VulnOps V2 Linked Remediation Plan",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version", "remediation_id", "source_run_id", "report_sha256",
+    "final_findings_sha256", "items", "counts"
+  ],
+  "properties": {
+    "schema_version": {"const": "2.0"},
+    "remediation_id": {"type": "string", "minLength": 1},
+    "source_run_id": {"type": "string", "minLength": 1},
+    "report_sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+    "final_findings_sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+    "items": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["finding_id", "finding_kind", "classification", "reason", "packet_ref", "packet_sha256"],
+        "properties": {
+          "finding_id": {"type": "string", "pattern": "^F-[0-9]{3}$"},
+          "finding_kind": {"enum": ["code", "dependency", "secret", "chain"]},
+          "classification": {"enum": ["eligible", "manual_only"]},
+          "reason": {"type": "string", "minLength": 1},
+          "packet_ref": {"type": "string", "pattern": "^packets/F-[0-9]{3}\\.json$"},
+          "packet_sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"}
+        }
+      }
+    },
+    "counts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["total", "eligible", "manual_only"],
+      "properties": {
+        "total": {"type": "integer", "minimum": 0},
+        "eligible": {"type": "integer", "minimum": 0},
+        "manual_only": {"type": "integer", "minimum": 0}
+      }
+    }
+  }
+}

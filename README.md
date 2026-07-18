@@ -126,6 +126,7 @@ stage progress and peer questions; it is never the completion mechanism.
 | Safe reproduction | One contained worker per eligible source-verified candidate | Configured `max_parallel` |
 | Intrusion | One worker per campaign, with overflow queued | Depth-bounded campaign waves |
 | Final Verification | One fresh-context verifier per synthesized finding | Depth-bounded verifier waves |
+| Linked remediation | One production-patch worker per eligible accepted finding | 4 quick / 8 balanced / 12 full |
 
 Nested task batches block their coordinator until the batch returns, while the
 workers inside the batch execute concurrently. Every coordinator may spawn only
@@ -140,6 +141,12 @@ The phase order remains sequential by design:
 Recon → Tool Collection → SAST → Campaign Planning
       → Intrusion → Synthesis → Final Verification → Report
 ```
+
+Production remediation is deliberately outside this evidence pipeline. After a
+report is complete and the whole scan validates, an operator may start an
+independent linked remediation execution. This preserves the audit and report as
+immutable evidence while giving developers apply-clean Git patches derived from
+the final accepted findings.
 
 Each downstream phase consumes validated, immutable upstream evidence, so
 overlapping those phases would violate the authority and resume contracts.
@@ -215,7 +222,8 @@ VulnOps is intentionally fail-closed:
 - The target checkout is read-only input. Its full working-tree fingerprint is
   checked during initialization, after Codegraph snapshot creation, after every
   phase, and at whole-scan validation.
-- Runtime writes are constrained to `scans/` and `.harness/`.
+- Audit writes are constrained to `scans/` and `.harness/`; optional remediation
+  writes are constrained to `remediations/`, `work/`, and `.harness/`.
 - Audit execution is offline except for the configured LLM endpoint.
 - Raw scanner output and raw proof output never enter scan artifacts or reports.
 - Secret values, partial identifiers, entropy material, and proof tokens are not
@@ -304,6 +312,18 @@ Start the OMP-led audit:
 ```bash
 ./run.sh "audit the target repository at balanced depth"
 ```
+
+To request optional production-only remediation after completion:
+
+```bash
+./remediate.sh scans/<repo-id>/runs/<run-id>
+```
+
+The command writes only beneath `remediations/` and `work/`. It never modifies
+the target or completed scan, and it refuses to run if the current target differs
+from the audited fingerprint. Published patches pass deterministic safety and
+`git apply --check` gates; they are not executed, tested, independently reviewed,
+applied, committed, or pushed by the harness.
 
 The audit lead initializes the run with `scripts/run-audit.sh` exactly once and
 then owns the canonical phase sequence. Operators preparing a run explicitly may
@@ -414,6 +434,17 @@ final-verification/               per-finding verdicts and accepted findings
 report/                           sanitized JSON and Markdown reports
 ```
 
+Optional remediation bundles are linked separately:
+
+```text
+remediations/<repo-id>/<audit-run-id>/<remediation-id>/
+  remediation-manifest.json      source identity, lifecycle, and output seal
+  remediation.json               exact patch-ready/manual dispositions
+  summary.md                      bounded developer handoff and limitations
+  packets/ results/               per-finding model contracts and outcomes
+  patches/ receipts/              apply-clean Git patches and deterministic checks
+```
+
 The operational context at `.harness/audit-context.json` is the only path and
 selector authority for agents. Codegraph snapshots, tool work, contained homes,
 and probes also live beneath `.harness/`, never in the target.
@@ -426,6 +457,14 @@ Three layers make the workflow inspectable:
 bash scripts/validate-phase.sh <scan-base> <phase>
 bash scripts/validate-scan.sh <scan-base>
 bash scripts/audit-status.sh [<scan-base>]
+```
+
+Linked remediation has a separate gate and status view because it is not an
+audit phase:
+
+```bash
+python3 scripts/validate-remediation.py <remediation-base>
+bash scripts/remediation-status.sh <remediation-base>
 ```
 
 Phase validation checks schemas, semantic references, artifact hashes, tool
@@ -468,7 +507,8 @@ bash scripts/cleanup.sh work
 bash scripts/cleanup.sh target
 ```
 
-`cleanup.sh all` removes work, logs, and the target while retaining scans. The
+`cleanup.sh all` removes work, logs, and the target while retaining scans and
+linked remediation bundles. The
 explicit full-clean mode also removes scan deliverables and should be reserved for
 intentional environment destruction.
 
@@ -484,6 +524,7 @@ scripts/               deterministic execution, adapters, finalizers, gates
 tests/                 configuration, phase, lifecycle, and integration tests
 target/                exactly one read-only Git repository
 scans/                 isolated durable run artifacts
+remediations/           versioned patches linked to completed audit runs
 .harness/              contained runtime state and immutable graph snapshots
 ```
 

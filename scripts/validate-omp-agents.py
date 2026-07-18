@@ -24,6 +24,8 @@ EXPECTED = {
     "vulnops-synthesis",
     "vulnops-final-verification",
     "vulnops-independent-verify-one",
+    "vulnops-remediation",
+    "vulnops-remediate-one",
 }
 SPAWNS = {
     "vulnops-recon": {
@@ -39,6 +41,7 @@ SPAWNS = {
     },
     "vulnops-intrusion": {"vulnops-intrusion-campaign"},
     "vulnops-final-verification": {"vulnops-independent-verify-one"},
+    "vulnops-remediation": {"vulnops-remediate-one"},
 }
 PHASE_AGENTS = {
     "vulnops-recon",
@@ -47,6 +50,7 @@ PHASE_AGENTS = {
     "vulnops-intrusion",
     "vulnops-synthesis",
     "vulnops-final-verification",
+    "vulnops-remediation",
 }
 ALLOWED_TOOLS = {"read", "write", "grep", "glob", "bash", "task", "irc", "yield"}
 ROLE_CONTRACT = {
@@ -57,6 +61,8 @@ ROLE_CONTRACT = {
     "vulnops-synthesis": ("pi/slow", "high"),
     "vulnops-final-verification": ("pi/task", "medium"),
     "vulnops-independent-verify-one": ("pi/slow", "xhigh"),
+    "vulnops-remediation": ("pi/task", "medium"),
+    "vulnops-remediate-one": ("pi/slow", "high"),
 }
 
 

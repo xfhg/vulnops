@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # cleanup.sh — Clean ephemeral harness state
-# Does NOT remove scan outputs (those are the deliverables).
+# Does NOT remove scan or remediation outputs (those are the deliverables).
 set -euo pipefail
 
 HARNESS_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -20,8 +20,8 @@ What to clean:
   work      Remove ephemeral agent workspace (work/*)
   logs      Remove old log files (.harness/logs/*)
   target    Remove cloned target repo (target/*)
-  all       Clean work + logs + target (keeps scans)
-  --full    Nuclear: remove everything including scans
+  all       Clean work + logs + target (keeps scans and remediations)
+  --full    Nuclear: remove everything including scans and remediations
 
 Examples:
   $0              # Show status
@@ -77,6 +77,17 @@ show_status() {
     else
         echo "  (empty)"
     fi
+    echo ""
+
+    echo "remediations/ (linked patch deliverables):"
+    if [ -d "${HARNESS_ROOT}/remediations" ]; then
+        local count size
+        count="$(find "${HARNESS_ROOT}/remediations" -mindepth 3 -maxdepth 3 -type d 2>/dev/null | wc -l | tr -d ' ')"
+        size="$(du -sh "${HARNESS_ROOT}/remediations" 2>/dev/null | cut -f1)"
+        echo "  ${count} remediation run(s), ${size:-0}"
+    else
+        echo "  (empty)"
+    fi
 }
 
 clean_work() {
@@ -106,6 +117,12 @@ clean_scans() {
     log "Done."
 }
 
+clean_remediations() {
+    log "Cleaning remediations/..."
+    rm -rf "${HARNESS_ROOT}/remediations/"*
+    log "Done."
+}
+
 # Main
 target="${1:-status}"
 
@@ -115,7 +132,7 @@ case "$target" in
     logs)    clean_logs ;;
     target)  clean_target ;;
     all)     clean_work; clean_logs; clean_target ;;
-    --full)  clean_work; clean_logs; clean_target; clean_scans ;;
+    --full)  clean_work; clean_logs; clean_target; clean_scans; clean_remediations ;;
     --help)  usage ;;
     *)       echo "Unknown: $target"; usage; exit 1 ;;
 esac

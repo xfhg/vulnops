@@ -469,6 +469,9 @@ class RuntimeIsolationTests(unittest.TestCase):
             normal = guard(scan / "missing" / "nested" / "artifact.json")
             self.assertEqual(normal.returncode, 0, normal.stderr)
 
+            remediation = guard(ROOT / "remediations" / unique / "audit" / "run" / "patches" / "F-001.patch")
+            self.assertEqual(remediation.returncode, 0, remediation.stderr)
+
     @unittest.skipUnless(all((ROOT/f"bins/{name}").is_file() for name in ("wraith","osv-scanner","poltergeist")) and (ROOT/".harness/osv-db").is_dir(), "offline scanner toolchain unavailable")
     def test_deterministic_tool_collection_runs_parallel_phase(self) -> None:
         with tempfile.TemporaryDirectory(dir=ROOT/"scans") as tmp:

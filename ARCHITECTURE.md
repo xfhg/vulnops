@@ -304,6 +304,7 @@ Parallelism is applied within phases where workers have disjoint ownership:
 | Safe reproduction | Eligible source-verified candidates | Configured `max_parallel` |
 | Intrusion | Planned campaigns | Depth-bounded waves |
 | Final Verification | Synthesized findings | Depth-bounded waves |
+| Linked remediation | Eligible final accepted findings | 4 quick / 8 balanced / 12 full |
 
 OMP nested task batches are synchronous from the coordinator's perspective, but
 the workers within a batch run concurrently. Queue overflow is executed in later
@@ -335,6 +336,12 @@ fanout.
 | Synthesis | Evidence, SAST, intrusion | `synthesis/` | Complete finding contract and closed primitive transitions |
 | Final Verification | Synthesized findings and cited source | `final-verification/` | Correct verifier identity and fresh independent verdict |
 | Report | Final verified findings | `report/` | Deterministic sanitized projection and matching counts |
+
+Linked remediation is intentionally not a ninth row. It begins only from a
+completed, whole-scan-valid audit and writes to a separate `remediations/` root.
+The report remains the final audit authority; remediation is an optional
+developer artifact linked by run ID, report/finding hashes, and target
+fingerprint.
 
 The phase directory itself is part of the authority model. A worker artifact
 written outside its assigned directory is invalid even if its JSON is otherwise
@@ -909,6 +916,26 @@ Sanitization removes sensitive or proof-like tokens from presentation fields.
 Whole-scan validation also enforces artifact-size limits and scans persisted
 artifacts for forbidden secret patterns. Information minimization is an
 architectural property, not a user-selectable report option.
+
+### 18.1 Linked production remediation
+
+The post-audit remediation launcher revalidates the completed scan and requires
+the current target to match its exact fingerprint. A deterministic planner then
+copies each accepted final finding into a bounded, hash-bound packet with its
+canonical artifact and source references. Obvious non-code actions, secrets, and
+environment-required claims close as manual work without invoking a patch agent.
+
+One worker handles each eligible finding in a disposable original/working pair
+under `work/`. The worker cannot write the target or scan and cannot execute
+code. A deterministic publisher computes the Git diff, rejects binary, symlink,
+test/fixture/example/documentation, secret-bearing, escaping, oversized, or
+incomplete changes, and runs read-only `git apply --check` against the exact
+audited tree. Only then is a `.patch` atomically published.
+
+There is no independent patch reviewer in this mode. `patch_ready` therefore
+means structurally safe and applicable, not semantically proven or regression
+tested. The aggregate and summary always expose that limitation. The harness
+never applies a patch or performs repository delivery actions.
 
 ## 19. Validation architecture
 

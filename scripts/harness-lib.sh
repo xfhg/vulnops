@@ -20,10 +20,12 @@ harness_setup_containment() {
         "${hdir}/home/.omp/config" \
         "${hdir}/logs" \
         "${root}/work" \
-        "${root}/scans"
+        "${root}/scans" \
+        "${root}/remediations"
 
     export VULNOPSV3_ROOT="${root}"
     export VULNOPSV3_SCANS="${root}/scans"
+    export VULNOPSV3_REMEDIATIONS="${root}/remediations"
     export VULNOPSV3_TARGET="${root}/target"
     export VULNOPSV3_WORK="${root}/work"
     export VULNOPSV3_HOME="${hdir}/home"
@@ -178,6 +180,7 @@ harness_require_allowed_output() {
 
     case "$resolved" in
         "$resolved_root/scans"|"$resolved_root/scans"/*|\
+        "$resolved_root/remediations"|"$resolved_root/remediations"/*|\
         "$resolved_root/.harness"|"$resolved_root/.harness"/*|\
         "$resolved_root/work"|"$resolved_root/work"/*|\
         "$resolved_root/bins"|"$resolved_root/bins"/*)

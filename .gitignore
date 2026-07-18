@@ -4,6 +4,9 @@ target/*
 # Scan results
 scans/*
 
+# Linked post-audit remediation bundles
+remediations/*
+
 # Ephemeral agent workspace
 work/*
 
@@ -32,6 +35,8 @@ bins/*
 # Scan outputs — tracked in git for audit trail, but ignore temp files
 scans/**/*.tmp
 scans/**/*.lock
+remediations/**/*.tmp
+remediations/**/*.lock
 
 # OS / editor
 .DS_Store

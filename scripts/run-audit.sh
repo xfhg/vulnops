@@ -181,7 +181,6 @@ main() {
     mkdir -p "${scan_base}/sast/hunt-tasks"
     mkdir -p "${scan_base}/sast/verify"
     mkdir -p "${scan_base}/sast/reproduction"
-    mkdir -p "${scan_base}/sast/fixes"
     mkdir -p "${scan_base}/campaign-planning"
     mkdir -p "${scan_base}/report"
     mkdir -p "${scan_base}/intrusion/results"

@@ -152,7 +152,6 @@ def main() -> int:
         "sast_validation_results": scan / "sast/validation-results.json",
         "sast_wishlist": scan / "sast/wishlist.json",
         "sast_reproduction": scan / "sast/reproduction",
-        "sast_fixes": scan / "sast/fixes",
         "campaign_planning": scan / "campaign-planning",
         "evidence_index": scan / "campaign-planning/evidence-index.json",
         "campaign_plan": scan / "campaign-planning/campaign-plan.json",

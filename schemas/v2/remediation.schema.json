@@ -1,0 +1,59 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "VulnOps V2 Linked Remediation Bundle",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "artifact_kind", "remediation_id", "source", "model", "status", "counts", "items", "limitations"],
+  "properties": {
+    "schema_version": {"const": "2.0"},
+    "artifact_kind": {"const": "linked-remediation"},
+    "remediation_id": {"type": "string", "minLength": 1},
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["run_id", "scan_ref", "report_ref", "report_sha256", "final_findings_sha256", "target_fingerprint"],
+      "properties": {
+        "run_id": {"type": "string", "minLength": 1},
+        "scan_ref": {"type": "string", "pattern": "^scans/"},
+        "report_ref": {"const": "report/security-report.json"},
+        "report_sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+        "final_findings_sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+        "target_fingerprint": {"type": "string", "pattern": "^[a-f0-9]{64}$"}
+      }
+    },
+    "model": {"type": "string", "minLength": 1},
+    "status": {"enum": ["ok", "degraded"]},
+    "counts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["total", "patch_ready", "manual_required"],
+      "properties": {
+        "total": {"type": "integer", "minimum": 0},
+        "patch_ready": {"type": "integer", "minimum": 0},
+        "manual_required": {"type": "integer", "minimum": 0}
+      }
+    },
+    "items": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["finding_id", "finding_kind", "disposition", "summary", "patch_ref", "patch_sha256", "receipt_ref", "result_ref", "changed_files", "addressed_locations", "limitations"],
+        "properties": {
+          "finding_id": {"type": "string", "pattern": "^F-[0-9]{3}$"},
+          "finding_kind": {"enum": ["code", "dependency", "secret", "chain"]},
+          "disposition": {"enum": ["patch_ready", "manual_required"]},
+          "summary": {"type": "string", "minLength": 1},
+          "patch_ref": {"type": ["string", "null"]},
+          "patch_sha256": {"oneOf": [{"type": "null"}, {"type": "string", "pattern": "^[a-f0-9]{64}$"}]},
+          "receipt_ref": {"type": ["string", "null"]},
+          "result_ref": {"type": ["string", "null"]},
+          "changed_files": {"type": "array", "items": {"type": "string", "minLength": 1}, "uniqueItems": true},
+          "addressed_locations": {"type": "array", "items": {"type": "object"}},
+          "limitations": {"type": "array", "items": {"type": "string", "minLength": 1}}
+        }
+      }
+    },
+    "limitations": {"type": "array", "items": {"type": "string", "minLength": 1}}
+  }
+}

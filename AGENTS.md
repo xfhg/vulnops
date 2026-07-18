@@ -21,6 +21,10 @@ The lead is responsible for:
 - performing final whole-scan validation; and
 - returning only final report paths, counts, and material limitations.
 
+Optional remediation is a separate post-audit development execution. It never
+reopens a completed audit, changes report authority, or makes the audit lead
+responsible for applying fixes.
+
 The lead may spawn only the phase agents documented below. Phase coordinators may
 spawn only their declared workers with bounded concurrency.
 
@@ -30,7 +34,8 @@ spawn only their declared workers with bounded concurrency.
    initialize Codegraph, or generate files inside it.
 2. Use the exact target fingerprint in audit context. A mismatch fails every phase
    and the whole scan.
-3. Keep durable audit artifacts under `scans/` and runtime state under `.harness/`.
+3. Keep durable audit artifacts under `scans/`, linked remediation bundles under
+   `remediations/`, and runtime state under `.harness/` or `work/`.
 4. Keep audit execution offline except for the configured LLM endpoint.
 5. Read `.harness/audit-context.json` before every phase and use its absolute
    paths, selectors, fingerprint, depth, and reproduction policy as the only path
@@ -65,6 +70,17 @@ Start OMP through the contained launcher:
 ```bash
 ./run.sh "audit the target repository"
 ```
+
+After an audit is complete and whole-scan valid, explicitly request linked
+production patches with:
+
+```bash
+./remediate.sh <completed-scan-base>
+```
+
+This command creates a separate versioned bundle beneath
+`remediations/<repo-id>/<audit-run-id>/`. It never writes beneath the completed
+scan. The current target must still match the exact audited fingerprint.
 
 If the launcher terminates after initializing or resuming an audit, it closes any
 active top-level phase and task through the canonical state updater and marks the
@@ -365,8 +381,8 @@ sast/wishlist.json
 sast/phase-manifest.json
 ```
 
-`sast/deepdive/`, `sast/verify/`, `sast/reproduction/`, and `sast/fixes/` contain
-bounded supporting artifacts. Source-verified candidates may be promoted;
+`sast/deepdive/`, `sast/verify/`, and `sast/reproduction/` contain bounded
+supporting artifacts. Source-verified candidates may be promoted;
 environment-required candidates remain unconfirmed.
 
 `build-hunt-plan.py` also publishes one derived, hash-bound packet beneath
@@ -592,6 +608,58 @@ Return to the user:
 
 Do not reproduce raw findings, secrets, payloads, or proof output in chat.
 
+### 8.1 Optional linked remediation
+
+Linked remediation begins only after the source run is `complete` and
+`validate-scan.sh` succeeds. It is not a ninth audit phase and must not add,
+rewrite, or reseal anything under `scans/`.
+
+`remediate.sh` initializes or recovers one versioned execution beneath
+`remediations/`, writes `.harness/remediation-context.json`, and launches the
+dedicated remediation controller. Use `scripts/update-remediation-state.py` as
+the only state writer. Retry the stable top-level `Remediation` attempt once;
+completed bundles are immutable.
+
+The deterministic planner creates one hash-bound packet for every accepted
+entry in `final-verification/findings.json`. Rejected findings are never inputs.
+Secret and `needs_environment` findings are terminal `manual_required` items.
+The coordinator launches one `vulnops-remediate-one` worker per eligible finding
+with concurrency 4/8/12 for quick/balanced/full depth and queues overflow.
+
+Workers must read the final finding, its independent result, every cited
+artifact, and all cited source paths. They may edit only the disposable copy
+created under `work/`. Do not run target code, builds, tests, package managers,
+or network commands. Production patches may change runtime source,
+deployment/configuration, dependency manifests, and consistent lockfiles; they
+must not change tests, specs, fixtures, examples, or documentation.
+
+Only `scripts/publish-remediation-patch.py` may create a final patch. Publication
+requires safe target-relative text changes, complete root-cause accounting,
+bounded output, secret hygiene, unchanged target identity, and successful
+read-only `git apply --check --whitespace=error-all`. Apply-check is not dynamic
+testing or independent semantic verification and the summary must state that
+limitation.
+
+Required artifacts are:
+
+```text
+remediation-manifest.json
+remediation-plan.json
+remediation.json
+summary.md
+packets/<finding-id>.json
+results/<finding-id>.json
+patches/<finding-id>.patch
+receipts/<finding-id>.json
+```
+
+Every accepted final finding must close `patch_ready` or `manual_required`.
+Missing, duplicate, orphan, unsafe, hash-mismatched, or non-applying patches fail
+validation. A bounded candidate failure after retry becomes `manual_required`;
+identity, schema, publication, or sanitizer failures fail the execution. Use
+`scripts/remediation-status.sh <remediation-base>` for the read-only result view.
+Never apply, commit, push, or open a pull request automatically.
+
 ## 9. OMP orchestration behavior
 
 Use the terminal OMP job delivery plus schema-valid yield as the completion
@@ -726,6 +794,9 @@ analysis and record the environment limitation.
 | `empty-synthesis.py`, `finalize-synthesis.py` | Empty path and strict finding closure |
 | `finalize-verification.py` | Verifier identity, corrections, chain-step closure, final findings |
 | `render-report.py` | Deterministic sanitized reporting |
+| `init-remediation.py`, `build-remediation-plan.py`, `update-remediation-state.py` | Linked post-audit identity, exact per-finding planning, lifecycle |
+| `prepare-remediation-work.py`, `publish-remediation-patch.py` | Disposable production edits and safe Git patch publication |
+| `finalize-remediation.py`, `validate-remediation.py`, `remediation-status.sh` | Exact dispositions, bundle integrity, read-only status |
 | `probe-toolchain.sh`, `probe-bubblewrap.sh` | Functional readiness and containment support |
 | `validate-config.sh`, `validate-phase.sh`, `validate-scan.sh` | Readiness, phase integrity, and whole-scan gates |
 
@@ -761,6 +832,13 @@ vulnops-intrusion-campaign
 vulnops-independent-verify-one
 ```
 
+Linked remediation agents:
+
+```text
+vulnops-remediation
+vulnops-remediate-one
+```
+
 Agents load only the skills declared in their own files. The main lead does not
 copy specialist lens instructions into tasks; it assigns the correct canonical
 agent and preserves its contract.
@@ -775,5 +853,6 @@ dispatch, and run-state entry.
 
 Do not add a model phase for deterministic bookkeeping, a second report path, a
 raw-output option, a fallback artifact builder, or a duplicate prompt containing
-existing skill doctrine. The canonical workflow stays small by keeping each stage
-deep, typed, and accountable.
+existing skill doctrine. `remediations/` is the sole final fix authority;
+safe-reproduction draft patches remain evidence only. The canonical audit
+workflow stays small by keeping each stage deep, typed, and accountable.

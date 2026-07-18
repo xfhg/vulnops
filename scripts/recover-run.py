@@ -32,7 +32,7 @@ TASK_PHASE = {
 }
 SUBDIRECTORIES = {
     "recon": ("research",),
-    "sast": ("deepdive", "hunt-tasks", "verify", "reproduction", "fixes"),
+    "sast": ("deepdive", "hunt-tasks", "verify", "reproduction"),
     "intrusion": ("results", "codegraph-runs"),
     "final-verification": ("results",),
 }

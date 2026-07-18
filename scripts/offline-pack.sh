@@ -139,13 +139,13 @@ copy_untracked_critical_source() {
         [ -n "$rel" ] || continue
         copy_file_to_staging "$rel"
     done < <(git -C "$HARNESS_ROOT" ls-files --others --exclude-standard -- \
-        .omp scripts schemas config tests AGENTS.md ARCHITECTURE.md README.md WATCHDOG.md run.sh config.toml.example offline-build.sh)
+        .omp scripts schemas config tests AGENTS.md ARCHITECTURE.md README.md WATCHDOG.md run.sh remediate.sh config.toml.example offline-build.sh)
 }
 
 check_untracked_critical_source() {
     local report="${TMPDIR:-/tmp}/vulnops-offline-untracked.txt"
     git -C "$HARNESS_ROOT" ls-files --others --exclude-standard -- \
-        .omp scripts schemas config tests AGENTS.md ARCHITECTURE.md README.md WATCHDOG.md run.sh config.toml.example offline-build.sh >"$report"
+        .omp scripts schemas config tests AGENTS.md ARCHITECTURE.md README.md WATCHDOG.md run.sh remediate.sh config.toml.example offline-build.sh >"$report"
     if [ -s "$report" ] && [ "$INCLUDE_UNTRACKED" != true ]; then
         err "Critical untracked files would be omitted from the offline pack:"
         sed 's/^/[pack]   /' "$report" >&2

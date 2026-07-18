@@ -49,6 +49,8 @@ Novelty is an outcome, not a seed requirement. A valuable result may be:
 That distinction keeps the harness red-team oriented without rewarding novelty
 theater. It seeks attacker leverage and combined effect.
 
+Deep dive on [ARCHITECTURE](ARCHITECTURE.md)
+
 ## Canonical workflow
 
 ```text

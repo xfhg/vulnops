@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# OMP shellPath wrapper for policy-only packages and optional source isolation.
+# OMP shellPath wrapper for the configured agent-egress policy.
 set -euo pipefail
 
 HARNESS_ROOT="$(cd "$(dirname "$0")/.." && pwd)"

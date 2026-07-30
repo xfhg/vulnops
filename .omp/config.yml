@@ -21,18 +21,6 @@ memory:
   enabled: false
 autolearn:
   enabled: false
-web_search:
-  enabled: false
-fetch:
-  enabled: false
-browser:
-  enabled: false
-search:
-  enabled: false
-remote:
-  enabled: false
-marketplace:
-  autoUpdate: off
 defaultThinkingLevel: low
 async:
   enabled: true

@@ -40,7 +40,7 @@ def main()->int:
         limitations.append(clean(item.get("message","Offline dependency coverage is limited."),1000))
     network=context.get("network",{}) if isinstance(context.get("network"),dict) else {}
     if network.get("agent_egress")=="policy_only":
-        limitations.append("Agent shell egress was not technically enforced; offline behavior was an operator policy and the OMP guard was defense-in-depth only.")
+        limitations.append("Agent shell egress was not technically enforced by the harness; network behavior followed the configured runtime policy.")
     package=context.get("offline_package",{}) if isinstance(context.get("offline_package"),dict) else {}
     execution_environment={"network":network,"offline_package":package}
     scans={}

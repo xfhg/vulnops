@@ -30,7 +30,7 @@ except ModuleNotFoundError:  # Imported as scripts.offline_package in tests.
 
 
 TOOL_LOCK_SCHEMA = "vulnops.offline-tool-lock.v2"
-MANIFEST_SCHEMA = "vulnops.offline-pack-manifest.v4"
+MANIFEST_SCHEMA = "vulnops.offline-pack-manifest.v5"
 CHUNK_SCHEMA = "vulnops.offline-pack-chunks.v2"
 TOOLS = ("wraith", "poltergeist", "omp", "osv-scanner", "codegraph")
 RUNTIME_ASSETS = ("omp-natives",)
@@ -50,14 +50,6 @@ MUTABLE_PREFIXES = (
 IMMUTABLE_HARNESS_PREFIXES = (
     ".harness/osv-db/",
 )
-OFFLINE_FORBIDDEN_PATHS = (
-    "scripts/agent-shell-isolator.sh",
-    "scripts/probe-agent-isolation.sh",
-    "scripts/probe-bubblewrap.sh",
-    "scripts/safe-reproduction-backend.sh",
-)
-
-
 class ContractError(ValueError):
     """Raised for a bounded package contract failure."""
 
@@ -240,7 +232,7 @@ def create_manifest(args: argparse.Namespace) -> None:
     root = args.root.resolve()
     if not root.is_dir():
         raise ContractError(f"package root is not a directory: {root}")
-    validate_static_profile(root, root / "config.toml")
+    validate_package_config(root / "config.toml")
     tool_lock = validate_tool_lock(args.tool_lock, args.platform)
     osv_lock = load_osv_lock(args.osv_lock)
     manifest_name = args.output.name
@@ -268,10 +260,8 @@ def create_manifest(args: argparse.Namespace) -> None:
         "security": {
             "live_config_included": args.live_config,
             "authenticity": "sha256",
-            "runtime_profile": "static-policy-only",
-            "agent_egress": "policy_only",
-            "egress_enforced": False,
-            "safe_reproduction": False,
+            "installation": "dependency-complete-offline",
+            "runtime_policy": "configured",
         },
         "mutable_paths": sorted(MUTABLE_PATHS),
         "mutable_prefixes": sorted(MUTABLE_PREFIXES),
@@ -336,22 +326,18 @@ def validate_manifest_document(path: Path) -> dict[str, Any]:
         {
             "live_config_included",
             "authenticity",
-            "runtime_profile",
-            "agent_egress",
-            "egress_enforced",
-            "safe_reproduction",
+            "installation",
+            "runtime_policy",
         },
         "manifest security",
     )
     if not isinstance(security["live_config_included"], bool) or security["authenticity"] != "sha256":
         raise ContractError("manifest security metadata is invalid")
     if (
-        security["runtime_profile"] != "static-policy-only"
-        or security["agent_egress"] != "policy_only"
-        or security["egress_enforced"] is not False
-        or security["safe_reproduction"] is not False
+        security["installation"] != "dependency-complete-offline"
+        or security["runtime_policy"] != "configured"
     ):
-        raise ContractError("manifest runtime capabilities are invalid")
+        raise ContractError("manifest installation metadata is invalid")
     if document["mutable_paths"] != sorted(MUTABLE_PATHS) or document["mutable_prefixes"] != sorted(MUTABLE_PREFIXES):
         raise ContractError("manifest mutable path policy does not match the package contract")
     files = document["files"]
@@ -390,7 +376,7 @@ def validate_manifest_document(path: Path) -> dict[str, Any]:
 def verify_manifest(root: Path, manifest_path: Path) -> dict[str, Any]:
     root = root.resolve()
     document = validate_manifest_document(manifest_path)
-    validate_static_profile(root, root / "config.toml")
+    validate_package_config(root / "config.toml")
     expected = {str(item["path"]): item for item in document["files"]}
     actual = {
         relative: entry_record(relative, path, root)
@@ -718,22 +704,14 @@ def scan_path_leaks(root: Path, forbidden: str) -> None:
         raise ContractError("absolute staging path leaked into packaged text: " + ", ".join(hits))
 
 
-def validate_static_profile(root: Path, config_path: Path) -> None:
-    for relative in OFFLINE_FORBIDDEN_PATHS:
-        if (root / relative).exists() or (root / relative).is_symlink():
-            raise ContractError(f"offline package contains a forbidden optional backend: {relative}")
+def validate_package_config(config_path: Path) -> None:
     try:
         with config_path.open("rb") as handle:
             config = tomllib.load(handle)
     except (OSError, tomllib.TOMLDecodeError) as exc:
         raise ContractError(f"cannot read offline package configuration: {exc}") from exc
-    harness = config.get("harness", {})
-    network = harness.get("network", {}) if isinstance(harness, dict) else {}
-    reproduction = harness.get("reproduction", {}) if isinstance(harness, dict) else {}
-    if not isinstance(network, dict) or network.get("linux_agent_egress", "enforced") != "policy_only":
-        raise ContractError("offline packages require harness.network.linux_agent_egress = policy_only")
-    if not isinstance(reproduction, dict) or reproduction.get("mode", "off") != "off":
-        raise ContractError("offline packages require harness.reproduction.mode = off")
+    if not isinstance(config, dict):
+        raise ContractError("offline package configuration must be a TOML table")
 
 
 def package_identity(root: Path) -> dict[str, Any]:
@@ -763,11 +741,11 @@ def network_identity(mode: str) -> dict[str, Any]:
     enforced = mode == "enforced" and platform.startswith("linux_")
     return {
         "agent_egress": mode,
-        "backend": "bubblewrap-unshare-net" if enforced else "omp-tool-guard",
+        "backend": "bubblewrap-unshare-net" if enforced else "none",
         "enforced": enforced,
         "limitation": None
         if enforced
-        else "agent shell egress is not technically enforced; offline behavior is an operator policy",
+        else "agent shell egress is not technically enforced by the harness",
     }
 
 
@@ -831,9 +809,8 @@ def parse_args() -> argparse.Namespace:
     manifest.add_argument("--created-at", required=True)
     manifest.add_argument("--live-config", action="store_true")
 
-    profile = sub.add_parser("validate-static-profile")
-    profile.add_argument("root", type=Path)
-    profile.add_argument("config", type=Path)
+    package_config = sub.add_parser("validate-package-config")
+    package_config.add_argument("config", type=Path)
 
     verify = sub.add_parser("verify-manifest")
     verify.add_argument("root", type=Path)
@@ -887,8 +864,8 @@ def main() -> int:
             verify_runtime_install(args.lock, args.asset, args.destination)
         elif args.command == "create-manifest":
             create_manifest(args)
-        elif args.command == "validate-static-profile":
-            validate_static_profile(args.root.resolve(), args.config)
+        elif args.command == "validate-package-config":
+            validate_package_config(args.config)
         elif args.command == "verify-manifest":
             document = verify_manifest(args.root, args.manifest)
             print(json.dumps({"status": "ok", "manifest_sha256": sha256_path(args.manifest), "files": len(document["files"])}))

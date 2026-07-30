@@ -63,11 +63,11 @@ PY
 offline_package=false
 if [ -f "${HARNESS_ROOT}/offline-pack-manifest.json" ]; then
     offline_package=true
-    if python3 "${HARNESS_ROOT}/scripts/offline_package.py" validate-static-profile \
-        "$HARNESS_ROOT" "${HARNESS_ROOT}/config.toml"; then
-        ok "offline package static runtime profile"
+    if python3 "${HARNESS_ROOT}/scripts/offline_package.py" validate-package-config \
+        "${HARNESS_ROOT}/config.toml"; then
+        ok "offline package configuration parses"
     else
-        err "offline package static runtime profile is invalid"
+        err "offline package configuration is invalid"
     fi
 fi
 
@@ -92,12 +92,7 @@ if [ -f "$tool_lock" ] && python3 "${HARNESS_ROOT}/scripts/offline_package.py" v
 else
     err "strict platform tool lock missing or invalid: $tool_lock"
 fi
-for script in run-audit.sh run-remediation.sh validate-phase.sh validate-scan.sh validate-remediation.py validate-omp-agents.py init-run.py init-remediation.py resume-run.py recover-run.py phase_seal.py update-run-state.py update-remediation-state.py dependency_contract.py finalize-recon.py build-hunt-plan.py finalize-sast.py sast_contract.py harness_contract.py remediation_contract.py build-remediation-plan.py prepare-remediation-work.py publish-remediation-patch.py finalize-remediation.py remediation-status.sh collect-tools.py run-wraith.sh run-poltergeist.sh normalize-wraith.py normalize-poltergeist.py setup-codegraph.sh codegraph-adapter.py build-evidence-index.py build-campaign-plan.py finalize-intrusion.py empty-synthesis.py finalize-synthesis.py finalize-verification.py render-report.py agent-shell.sh run-safe-reproduction.sh probe-toolchain.sh probe-verifier-model.py offline_package.py osv_snapshot.py; do check_exec "${HARNESS_ROOT}/scripts/${script}" "runtime ${script}"; done
-if [ "$offline_package" != true ]; then
-    for script in agent-shell-isolator.sh probe-agent-isolation.sh probe-bubblewrap.sh safe-reproduction-backend.sh; do
-        check_exec "${HARNESS_ROOT}/scripts/${script}" "optional source runtime ${script}"
-    done
-fi
+for script in run-audit.sh run-remediation.sh validate-phase.sh validate-scan.sh validate-remediation.py validate-omp-agents.py init-run.py init-remediation.py resume-run.py recover-run.py phase_seal.py update-run-state.py update-remediation-state.py dependency_contract.py finalize-recon.py build-hunt-plan.py finalize-sast.py sast_contract.py harness_contract.py remediation_contract.py build-remediation-plan.py prepare-remediation-work.py publish-remediation-patch.py finalize-remediation.py remediation-status.sh collect-tools.py run-wraith.sh run-poltergeist.sh normalize-wraith.py normalize-poltergeist.py setup-codegraph.sh codegraph-adapter.py build-evidence-index.py build-campaign-plan.py finalize-intrusion.py empty-synthesis.py finalize-synthesis.py finalize-verification.py render-report.py agent-shell.sh agent-shell-isolator.sh run-safe-reproduction.sh safe-reproduction-backend.sh probe-agent-isolation.sh probe-bubblewrap.sh probe-toolchain.sh probe-verifier-model.py offline_package.py osv_snapshot.py; do check_exec "${HARNESS_ROOT}/scripts/${script}" "runtime ${script}"; done
 for module in artifact_policy.py close-interrupted-run.py close-interrupted-remediation.py model_identity.py remediation_common.py; do check_file "${HARNESS_ROOT}/scripts/${module}" "runtime ${module}"; done
 check_exec "${HARNESS_ROOT}/remediate.sh" "linked remediation launcher"
 check_file "${HARNESS_ROOT}/.omp/main/vulnops-remediation-main.md" "linked remediation controller"
@@ -115,15 +110,12 @@ for selector_name in OMP_MODEL_SELECTOR OMP_ORCHESTRATOR_MODEL_SELECTOR OMP_TASK
     value="${!selector_name:-}"; [[ "$value" =~ ^[^/[:space:]]+/[^[:space:]]+$ ]] && ok "$selector_name syntax" || err "$selector_name syntax invalid"
 done
 
-python3 - "${PI_CODING_AGENT_DIR}/config.yml" "${OMP_MODEL_SELECTOR:-}" "${OMP_ORCHESTRATOR_MODEL_SELECTOR:-}" "${OMP_TASK_MODEL_SELECTOR:-}" "${OMP_SLOW_MODEL_SELECTOR:-}" "${OMP_SMOL_MODEL_SELECTOR:-}" "${OMP_VERIFIER_MODEL_SELECTOR:-}" "${HARNESS_ROOT}/scripts/agent-shell.sh" <<'PY' || err "generated model configuration does not match selectors or offline shell"
+python3 - "${PI_CODING_AGENT_DIR}/config.yml" "${OMP_MODEL_SELECTOR:-}" "${OMP_ORCHESTRATOR_MODEL_SELECTOR:-}" "${OMP_TASK_MODEL_SELECTOR:-}" "${OMP_SLOW_MODEL_SELECTOR:-}" "${OMP_SMOL_MODEL_SELECTOR:-}" "${OMP_VERIFIER_MODEL_SELECTOR:-}" "${HARNESS_ROOT}/scripts/agent-shell.sh" <<'PY' || err "generated model configuration does not match selectors or configured shell"
 import re,sys
 from pathlib import Path
 path=Path(sys.argv[1]); primary,orchestrator,task,slow,smol,verifier,shell_path=sys.argv[2:]
 if not path.is_file():raise SystemExit("generated OMP config missing")
 text=path.read_text()
-for feature in ("fetch","web_search","browser","search","remote"):
-    if not re.search(rf"(?m)^{re.escape(feature)}:\n  enabled: false$",text):raise SystemExit(f"{feature} is not disabled")
-if not re.search(r"(?m)^marketplace:\n  autoUpdate: off$",text):raise SystemExit("marketplace updates are not disabled")
 roles={};overrides={};section=None;configured_shell=None
 for line in text.splitlines():
     if line.startswith("shellPath:"):configured_shell=line.split(":",1)[1].strip().strip("'\"")
@@ -188,12 +180,7 @@ case "${VULNOPS_LINUX_AGENT_EGRESS:-enforced}" in
     enforced|policy_only) ;;
     *) err "invalid Linux agent egress mode" ;;
 esac
-if [ "$offline_package" = true ]; then
-    [ "${VULNOPS_LINUX_AGENT_EGRESS:-}" = "policy_only" ] \
-        && [ "${VULNOPS_REPRODUCTION_MODE:-}" = "off" ] \
-        && ok "offline package capabilities are fixed to policy-only static analysis" \
-        || err "offline packages cannot enable enforced egress or safe reproduction"
-elif [ "$(uname -s)" = "Linux" ] && [ "${VULNOPS_LINUX_AGENT_EGRESS:-enforced}" = "enforced" ]; then
+if [ "$(uname -s)" = "Linux" ] && [ "${VULNOPS_LINUX_AGENT_EGRESS:-enforced}" = "enforced" ]; then
     if [ "${VULNOPS_SKIP_FUNCTIONAL_PROBES:-0}" = "1" ]; then
         ok "agent network-isolation probe explicitly skipped for fixture testing"
     elif "${HARNESS_ROOT}/scripts/probe-agent-isolation.sh" >/dev/null; then
@@ -206,7 +193,7 @@ elif [ "$(uname -s)" = "Darwin" ] && [ "${VULNOPS_LINUX_AGENT_EGRESS:-enforced}"
 else
     ok "agent egress policy mode: ${VULNOPS_LINUX_AGENT_EGRESS:-enforced}"
 fi
-if [ "$offline_package" != true ] && [ "${VULNOPS_REPRODUCTION_MODE:-off}" = "safe" ]; then
+if [ "${VULNOPS_REPRODUCTION_MODE:-off}" = "safe" ]; then
     if "${HARNESS_ROOT}/scripts/probe-bubblewrap.sh" >/dev/null 2>&1; then ok "bubblewrap isolation probe"; else echo "[validate-config] WARN: safe reproduction unavailable; findings will require environment evidence" >&2; fi
 fi
 

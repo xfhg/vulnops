@@ -8,7 +8,7 @@ import os
 from pathlib import Path
 
 
-CONTRACT_VERSION = "canonical-redteam-v2-offline-static-package-v4"
+CONTRACT_VERSION = "canonical-redteam-v2-offline-install-package-v5"
 CONTRACT_FILES = (
     "config/attack-taxonomy-v2.json",
     "config/osv-snapshot.lock.json",
@@ -26,8 +26,9 @@ CONTRACT_FILES = (
     "schemas/v2/tool-receipt.schema.json",
     "schemas/v2/dependency-limitations.schema.json",
     "schemas/v2/report.schema.json",
-    ".omp/extensions/offline-guard.ts",
+    ".omp/guards/target-readonly.ts",
     "scripts/agent-shell.sh",
+    "scripts/agent-shell-isolator.sh",
     "scripts/artifact_policy.py",
     "scripts/build-campaign-plan.py",
     "scripts/build-evidence-index.py",
@@ -44,7 +45,10 @@ CONTRACT_FILES = (
     "scripts/render-report.py",
     "scripts/osv_snapshot.py",
     "scripts/offline_package.py",
+    "scripts/probe-agent-isolation.sh",
+    "scripts/probe-bubblewrap.sh",
     "scripts/run-safe-reproduction.sh",
+    "scripts/safe-reproduction-backend.sh",
     "scripts/init-run.py",
     "scripts/phase_seal.py",
     "scripts/recover-run.py",
@@ -63,12 +67,6 @@ CONTRACT_FILES = (
     ".omp/agents/vulnops-deepdive-chunk.md",
     ".omp/agents/vulnops-sast-lead.md",
     ".omp/agents/vulnops-independent-verify-one.md",
-)
-OPTIONAL_CONTRACT_FILES = (
-    "scripts/agent-shell-isolator.sh",
-    "scripts/probe-agent-isolation.sh",
-    "scripts/probe-bubblewrap.sh",
-    "scripts/safe-reproduction-backend.sh",
 )
 DEFAULT_SAST_BUDGETS = {
     "quick": {"max_concurrency": 4, "max_hunt_tasks": 12, "max_hunt_questions": 24, "max_gapfill_rounds": 1, "max_attempts": 2},
@@ -99,16 +97,6 @@ def harness_contract_sha256(root: Path) -> str:
         digest.update(relative.encode("utf-8"))
         digest.update(b"\0")
         digest.update(path.read_bytes())
-        digest.update(b"\0")
-    for relative in OPTIONAL_CONTRACT_FILES:
-        path = root / relative
-        digest.update(relative.encode("utf-8"))
-        digest.update(b"\0")
-        if path.is_file():
-            digest.update(b"present\0")
-            digest.update(path.read_bytes())
-        else:
-            digest.update(b"absent")
         digest.update(b"\0")
     return digest.hexdigest()
 

@@ -114,12 +114,12 @@ main() {
             err "Complete checksum-pinned OSV snapshot is unavailable."
             exit 1
         fi
-        if [ "$(uname -s)" = "Linux" ] && [ "$network_mode" = "enforced" ] \
-            && ! "${HARNESS_ROOT}/scripts/probe-agent-isolation.sh" >/dev/null; then
-            err "Enforced agent egress requires working bubblewrap network isolation."
-            exit 1
-        fi
         log "  package: development tree with complete OSV snapshot"
+    fi
+    if [ "$(uname -s)" = "Linux" ] && [ "$network_mode" = "enforced" ] \
+        && ! "${HARNESS_ROOT}/scripts/probe-agent-isolation.sh" >/dev/null; then
+        err "Enforced agent egress requires working bubblewrap network isolation."
+        exit 1
     fi
     if ! bash "${HARNESS_ROOT}/scripts/probe-toolchain.sh" >/dev/null; then
         err "Audit toolchain failed its contained functional probe."

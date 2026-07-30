@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Optional source-tree backend for contained safe reproduction.
+# Optional Linux backend for configured contained safe reproduction.
 
 set -euo pipefail
 

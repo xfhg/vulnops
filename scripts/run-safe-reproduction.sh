@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Stable reproduction entrypoint; offline packages intentionally omit a backend.
+# Stable reproduction entrypoint with an optional Bubblewrap backend.
 set -euo pipefail
 
 HARNESS_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -15,7 +15,7 @@ if [ ! -x "$backend" ]; then
         echo "unavailable"
         exit 1
     fi
-    echo "safe reproduction is unavailable in this runtime profile" >&2
+    echo "safe reproduction is unavailable without a configured functional backend" >&2
     exit 4
 fi
 

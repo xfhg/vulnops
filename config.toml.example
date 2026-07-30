@@ -61,9 +61,9 @@ discovery = "proxy"
 default_depth = "balanced"
 
 [harness.network]
-# Source installs default to namespace-enforced agent egress denial. Offline
-# packages rewrite this to policy_only and record that egress is not enforced.
-linux_agent_egress = "enforced" # enforced | policy_only
+# Network behavior is runtime configuration, independent of package format.
+# policy_only has no harness-level egress sandbox and requires no Bubblewrap.
+linux_agent_egress = "policy_only" # enforced | policy_only
 
 [harness.scans.sast]
 # Maximum UTF-8 size of one exact contextual hunt packet. Adjacent source work
@@ -91,7 +91,7 @@ max_attempts = 2
 # Safe reproduction is config-only and off by default. When enabled, target
 # code may run only through the fail-closed disposable sandbox wrapper.
 [harness.reproduction]
-# Offline packages require mode = "off" and omit the optional backend.
+# Bubblewrap is optional and required only when safe reproduction is selected.
 mode = "off" # off | safe
 sandbox = "auto" # auto | bubblewrap
 timeout_seconds = 120

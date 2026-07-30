@@ -287,9 +287,9 @@ tasks.
 - bundled `omp`, `wraith`, `poltergeist`, `osv-scanner`, and `codegraph` binaries;
 - the complete checksum-pinned OSV snapshot.
 
-Bubblewrap is optional for source/development installations that select enforced
-Linux agent egress or safe reproduction. It is not included in or required by an
-offline package.
+Bubblewrap is not bundled and is not required to install or run the default
+configuration. It is an optional host capability used only when an operator
+explicitly selects enforced Linux agent egress or safe reproduction.
 
 Install or refresh the bundled toolchain and local advisory database using the
 repository scripts appropriate to the deployment environment:
@@ -375,7 +375,8 @@ installation, and configuration runbook.
 bash scripts/offline-pack.sh --platform linux_amd64
 ```
 
-Release builds require a clean worktree. `--allow-dirty` produces an explicitly
+Release builds require clean source files; prior generated archive and chunk
+outputs are excluded from that check. `--allow-dirty` produces an explicitly
 marked development artifact; `--include-config` is an explicit sensitive
 operation because it may package credentials. The default package substitutes
 `config.toml.example`.
@@ -389,24 +390,31 @@ tar -xzf vulnops-offline-linux-amd64-<commit>.tar.gz -C vulnops-offline
 cd vulnops-offline
 bash setup.sh verify
 # edit config.toml with the LLM endpoint and selectors
+# for OAuth subscriptions: bash setup.sh login openai-codex
 bash setup.sh configure
 ```
 
 `offline-build.sh` accepts only the selected platform's JSON manifest and rejects
 missing, reordered, tampered, or extra chunks. `setup.sh verify` performs a full
 inventory comparison, rechecks every lock and database, executes all tool version
-probes, starts OMP with its bundled native addon and offline extension, and checks
-the fixed static runtime profile without downloading anything.
+probes, starts OMP with its bundled native addon, and validates the package
+configuration without downloading anything.
 
-Every offline package fixes
-`[harness.network].linux_agent_egress = "policy_only"` and
-`[harness.reproduction].mode = "off"`. The package excludes the optional shell
-isolator, reproduction backend, and their functional probes. URL reads, extension
-discovery, marketplace updates, web/browser tools, and common network-capable
-shell commands remain blocked by the OMP guard, but agent shell egress is not
-technically enforced. Offline operation is an operator policy, not a network
-containment guarantee. This limitation is recorded in run identity and the final
-report. Package authenticity is SHA-256 based; no signing authority is claimed.
+“Offline package” describes installation, not a restricted runtime. The archive
+contains every locked tool, native library, OSV database, schema, and harness file
+needed to install and start VulnOps without fetching dependencies. It does not
+disable OMP network capabilities or interfere with OMP authentication and traffic
+to the configured LLM provider, including an OpenAI Codex subscription.
+OAuth-backed subscriptions authenticate into the installation-local OMP store
+with `setup.sh login <provider>` before the readiness gate.
+
+Runtime policy remains entirely config-driven and has the same supported surface
+as a source installation. The default packaged template uses `policy_only` egress
+and reproduction `off` so Bubblewrap is not an installation dependency. Operators
+may select enforced egress or safe reproduction when the destination provides a
+functionally supported Bubblewrap installation. Non-LLM online services are not
+required or assumed to be available. Package authenticity is SHA-256 based; no
+signing authority is claimed.
 
 A target may be placed manually or cloned during preparation:
 
@@ -429,9 +437,9 @@ small deliberately:
 - SAST packet-size and per-depth task/question/gapfill/attempt bounds; and
 - safe-reproduction resource limits.
 
-Source/development installations support the full configuration surface. An
-offline release rejects `linux_agent_egress = "enforced"` and reproduction
-`mode = "safe"` during packaging, setup, readiness validation, and audit startup.
+Source and offline-package installations support the same configuration surface.
+Package creation and verification validate configuration syntax and bundled
+dependencies; they do not rewrite or narrow runtime capabilities.
 
 Scanner binary choices, raw-output switches, model-authored reporting, redundant
 phase toggles, and multiple custom endpoints are not configuration options. The

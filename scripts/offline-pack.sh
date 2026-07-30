@@ -67,7 +67,12 @@ python3 -c 'import sys; raise SystemExit(sys.version_info < (3, 11))' \
     || die "Python 3.11 or newer is required"
 
 source_state="release"
-if [ -n "$(git -C "$HARNESS_ROOT" status --porcelain)" ]; then
+source_changes="$(git -C "$HARNESS_ROOT" status --porcelain --untracked-files=all -- \
+    . \
+    ':(exclude)offline/*/offline-pack-chunks.json' \
+    ':(exclude)offline/*/*.part-*' \
+    ':(exclude)vulnops-offline-*.tar.gz')"
+if [ -n "$source_changes" ]; then
     if [ "$ALLOW_DIRTY" != true ]; then
         die "release builds require a clean worktree; use --allow-dirty only for development artifacts"
     fi
@@ -104,7 +109,6 @@ copy_candidate() {
     local relative="$1"
     case "$relative" in
         offline/*|bins/*|.git/*|.harness/*|target/*|scans/*|remediations/*|work/*) return ;;
-        scripts/agent-shell-isolator.sh|scripts/probe-agent-isolation.sh|scripts/probe-bubblewrap.sh|scripts/safe-reproduction-backend.sh) return ;;
         vulnops-offline-*.tar.gz|*.tar.gz.part-*) return ;;
     esac
     [ -e "${HARNESS_ROOT}/${relative}" ] || [ -L "${HARNESS_ROOT}/${relative}" ] || return
@@ -131,19 +135,7 @@ if [ "$INCLUDE_CONFIG" = true ]; then
 else
     cp "${staging}/config.toml.example" "${staging}/config.toml"
 fi
-if [ "$INCLUDE_CONFIG" != true ]; then
-    python3 - "${staging}/config.toml" <<'PY'
-from pathlib import Path
-import sys
-path = Path(sys.argv[1])
-text = path.read_text()
-old = 'linux_agent_egress = "enforced"'
-if text.count(old) != 1:
-    raise SystemExit("cannot prepare the staged agent-egress configuration")
-path.write_text(text.replace(old, 'linux_agent_egress = "policy_only"'))
-PY
-fi
-python3 "$PACKAGE_TOOL" validate-static-profile "$staging" "${staging}/config.toml"
+python3 "$PACKAGE_TOOL" validate-package-config "${staging}/config.toml"
 
 log "installing hash-locked platform tools"
 bash "${staging}/scripts/install-tools.sh" --lock "${staging}/config/offline-pack.${PLATFORM}.lock.json" all

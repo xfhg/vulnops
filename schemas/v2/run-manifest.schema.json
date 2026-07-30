@@ -58,7 +58,7 @@
       "required": ["agent_egress", "backend", "enforced", "limitation"],
       "properties": {
         "agent_egress": {"enum": ["enforced", "policy_only"]},
-        "backend": {"enum": ["bubblewrap-unshare-net", "omp-tool-guard"]},
+        "backend": {"enum": ["bubblewrap-unshare-net", "none"]},
         "enforced": {"type": "boolean"},
         "limitation": {"type": ["string", "null"]}
       }

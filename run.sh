@@ -72,9 +72,7 @@ trap 'finish_launcher 143' TERM
 cd "$HARNESS_ROOT"
 "${OMP_BIN}" \
     --append-system-prompt "${HARNESS_ROOT}/.omp/main/vulnops-main.md" \
-    --tools "read,bash,edit,write,grep,glob,task,job,todo,irc,ask" \
-    --no-lsp \
-    --no-extensions \
-    --extension "${HARNESS_ROOT}/.omp/extensions/offline-guard.ts" \
+    --tools "read,bash,edit,write,grep,glob,lsp,task,job,todo,irc,ask" \
+    --extension "${HARNESS_ROOT}/.omp/guards/target-readonly.ts" \
     --approval-mode yolo \
     "$@"

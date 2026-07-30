@@ -14,22 +14,31 @@ usage() {
     cat <<'EOF'
 Usage:
   bash setup.sh verify
+  bash setup.sh login [provider]
   bash setup.sh configure
 
-verify     Validate the immutable package, locked tools, OSV snapshot, Python,
-           platform, and fixed static runtime profile.
+verify     Validate the immutable package, bundled tools and libraries, OSV
+           snapshot, Python, platform, and relocatability.
+login      Authenticate OMP to an OAuth-backed LLM provider inside this
+           installation. Defaults to the provider in llm.selector.
 configure  Re-run verification, generate harness-local OMP state, and validate
            the configured LLM/runtime without downloading anything.
 EOF
 }
 
+login_provider=""
 case "$COMMAND" in
-    verify|configure) ;;
+    verify|configure)
+        [ "$#" -eq 1 ] || die "unexpected setup arguments"
+        ;;
+    login)
+        [ "$#" -le 2 ] || die "login accepts at most one provider"
+        login_provider="${2:-}"
+        ;;
     "") usage; exit 64 ;;
     --help|-h) usage; exit 0 ;;
     *) die "unknown command: $COMMAND" ;;
 esac
-[ "$#" -eq 1 ] || die "unexpected setup arguments"
 
 detect_platform() {
     local os_name machine
@@ -109,7 +118,6 @@ mkdir -p "${HARNESS_ROOT}/.harness"
 omp_smoke_home="$(mktemp -d "${HARNESS_ROOT}/.harness/omp-smoke.XXXXXX")"
 if ! HOME="$omp_smoke_home" PI_CODING_AGENT_DIR="${omp_smoke_home}/.omp" \
     "${HARNESS_ROOT}/bins/omp" --no-extensions \
-    --extension "${HARNESS_ROOT}/.omp/extensions/offline-guard.ts" \
     --help >/dev/null 2>&1; then
     rm -rf "$omp_smoke_home"
     die "OMP cannot start from the bundled native runtime without provisioning"
@@ -132,12 +140,33 @@ print("\t".join([
 ]))
 PY
 )
-[ "$network_mode" = "policy_only" ] \
-    || die "offline packages require harness.network.linux_agent_egress = policy_only"
-[ "$reproduction_mode" = "off" ] \
-    || die "offline packages require harness.reproduction.mode = off"
+log "package verification complete (${platform}; runtime policy is config-driven)"
 
-log "package verification complete (${platform}, network=${network_mode}, reproduction=${reproduction_mode})"
+if [ "$COMMAND" = "login" ]; then
+    if [ -z "$login_provider" ]; then
+        login_provider="$("$python_bin" - "$config" <<'PY'
+import sys, tomllib
+from pathlib import Path
+with Path(sys.argv[1]).open("rb") as handle:
+    selector = str(tomllib.load(handle).get("llm", {}).get("selector", ""))
+provider, separator, _ = selector.partition("/")
+if not separator or not provider:
+    raise SystemExit("llm.selector must use provider/model syntax")
+print(provider)
+PY
+        )" || die "cannot derive the login provider from llm.selector"
+    fi
+    [[ "$login_provider" =~ ^[A-Za-z0-9][A-Za-z0-9._-]*$ ]] \
+        || die "invalid OMP login provider: $login_provider"
+    # Store OAuth state beneath this installation's mutable .harness directory.
+    # No credentials are copied from or written to the immutable package.
+    # shellcheck source=scripts/harness-lib.sh
+    source "${HARNESS_ROOT}/scripts/harness-lib.sh"
+    harness_setup_containment "$HARNESS_ROOT"
+    bash "${HARNESS_ROOT}/scripts/bootstrap-omp.sh"
+    log "starting OMP login for ${login_provider}; no harness dependencies will be downloaded"
+    exec "${HARNESS_ROOT}/bins/omp" auth-broker login "$login_provider"
+fi
 
 if [ "$COMMAND" = "configure" ]; then
     log "generating harness-local OMP configuration"
@@ -150,12 +179,13 @@ from datetime import datetime, timezone
 from pathlib import Path
 manifest, verification, network, reproduction, output = sys.argv[1:]
 document = {
-    "schema": "vulnops.offline-install.v2",
+    "schema": "vulnops.offline-install.v3",
     "verified_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
     "manifest": json.loads(verification),
     "manifest_path": str(Path(manifest).resolve()),
     "network_mode": network,
     "reproduction_mode": reproduction,
+    "runtime_policy": "configured",
 }
 path = Path(output)
 temporary = path.with_name(f".{path.name}.{os.getpid()}.tmp")

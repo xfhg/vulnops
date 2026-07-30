@@ -6,9 +6,11 @@ This guide covers three operations:
 2. rebuilding the archive from its verified transport chunks; and
 3. installing and configuring the package on the destination host.
 
-The audit runtime is offline except for the configured LLM endpoint. The offline
-package does not contain or require Bubblewrap. It uses a fixed static-analysis
-profile with agent egress set to `policy_only` and safe reproduction disabled.
+Here, “offline” describes installation: the destination can install and start the
+harness without downloading tools, libraries, OMP assets, or advisory databases.
+It does not describe a network sandbox or a reduced OMP runtime. OMP can connect
+normally to the configured LLM provider, including an OpenAI Codex subscription.
+The harness does not assume that any other online service is available.
 
 ## Supported platforms
 
@@ -62,9 +64,10 @@ Review and commit the changed lock before producing a release package.
 git status --short
 ```
 
-A release build requires no output from this command. To test uncommitted
-development changes, use `--allow-dirty`; the package manifest will mark the
-artifact as a development build.
+A release build requires no source changes. Existing generated archives and
+platform chunk outputs are not source inputs and do not make a subsequent build
+development-only. To test other uncommitted changes, use `--allow-dirty`; the
+package manifest will mark the artifact as a development build.
 
 ### Build for Linux AMD64
 
@@ -127,8 +130,8 @@ bash scripts/offline-pack.sh --platform linux_amd64 --include-config
 
 `--include-config` may put live LLM credentials into every archive and chunk.
 Prefer the default redacted template and configure the endpoint after transfer.
-Even with `--include-config`, package creation rejects enforced agent egress or
-safe reproduction.
+Package creation validates this file but does not rewrite or restrict its runtime
+capabilities.
 
 ## 2. Transfer or rebuild the archive
 
@@ -207,11 +210,12 @@ The destination needs:
 - Python 3.11 or newer;
 - sufficient disk space for extraction, OMP state, scans, and remediation
   bundles; and
-- access only to the configured LLM endpoint if model-backed audit phases will
-  run.
+- access to the configured LLM endpoint if model-backed audit phases will run.
 
 Bubblewrap, Docker, package managers, and network access to tool registries are
-not required.
+not required for installation or the default runtime configuration. Bubblewrap
+is needed only if the operator explicitly configures enforced Linux agent egress
+or safe reproduction.
 
 ### Extract into an empty directory
 
@@ -238,7 +242,7 @@ Verification checks:
 - Codegraph relocation;
 - every locked OSV ecosystem database;
 - OMP startup without provisioning; and
-- the fixed offline runtime profile.
+- a parseable runtime configuration.
 
 Stop if verification fails. Do not repair the extracted manifest or replace
 individual package files.
@@ -249,7 +253,8 @@ Edit `config.toml` and set the endpoint, credentials, primary and role selectors
 verifier selector, and custom-provider model records as appropriate for the
 environment.
 
-Keep these package settings unchanged:
+Runtime policy is independent of package format. The default template avoids a
+Bubblewrap dependency:
 
 ```toml
 [harness.network]
@@ -258,6 +263,23 @@ linux_agent_egress = "policy_only"
 [harness.reproduction]
 mode = "off"
 ```
+
+You may use the full supported configuration surface. Selecting `enforced` egress
+or `safe` reproduction requires a functional Bubblewrap installation on the
+destination; that executable is intentionally not bundled.
+
+For an OAuth-backed OMP subscription, authenticate it into this installation's
+contained credential store. The default selector uses:
+
+```bash
+bash setup.sh login openai-codex
+```
+
+The login contacts the provider's authentication service, which is part of the
+allowed LLM connection. It does not download tools, libraries, extensions, or
+databases. API-key and custom-provider configurations do not need this step when
+their credentials are already present in `config.toml` or the documented
+provider environment variable.
 
 Then generate the contained OMP configuration and run the full readiness gate:
 
@@ -273,8 +295,10 @@ writes a local installation receipt to:
 ```
 
 If model resolution fails, correct the configured LLM selector, custom-provider
-model records, endpoint credentials, or permitted LLM authentication. Do not
-enable general network access or run `omp models refresh` as a package repair.
+model records, endpoint credentials, or LLM authentication. For an OAuth-backed
+provider, rerun `setup.sh login <provider>`. OMP provider traffic is not blocked
+by the package. Do not run `omp models refresh` as an installation repair because
+the package already contains the required OMP runtime and bundled model catalog.
 
 ### Add the audit target
 
@@ -308,17 +332,21 @@ Use the correct operation for the change:
 - Never reuse an old chunk manifest with a new package and never edit package
   manifests by hand.
 
-## Security limitations
+## Runtime and security boundary
 
-The offline package deliberately omits the optional Bubblewrap shell isolator,
-safe-reproduction backend, and their probes. Therefore:
+The package guarantees dependency-complete offline installation and integrity
+checking. It deliberately does not impose a runtime network policy:
 
-- agent shell egress is not technically blocked by an operating-system sandbox;
-- offline behavior is an operator policy reinforced by the OMP tool guard;
-- safe target-code reproduction is unavailable;
-- model-backed phases may contact only the configured LLM endpoint by policy;
-  and
-- environments requiring a technical egress guarantee must add external host or
-  network controls.
+- OMP extensions, LSP support, configured provider authentication, and LLM
+  traffic remain available;
+- no package-specific guard blocks URL or network-capable operations;
+- non-LLM online resources may be absent, so the canonical audit workflow does
+  not depend on downloading tools, libraries, or advisory data;
+- the default `policy_only` setting does not technically enforce agent-shell
+  egress; and
+- an operator who selects enforced egress or safe reproduction must provide a
+  functionally supported Bubblewrap installation.
 
-These limitations are recorded in audit identity and final reports.
+The selected runtime policy and any resulting containment limitation are recorded
+in audit identity and final reports. They come from configuration and host
+capability, not from the offline package format.

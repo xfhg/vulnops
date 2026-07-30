@@ -24,7 +24,6 @@ from scripts.dependency_contract import (
 )
 from scripts.offline_package import (
     ContractError,
-    OFFLINE_FORBIDDEN_PATHS,
     TOOLS,
     create_archive,
     create_manifest,
@@ -33,7 +32,7 @@ from scripts.offline_package import (
     safe_extract_tar,
     sha256_path,
     validate_chunk_manifest,
-    validate_static_profile,
+    validate_package_config,
     validate_tool_lock,
     verify_manifest,
     verify_runtime_install,
@@ -98,16 +97,14 @@ class OfflinePackageTests(unittest.TestCase):
                 )
             )
             document = verify_manifest(package, manifest)
-            self.assertEqual(document["schema"], "vulnops.offline-pack-manifest.v4")
+            self.assertEqual(document["schema"], "vulnops.offline-pack-manifest.v5")
             self.assertEqual(
                 document["security"],
                 {
-                    "agent_egress": "policy_only",
                     "authenticity": "sha256",
-                    "egress_enforced": False,
+                    "installation": "dependency-complete-offline",
                     "live_config_included": False,
-                    "runtime_profile": "static-policy-only",
-                    "safe_reproduction": False,
+                    "runtime_policy": "configured",
                 },
             )
             inventory = {item["path"] for item in document["files"]}
@@ -136,7 +133,7 @@ class OfflinePackageTests(unittest.TestCase):
             with self.assertRaises(ContractError):
                 verify_manifest(relocated, relocated / manifest.name)
 
-    def test_static_package_profile_rejects_optional_backends_and_capability_upgrades(self) -> None:
+    def test_package_config_does_not_override_runtime_capabilities(self) -> None:
         with tempfile.TemporaryDirectory(dir=ROOT / ".harness") as temporary_name:
             package = Path(temporary_name)
             config = package / "config.toml"
@@ -144,29 +141,26 @@ class OfflinePackageTests(unittest.TestCase):
                 '[harness.network]\nlinux_agent_egress = "policy_only"\n'
                 '[harness.reproduction]\nmode = "off"\n'
             )
-            validate_static_profile(package, config)
+            validate_package_config(config)
 
-            forbidden = package / OFFLINE_FORBIDDEN_PATHS[0]
-            forbidden.parent.mkdir(parents=True)
-            forbidden.write_text("# optional backend\n")
-            with self.assertRaises(ContractError):
-                validate_static_profile(package, config)
-            forbidden.unlink()
+            optional_backend = package / "scripts/safe-reproduction-backend.sh"
+            optional_backend.parent.mkdir(parents=True)
+            optional_backend.write_text("# optional backend\n")
+            validate_package_config(config)
 
             config.write_text(
                 '[harness.network]\nlinux_agent_egress = "enforced"\n'
-                '[harness.reproduction]\nmode = "off"\n'
-            )
-            with self.assertRaises(ContractError):
-                validate_static_profile(package, config)
-            config.write_text(
-                '[harness.network]\nlinux_agent_egress = "policy_only"\n'
                 '[harness.reproduction]\nmode = "safe"\n'
             )
-            with self.assertRaises(ContractError):
-                validate_static_profile(package, config)
+            validate_package_config(config)
 
-    def test_dependency_free_runtime_wrappers_fail_closed_by_profile(self) -> None:
+            config.write_text(
+                '[harness.network\nlinux_agent_egress = "policy_only"\n'
+            )
+            with self.assertRaises(ContractError):
+                validate_package_config(config)
+
+    def test_runtime_wrappers_handle_policy_only_and_missing_optional_backend(self) -> None:
         policy_shell = subprocess.run(
             [str(ROOT / "scripts/agent-shell.sh"), "-c", "printf policy-only"],
             cwd=ROOT,
@@ -405,28 +399,38 @@ class OfflinePackageTests(unittest.TestCase):
             )
             self.assertEqual(limitations[0]["files"], ["conan.lock", "conanfile.txt"])
 
-    def test_omp_network_features_are_disabled_and_guard_is_explicit(self) -> None:
+    def test_offline_install_does_not_impose_network_runtime_policy(self) -> None:
         bootstrap = (ROOT / "scripts/bootstrap-omp.sh").read_text()
         launcher = (ROOT / "run.sh").read_text()
         packer = (ROOT / "scripts/offline-pack.sh").read_text()
         setup = (ROOT / "setup.sh").read_text().lower()
-        guard = (ROOT / ".omp/extensions/offline-guard.ts").read_text()
+        guard = (ROOT / ".omp/guards/target-readonly.ts").read_text()
         project_config = (ROOT / ".omp/config.yml").read_text()
-        self.assertIn('"fetch:"', bootstrap)
-        self.assertIn('"  autoUpdate: off"', bootstrap)
-        self.assertIn("--no-extensions", launcher)
-        self.assertIn("offline-guard.ts", launcher)
+        self.assertNotIn('"fetch:"', bootstrap)
+        self.assertNotIn('"web_search:"', bootstrap)
+        self.assertNotIn('"  autoUpdate: off"', bootstrap)
+        self.assertNotIn("--no-extensions", launcher)
+        self.assertNotIn("--no-lsp", launcher)
+        self.assertNotIn("offline-guard.ts", launcher)
+        self.assertIn("target-readonly.ts", launcher)
+        self.assertIn("lsp", launcher)
         self.assertIn('cd "$HARNESS_ROOT"', launcher)
         self.assertIn('cd "$harness_root"', setup)
-        self.assertIn("NETWORK_COMMAND_RE", guard)
-        self.assertIn("VulnOps offline policy blocks URL reads", guard)
+        self.assertNotIn("NETWORK_COMMAND_RE", guard)
+        self.assertNotIn("offline policy", guard.lower())
         self.assertIn("VULNOPSV3_TARGET", guard)
         self.assertNotIn("--agent-egress", packer)
-        for relative in OFFLINE_FORBIDDEN_PATHS:
-            self.assertIn(relative, packer)
-        self.assertNotIn("bwrap", setup)
-        self.assertNotIn("bubblewrap", setup)
+        self.assertIn("validate-package-config", packer)
+        self.assertNotIn("static-policy-only", packer)
+        self.assertIn(":(exclude)offline/*/*.part-*", packer)
+        self.assertNotIn("requires policy_only", setup)
+        self.assertNotIn("requires reproduction mode off", setup)
+        self.assertIn("runtime policy is config-driven", setup)
+        self.assertIn('auth-broker login "$login_provider"', setup)
+        self.assertIn("no harness dependencies will be downloaded", setup)
         self.assertNotIn("shellPath:", project_config)
+        self.assertNotIn("web_search:", project_config)
+        self.assertNotIn("fetch:", project_config)
         self.assertNotIn("/home/", project_config)
 
 

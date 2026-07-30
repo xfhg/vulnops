@@ -66,7 +66,8 @@ bash scripts/validate-config.sh
 ```
 
 For a transferable offline deployment, build only on the matching supported
-platform from a clean worktree:
+platform from clean source files (prior generated archive and chunk outputs are
+not source inputs):
 
 ```bash
 bash scripts/offline-pack.sh --platform linux_amd64
@@ -88,11 +89,15 @@ lock last.
 
 After transfer, reconstruct with `./offline-build.sh --platform <platform>`,
 extract into an empty directory, run `bash setup.sh verify`, edit `config.toml`,
-and run `bash setup.sh configure`. Neither setup command may download anything.
-Every offline package fixes agent egress to `policy_only` and reproduction to
-`off`. It ships no isolation or safe-reproduction backend. Agent shell egress is
-not technically enforced; offline operation is policy-only, and the limitation
-is durable run and report metadata.
+authenticate an OAuth-backed provider with `bash setup.sh login <provider>` when
+needed, and run `bash setup.sh configure`. Verify and configure never download
+anything; login may contact only the selected provider's authentication service
+and must not install dependencies.
+The package is an offline installer, not a restricted runtime: it must not rewrite
+or narrow configured OMP, network, or reproduction capabilities. OMP must retain
+normal access to the configured LLM provider. The default configuration avoids a
+Bubblewrap dependency, while explicitly configured enforced egress or safe
+reproduction still requires a functional host Bubblewrap installation.
 
 Start OMP through the contained launcher:
 
@@ -758,10 +763,6 @@ Reproduction is off unless audit context says `safe`. In safe mode, use only
 `scripts/run-safe-reproduction.sh` or the `vulnops-reproduce-one` agent that calls
 it. Never invoke a target binary, build script, package script, test suite, or proof
 command directly.
-
-An offline release always records reproduction `off` and rejects attempts to
-enable `safe`. The following backend rules apply only to a source/development
-installation.
 
 Support requires a successful `scripts/probe-bubblewrap.sh` namespace/isolation
 probe. Binary presence is not support. On a restricted host, record

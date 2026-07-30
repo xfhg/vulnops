@@ -149,24 +149,26 @@ path, compares the complete inventory, starts every binary (including OMP with
 its separately shipped native addon), validates the entire OSV snapshot, and
 runs setup verification before the archive or chunks are published.
 
-The staged runtime is a fixed `static-policy-only` profile. It excludes the
-optional source-tree shell isolator, safe-reproduction backend, and both
-functional isolation probes. The manifest records policy-only agent egress,
-unenforced egress, and unavailable safe reproduction as immutable capabilities.
-Packaging a live configuration that requests enforced egress or safe reproduction
-fails before tools or artifacts are published.
+The staged runtime uses the same config-driven capability surface as a source
+installation. The archive includes the optional isolation integration scripts
+but does not bundle Bubblewrap itself. Its default configuration therefore uses
+policy-only agent egress and disables reproduction, while operators may select
+enforced egress or safe reproduction when the destination supplies a functionally
+supported Bubblewrap installation. The package manifest records dependency-
+complete offline installation and configured runtime policy; it does not freeze
+network or reproduction capabilities.
 
 Chunks are platform-namespaced and described by a non-executable JSON manifest.
 Reconstruction validates exact ordered names, per-chunk hashes and sizes, rejects
 extra parts, and verifies the rebuilt archive hash. SHA-256 provides integrity,
 not publisher authenticity; no signing authority is claimed.
 
-Offline-package agent shells run without an OS-level egress boundary. Built-in
-URL fetching, web/browser features, marketplace updates, extension discovery, and
-common network shell commands are disabled as defense-in-depth, but this is not
-presented as technical enforcement. The limitation is durable run and report
-metadata. Source/development installations may still select the separately
-shipped optional Linux isolator.
+The distribution boundary does not install a network sandbox or inject an OMP
+network-denial profile. OMP retains normal access to its configured provider,
+including subscription-backed providers. Audit execution is designed not to
+depend on non-LLM online resources, because they may be unavailable on the
+destination, but the package format does not enforce that assumption. Any
+configured operating-system egress boundary remains explicit run identity.
 
 ## 4. Control plane and data plane
 
@@ -935,14 +937,14 @@ rejected arrays with the correct diversity value. No verifier tasks are fabricat
 
 Safe reproduction is optional and configuration-controlled. `off` means no target
 code is run. `safe` permits execution only through
-`scripts/run-safe-reproduction.sh` after a successful functional bubblewrap probe.
-Offline packages fix this mode to `off` and omit the backend and probe; attempts
-to enable it fail readiness and audit initialization.
+`scripts/run-safe-reproduction.sh` after a successful functional Bubblewrap
+probe. Offline packages include the integration scripts but do not bundle or
+require Bubblewrap; selecting `safe` therefore requires a supported Bubblewrap
+installation on the destination.
 
 ### 17.1 Support boundary
 
-For source/development installations, the supported backend is Linux bubblewrap.
-Readiness is based on a real namespace
+The supported backend is Linux Bubblewrap. Readiness is based on a real namespace
 and isolation probe, not the presence of the executable. Kernel policy, container
 restrictions, or missing user namespaces may make bubblewrap unavailable even when
 installed.

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Optional source-tree shell isolator used only by enforced mode.
+# Optional Linux shell isolator used only by configured enforced mode.
 set -euo pipefail
 
 HARNESS_ROOT="$(cd "$(dirname "$0")/.." && pwd)"

@@ -19,6 +19,8 @@ from pathlib import Path, PurePosixPath
 from typing import Any, Iterable
 from urllib.parse import urlparse
 
+sys.dont_write_bytecode = True
+
 try:
     from osv_snapshot import ECOSYSTEMS as OSV_ECOSYSTEMS
     from osv_snapshot import load_lock as load_osv_lock
@@ -28,7 +30,7 @@ except ModuleNotFoundError:  # Imported as scripts.offline_package in tests.
 
 
 TOOL_LOCK_SCHEMA = "vulnops.offline-tool-lock.v2"
-MANIFEST_SCHEMA = "vulnops.offline-pack-manifest.v3"
+MANIFEST_SCHEMA = "vulnops.offline-pack-manifest.v4"
 CHUNK_SCHEMA = "vulnops.offline-pack-chunks.v2"
 TOOLS = ("wraith", "poltergeist", "omp", "osv-scanner", "codegraph")
 RUNTIME_ASSETS = ("omp-natives",)
@@ -188,6 +190,11 @@ def is_mutable(relative: str) -> bool:
     return any(relative.startswith(prefix) for prefix in MUTABLE_PREFIXES)
 
 
+def is_runtime_cache(relative: str) -> bool:
+    pure = PurePosixPath(relative)
+    return "__pycache__" in pure.parts or pure.suffix in {".pyc", ".pyo"}
+
+
 def safe_relative(path: Path, root: Path) -> str:
     relative = path.relative_to(root).as_posix()
     pure = PurePosixPath(relative)
@@ -199,7 +206,7 @@ def safe_relative(path: Path, root: Path) -> str:
 def iter_entries(root: Path, manifest_name: str) -> Iterable[tuple[str, Path]]:
     for path in sorted(root.rglob("*"), key=lambda item: item.relative_to(root).as_posix()):
         relative = safe_relative(path, root)
-        if relative == manifest_name or is_mutable(relative):
+        if relative == manifest_name or is_mutable(relative) or is_runtime_cache(relative):
             continue
         if path.name.startswith("._"):
             raise ContractError(f"AppleDouble metadata is forbidden: {relative}")
@@ -361,6 +368,8 @@ def validate_manifest_document(path: Path) -> dict[str, Any]:
         pure = PurePosixPath(relative)
         if pure.is_absolute() or any(part in {"", ".", ".."} for part in pure.parts):
             raise ContractError(f"manifest contains unsafe path: {relative!r}")
+        if is_runtime_cache(relative):
+            raise ContractError(f"manifest contains a forbidden runtime cache: {relative}")
         if relative in seen:
             raise ContractError(f"manifest contains duplicate path: {relative}")
         seen.add(relative)
@@ -444,7 +453,14 @@ def create_archive(root: Path, output: Path, epoch: int) -> None:
     root = root.resolve()
     output.parent.mkdir(parents=True, exist_ok=True)
     temporary = output.with_name(f".{output.name}.{os.getpid()}.tmp")
-    entries = sorted(root.rglob("*"), key=lambda item: item.relative_to(root).as_posix())
+    entries = sorted(
+        (
+            path
+            for path in root.rglob("*")
+            if not is_runtime_cache(safe_relative(path, root))
+        ),
+        key=lambda item: item.relative_to(root).as_posix(),
+    )
     for path in entries:
         if path.name.startswith("._"):
             raise ContractError(f"AppleDouble metadata is forbidden: {path.relative_to(root)}")

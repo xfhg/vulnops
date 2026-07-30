@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Build a deterministic, relocatable, integrity-checked offline release.
 set -euo pipefail
+export PYTHONDONTWRITEBYTECODE=1
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 HARNESS_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"

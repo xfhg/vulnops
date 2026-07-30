@@ -69,6 +69,9 @@ class OfflinePackageTests(unittest.TestCase):
             script = package / "scripts/run.sh"
             script.write_text("#!/usr/bin/env bash\necho offline\n")
             script.chmod(0o755)
+            cache = package / "scripts/__pycache__/osv_snapshot.cpython-314.pyc"
+            cache.parent.mkdir()
+            cache.write_bytes(b"host-specific bytecode")
             (package / "config.toml").write_text(
                 '[harness.network]\nlinux_agent_egress = "policy_only"\n'
                 '[harness.reproduction]\nmode = "off"\n'
@@ -95,7 +98,7 @@ class OfflinePackageTests(unittest.TestCase):
                 )
             )
             document = verify_manifest(package, manifest)
-            self.assertEqual(document["schema"], "vulnops.offline-pack-manifest.v3")
+            self.assertEqual(document["schema"], "vulnops.offline-pack-manifest.v4")
             self.assertEqual(
                 document["security"],
                 {
@@ -109,6 +112,7 @@ class OfflinePackageTests(unittest.TestCase):
             )
             inventory = {item["path"] for item in document["files"]}
             self.assertIn("scripts/run.sh", inventory)
+            self.assertNotIn("scripts/__pycache__/osv_snapshot.cpython-314.pyc", inventory)
             self.assertNotIn("config.toml", inventory)
             self.assertNotIn("target/input.txt", inventory)
 
@@ -126,6 +130,7 @@ class OfflinePackageTests(unittest.TestCase):
             self.assertTrue(members)
             self.assertTrue(all(member.uid == 0 and member.gid == 0 and member.mtime == 1_700_000_000 for member in members))
             self.assertFalse(any(Path(member.name).name.startswith("._") for member in members))
+            self.assertFalse(any("__pycache__" in Path(member.name).parts for member in members))
 
             (relocated / "scripts/run.sh").write_text("tampered\n")
             with self.assertRaises(ContractError):

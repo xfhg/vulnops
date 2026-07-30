@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Verify and configure an extracted VulnOps offline package without downloading.
 set -euo pipefail
+export PYTHONDONTWRITEBYTECODE=1
 
 HARNESS_ROOT="$(cd "$(dirname "$0")" && pwd)"
 COMMAND="${1:-}"

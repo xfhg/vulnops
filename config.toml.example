@@ -60,6 +60,11 @@ discovery = "proxy"
 #   "full"      — 64 hunt tasks / 128 questions, 3 gapfill rounds
 default_depth = "balanced"
 
+[harness.network]
+# Source installs default to namespace-enforced agent egress denial. Offline
+# packages rewrite this to policy_only and record that egress is not enforced.
+linux_agent_egress = "enforced" # enforced | policy_only
+
 [harness.scans.sast]
 # Maximum UTF-8 size of one exact contextual hunt packet. Adjacent source work
 # must be returned as a bounded rabbit hole rather than widening the packet.
@@ -86,6 +91,7 @@ max_attempts = 2
 # Safe reproduction is config-only and off by default. When enabled, target
 # code may run only through the fail-closed disposable sandbox wrapper.
 [harness.reproduction]
+# Offline packages require mode = "off" and omit the optional backend.
 mode = "off" # off | safe
 sandbox = "auto" # auto | bubblewrap
 timeout_seconds = 120

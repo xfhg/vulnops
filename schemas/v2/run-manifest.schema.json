@@ -7,6 +7,7 @@
     "schema_version", "workflow", "run_id", "repo_id", "repository", "commit",
     "depth", "status", "scan_base", "created_at", "updated_at",
     "target_fingerprint", "harness_contract_sha256", "sast_budget", "model", "model_roles", "verifier_model", "model_diversity", "reproduction_mode",
+    "network", "offline_package",
     "phases", "phase_seals", "recovery_count", "recovery_history"
   ],
   "properties": {
@@ -51,6 +52,29 @@
     "verifier_model": {"type": "string", "minLength": 1},
     "model_diversity": {"type": "boolean"},
     "reproduction_mode": {"enum": ["off", "safe"]},
+    "network": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["agent_egress", "backend", "enforced", "limitation"],
+      "properties": {
+        "agent_egress": {"enum": ["enforced", "policy_only"]},
+        "backend": {"enum": ["bubblewrap-unshare-net", "omp-tool-guard"]},
+        "enforced": {"type": "boolean"},
+        "limitation": {"type": ["string", "null"]}
+      }
+    },
+    "offline_package": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["manifest_sha256", "platform", "release", "osv_snapshot", "osv_lock_sha256"],
+      "properties": {
+        "manifest_sha256": {"type": ["string", "null"], "pattern": "^[a-f0-9]{64}$"},
+        "platform": {"enum": ["linux_amd64", "darwin_arm64"]},
+        "release": {"type": "boolean"},
+        "osv_snapshot": {"type": "string", "minLength": 1},
+        "osv_lock_sha256": {"type": ["string", "null"], "pattern": "^[a-f0-9]{64}$"}
+      }
+    },
     "recovery_count": {"type": "integer", "minimum": 0},
     "recovery_history": {
       "type": "array",

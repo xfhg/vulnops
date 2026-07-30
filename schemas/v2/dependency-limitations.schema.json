@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "VulnOps v2 Offline Dependency Coverage Limitations",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "limitations"],
+  "properties": {
+    "schema_version": {"const": "2.0"},
+    "limitations": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["code", "message", "files"],
+        "properties": {
+          "code": {"enum": ["conan_offline_sca_unsupported", "maven_transitive_resolution_offline"]},
+          "message": {"type": "string", "minLength": 1, "maxLength": 1000},
+          "files": {"type": "array", "items": {"type": "string", "minLength": 1}, "minItems": 1, "uniqueItems": true}
+        }
+      }
+    }
+  }
+}

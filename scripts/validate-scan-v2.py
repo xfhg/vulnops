@@ -1,12 +1,13 @@
 #!/usr/bin/env python3
 """Whole-run integrity gate for the sole canonical VulnOps v2 workflow."""
 from __future__ import annotations
-import argparse, hashlib, json, os, re, subprocess, sys
+import argparse, hashlib, json, os, re, subprocess, sys, tomllib
 from pathlib import Path
 from typing import Any
 from artifact_policy import artifact_size_limit
 from harness_contract import harness_contract_sha256
 from model_identity import model_diversity
+from offline_package import network_identity, package_identity
 from phase_seal import directory_sha256
 PHASES=("recon","tool-collection","sast","campaign-planning","intrusion","synthesis","final-verification","report")
 DIRS={"recon":"repo-context",**{x:x for x in PHASES if x!="recon"}}
@@ -29,6 +30,13 @@ def main()->int:
     if context.get("run_id")!=run.get("run_id") or Path(str(context.get("scan_base",""))).resolve()!=scan:errors.append("audit context identity mismatch")
     if context.get("harness_contract_sha256")!=harness_contract_sha256(root) or run.get("harness_contract_sha256")!=harness_contract_sha256(root):errors.append("harness contract fingerprint mismatch")
     if context.get("sast_budget")!=run.get("sast_budget"):errors.append("SAST budget snapshot mismatch")
+    try:
+        with (root/"config.toml").open("rb") as handle:current_mode=str(tomllib.load(handle).get("harness",{}).get("network",{}).get("linux_agent_egress","enforced"))
+        current_network=network_identity(current_mode);current_package=package_identity(root)
+    except (OSError, ValueError, tomllib.TOMLDecodeError) as exc:
+        errors.append(f"cannot resolve current package or agent egress identity: {exc}");current_network={};current_package={}
+    if run.get("network")!=context.get("network") or run.get("network")!=current_network:errors.append("agent egress identity mismatch")
+    if run.get("offline_package")!=context.get("offline_package") or run.get("offline_package")!=current_package:errors.append("offline package identity mismatch")
     primary=str(run.get("model",""));verifier=str(run.get("verifier_model",""));diversity=model_diversity(primary,verifier)
     if not verifier:errors.append("verifier_model is required")
     if run.get("model_diversity") is not diversity or context.get("model_diversity") is not diversity:errors.append("model diversity metadata mismatch")
@@ -72,6 +80,7 @@ def main()->int:
         elif artifact(scan,str(task.get("artifact",""))) is None:errors.append(f"task {task_id} artifact does not resolve")
     final=load(scan/"final-verification/findings.json",errors) or {}; report=load(scan/"report/security-report.json",errors) or {}
     if final.get("model_diversity") is not diversity:errors.append("final model_diversity mismatch")
+    if report.get("execution_environment")!={"network":run.get("network"),"offline_package":run.get("offline_package")}:errors.append("report execution environment differs from run identity")
     final_ids={str(x.get("id")) for x in final.get("findings",[]) if isinstance(x,dict)}; report_ids={str(x.get("id")) for x in report.get("findings",[]) if isinstance(x,dict)}
     if final_ids!=report_ids:errors.append("report finding IDs differ from final verified findings")
     for finding in final.get("findings",[]):

@@ -108,6 +108,8 @@ def main() -> int:
         ("model", "model"),
         ("model_roles", "model_roles"),
         ("verifier_model", "verifier_model"),
+        ("network", "network"),
+        ("offline_package", "offline_package"),
     )
     if any(manifest.get(left) != context.get(right) for left, right in identity_pairs):
         parser.error("recovery context differs from the immutable audit identity")

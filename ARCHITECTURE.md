@@ -123,6 +123,51 @@ The target is never a workspace. Agents may read it, but all writes belong under
 state so third-party tools do not leak runtime files into operator or target
 directories.
 
+### 3.1 Offline distribution boundary
+
+The offline release is built on the matching target platform from a clean
+worktree. A strict JSON lock binds every downloaded tool and OMP native-addon
+archive to an immutable URL, version, byte size, and SHA-256. The OSV snapshot
+lock independently binds all lockfile-relevant ecosystems: CRAN, Go, Hackage,
+Hex, Maven, NuGet, Packagist, Pub, PyPI, RubyGems, crates.io, and npm. Package
+preparation is the only step allowed to download those inputs.
+
+Normal OSV synchronization is lock-preserving. Since the canonical upstream
+archive names are mutable, creating a new pin requires the explicit
+`fetch-osv-db.sh --refresh-lock <snapshot-id>` maintenance path. That path stages
+and validates all twelve downloads before publishing databases and atomically
+replacing the lock last; interruption therefore fails closed against either lock
+instead of accepting a mixed snapshot.
+
+The builder stages an explicit Git inventory, substitutes the example
+configuration by default, installs locked tools, copies the already verified
+local OSV snapshot, revalidates every input, and emits a normalized tar/gzip
+archive. Its manifest records every immutable regular file
+and symlink with type, mode, size, and hash; configuration and runtime output
+paths are explicitly mutable. A relocation smoke test extracts into a different
+path, compares the complete inventory, starts every binary (including OMP with
+its separately shipped native addon), validates the entire OSV snapshot, and
+runs setup verification before the archive or chunks are published.
+
+The staged runtime is a fixed `static-policy-only` profile. It excludes the
+optional source-tree shell isolator, safe-reproduction backend, and both
+functional isolation probes. The manifest records policy-only agent egress,
+unenforced egress, and unavailable safe reproduction as immutable capabilities.
+Packaging a live configuration that requests enforced egress or safe reproduction
+fails before tools or artifacts are published.
+
+Chunks are platform-namespaced and described by a non-executable JSON manifest.
+Reconstruction validates exact ordered names, per-chunk hashes and sizes, rejects
+extra parts, and verifies the rebuilt archive hash. SHA-256 provides integrity,
+not publisher authenticity; no signing authority is claimed.
+
+Offline-package agent shells run without an OS-level egress boundary. Built-in
+URL fetching, web/browser features, marketplace updates, extension discovery, and
+common network shell commands are disabled as defense-in-depth, but this is not
+presented as technical enforcement. The limitation is durable run and report
+metadata. Source/development installations may still select the separately
+shipped optional Linux isolator.
+
 ## 4. Control plane and data plane
 
 VulnOps is easier to reason about as two cooperating planes.
@@ -185,6 +230,8 @@ repository path
 + exact working-tree fingerprint
 + depth
 + reproduction mode
++ offline-package manifest and OSV snapshot identity
++ agent-egress mode and enforcement backend
 + normalized primary selector
 + exact orchestrator, task, slow, and smol role selectors
 + normalized verifier selector
@@ -453,9 +500,17 @@ vulnerability envelope and produces bounded records containing package, installe
 version, advisory identifiers, affected ranges, and source lockfile references.
 
 The normalized count must agree with the parsed envelope. A `null` result body is
-acceptable only when the associated counts are zero. Each receipt includes tool
-version, parse status, normalized result count, warnings, and SHA-256 of the
+acceptable only when the associated counts are zero. Before each invocation the
+wrapper verifies the exact ecosystem database size, hash, ZIP integrity, and
+snapshot identity. Each receipt includes tool version, package count, database
+identity, parse status, normalized result count, warnings, and SHA-256 of the
 persisted artifact.
+
+Conan inputs are not passed to Wraith because OSV has no corresponding offline
+ecosystem archive. Maven manifests are scanned with their offline database, while
+the inability to perform remote transitive resolution is explicit. Both become
+structured coverage-gap records, evidence-index gaps, and report limitations
+rather than silent clean results.
 
 Advisories enter the evidence index as candidate vulnerability primitives. They
 do not become final dependency findings until source review proves an affected use
@@ -469,8 +524,9 @@ body, converts paths to target-relative locations, assigns stable IDs, and repla
 every detected value with exactly `<redacted>` before persistence.
 
 No partial value, prefix, entropy sample, or raw value hash is retained. Multiple
-match events may normalize to fewer unique records; this is represented as a
-receipt warning rather than falsifying either count.
+match events may normalize to fewer unique records; occurrence and unique
+candidate counts preserve both facts without turning deterministic deduplication
+into a warning or degraded state.
 
 Secret records are credential candidates. Promotion requires an exposure path and
 a supported validity state; the scanner match alone is context.
@@ -880,10 +936,13 @@ rejected arrays with the correct diversity value. No verifier tasks are fabricat
 Safe reproduction is optional and configuration-controlled. `off` means no target
 code is run. `safe` permits execution only through
 `scripts/run-safe-reproduction.sh` after a successful functional bubblewrap probe.
+Offline packages fix this mode to `off` and omit the backend and probe; attempts
+to enable it fail readiness and audit initialization.
 
 ### 17.1 Support boundary
 
-The supported backend is Linux bubblewrap. Readiness is based on a real namespace
+For source/development installations, the supported backend is Linux bubblewrap.
+Readiness is based on a real namespace
 and isolation probe, not the presence of the executable. Kernel policy, container
 restrictions, or missing user namespaces may make bubblewrap unavailable even when
 installed.
@@ -950,11 +1009,11 @@ workflow integrity.
 - primary, tiered role, and verifier selector syntax;
 - custom-provider endpoint/auth requirements;
 - generated role mapping and canonical agent/spawn graph;
-- the pinned OMP version and platform checksum;
+- every strict platform asset, the OMP native runtime, and full package inventory;
 - registration of every selected custom model;
-- required binaries, scripts, schemas, agents, and local OSV database;
+- required binaries, scripts, schemas, agents, and every locked OSV database;
 - absence of forbidden workflow/report/config surfaces;
-- offline agent tool policy;
+- disabled URL/update/discovery surfaces and the configured agent-egress backend;
 - deterministic reporting ownership; and
 - real functional tool output.
 

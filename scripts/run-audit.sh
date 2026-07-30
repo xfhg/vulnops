@@ -78,7 +78,7 @@ main() {
 
     # ── Verify tools ──
     local tools_ok=true
-    for tool in wraith poltergeist omp codegraph; do
+    for tool in wraith poltergeist omp codegraph osv-scanner; do
         if [ -x "${HARNESS_ROOT}/bins/${tool}" ]; then
             local ver
             ver="$("${HARNESS_ROOT}/bins/${tool}" --version 2>/dev/null || echo 'unknown')"
@@ -88,13 +88,38 @@ main() {
             tools_ok=false
         fi
     done
-    # osv-scanner is a wraith dependency — warn but don't block
-    if [ ! -x "${HARNESS_ROOT}/bins/osv-scanner" ]; then
-        warn "  osv-scanner: NOT IN BINS/ — SCA scans may fail"
-    fi
     if [ "$tools_ok" = false ]; then
         err "Missing tools. Install them first."
         exit 1
+    fi
+    local network_mode="${VULNOPS_LINUX_AGENT_EGRESS:-enforced}"
+    case "$network_mode" in
+        enforced|policy_only) ;;
+        *) err "Invalid agent egress mode: ${network_mode}"; exit 1 ;;
+    esac
+    if [ "$(uname -s)" = "Darwin" ] && [ "$network_mode" != "policy_only" ]; then
+        err "Darwin requires explicit policy_only agent egress."
+        exit 1
+    fi
+    if [ -f "${HARNESS_ROOT}/offline-pack-manifest.json" ]; then
+        if ! bash "${HARNESS_ROOT}/setup.sh" verify >/dev/null; then
+            err "Offline package verification failed."
+            exit 1
+        fi
+        log "  package: immutable inventory and offline prerequisites verified"
+    else
+        if ! python3 "${HARNESS_ROOT}/scripts/osv_snapshot.py" verify \
+            --lock "${HARNESS_ROOT}/config/osv-snapshot.lock.json" \
+            --cache-root "${HARNESS_ROOT}/.harness/osv-db"; then
+            err "Complete checksum-pinned OSV snapshot is unavailable."
+            exit 1
+        fi
+        if [ "$(uname -s)" = "Linux" ] && [ "$network_mode" = "enforced" ] \
+            && ! "${HARNESS_ROOT}/scripts/probe-agent-isolation.sh" >/dev/null; then
+            err "Enforced agent egress requires working bubblewrap network isolation."
+            exit 1
+        fi
+        log "  package: development tree with complete OSV snapshot"
     fi
     if ! bash "${HARNESS_ROOT}/scripts/probe-toolchain.sh" >/dev/null; then
         err "Audit toolchain failed its contained functional probe."
@@ -118,7 +143,7 @@ main() {
     local remote_url
     remote_url="$(cd "$clone_dir" && git remote get-url origin 2>/dev/null || echo "$clone_dir")"
     local short_hash
-    short_hash="$(printf '%s' "$remote_url" | shasum | cut -c1-8)"
+    short_hash="$(python3 -c 'import hashlib,sys; print(hashlib.sha256(sys.argv[1].encode()).hexdigest()[:8])' "$remote_url")"
     local repo_id="${repo_name}-${short_hash}"
 
     local short_sha
@@ -153,7 +178,8 @@ main() {
         resume_fields="$(python3 "${HARNESS_ROOT}/scripts/resume-run.py" \
             "$ctx" "$clone_dir" "$short_sha" "$depth" "$target_fingerprint" \
             "$reproduction_mode" "$primary_model" "$orchestrator_model" \
-            "$task_model" "$slow_model" "$smol_model" "$verifier_model")"
+            "$task_model" "$slow_model" "$smol_model" "$verifier_model" \
+            --network-mode "$network_mode")"
         if [ -n "$resume_fields" ]; then
             IFS=$'\t' read -r run_id scan_base resume_mode <<<"$resume_fields"
             resumed=true
@@ -216,6 +242,7 @@ main() {
         --depth "$depth"
         --target-fingerprint "$target_fingerprint"
         --reproduction-mode "$reproduction_mode"
+        --network-mode "$network_mode"
         --model "$primary_model"
         --orchestrator-model "$orchestrator_model"
         --task-model "$task_model"
@@ -236,6 +263,7 @@ main() {
     log "  Run ID:     ${run_id}"
     log "  Depth:      ${depth}"
     log "  Reproduction: ${reproduction_mode}"
+    log "  Agent egress: ${network_mode}"
     if [ "$resumed" = true ]; then
         log "  Resume:     current recoverable canonical v2 run (${resume_mode})"
     fi

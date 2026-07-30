@@ -44,6 +44,7 @@ def main() -> None:
     llm = cfg.get("llm", {})
     harness = cfg.get("harness", {})
     reproduction = harness.get("reproduction", {})
+    network = harness.get("network", {})
     sast = harness.get("scans", {}).get("sast", {})
 
     # ── Core LLM vars ─────────────────────────────────────────────────
@@ -77,6 +78,7 @@ def main() -> None:
         ("OMP_SMOL_MODEL_SELECTOR", smol_selector),
         ("OMP_VERIFIER_MODEL_SELECTOR", verifier_selector),
         ("VULNOPS_REPRODUCTION_MODE", str(reproduction.get("mode", "off") or "off")),
+        ("VULNOPS_LINUX_AGENT_EGRESS", str(network.get("linux_agent_egress", "enforced") or "enforced")),
         ("VULNOPS_REPRODUCTION_SANDBOX", str(reproduction.get("sandbox", "auto") or "auto")),
         ("VULNOPS_REPRODUCTION_TIMEOUT_SECONDS", str(reproduction.get("timeout_seconds", 120))),
         ("VULNOPS_REPRODUCTION_CPU_SECONDS", str(reproduction.get("cpu_seconds", 60))),

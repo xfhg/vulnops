@@ -38,6 +38,9 @@ def main() -> int:
         receipt=load(a.scan_base/"tool-collection"/receipt_name,{})
         for offset,message in enumerate(receipt.get("warnings",[]) if isinstance(receipt,dict) else [],1):
             record("tool_warning",f"{receipt_name}-{offset}",f"tool-collection/{receipt_name}","unresolved",str(message),[])
+    dependency_limitations=load(a.scan_base/"tool-collection/dependency-limitations.json",{})
+    for item in dependency_limitations.get("limitations",[]) if isinstance(dependency_limitations,dict) else []:
+        sid=str(item.get("code"));rid=record("coverage",sid,f"tool-collection/dependency-limitations.json:{sid}","unresolved",str(item.get("message")),strings(item.get("files")));gaps.append(rid)
     verified=load(a.scan_base/"sast/verified-findings.json",[]); verified_ids=set()
     for item in verified if isinstance(verified,list) else []:
         sid=str(item.get("id")); verified_ids.add(sid); ref=f"sast/verified-findings.json:{sid}"; level=str(item.get("verification_level")); disposition="needs_environment" if level=="environment_required" else "promoted"; rid=record("sast",sid,ref,disposition,str(item.get("title")),[str((item.get("root_cause_location") or {}).get("file",""))]); attacker=item.get("attacker") or {}; conditions=[str(x.get("description")) for x in item.get("conditions",[]) if isinstance(x,dict)]; primitive("vulnerability","candidate" if disposition=="needs_environment" else "confirmed",rid,[str(attacker.get("starting_access","Attacker reaches the entry point."))],str(item.get("impact")),str(attacker.get("boundary_crossed","Application boundary")),[str((item.get("root_cause_location") or {}).get("file",""))],conditions,[ref,*strings(item.get("evidence_refs"))])

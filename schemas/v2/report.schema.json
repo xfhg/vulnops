@@ -2,10 +2,40 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "VulnOps v2 Sanitized Report",
   "type": "object", "additionalProperties": false,
-  "required": ["schema_version", "run_id", "repository", "commit", "date", "summary", "findings", "hardening_notes", "positive_patterns", "coverage", "limitations", "scans"],
+  "required": ["schema_version", "run_id", "repository", "commit", "date", "summary", "execution_environment", "findings", "hardening_notes", "positive_patterns", "coverage", "limitations", "scans"],
   "properties": {
     "schema_version": {"const": "2.0"}, "run_id": {"type": "string", "minLength": 1}, "repository": {"type": "string", "minLength": 1}, "commit": {"type": "string", "minLength": 1}, "date": {"type": "string", "minLength": 1},
     "summary": {"type": "object"},
+    "execution_environment": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["network", "offline_package"],
+      "properties": {
+        "network": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["agent_egress", "backend", "enforced", "limitation"],
+          "properties": {
+            "agent_egress": {"enum": ["enforced", "policy_only"]},
+            "backend": {"enum": ["bubblewrap-unshare-net", "omp-tool-guard"]},
+            "enforced": {"type": "boolean"},
+            "limitation": {"type": ["string", "null"]}
+          }
+        },
+        "offline_package": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["manifest_sha256", "platform", "release", "osv_snapshot", "osv_lock_sha256"],
+          "properties": {
+            "manifest_sha256": {"type": ["string", "null"], "pattern": "^[a-f0-9]{64}$"},
+            "platform": {"enum": ["linux_amd64", "darwin_arm64"]},
+            "release": {"type": "boolean"},
+            "osv_snapshot": {"type": "string", "minLength": 1},
+            "osv_lock_sha256": {"type": ["string", "null"], "pattern": "^[a-f0-9]{64}$"}
+          }
+        }
+      }
+    },
     "findings": {
       "type": "array",
       "items": {

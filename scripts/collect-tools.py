@@ -16,7 +16,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from dependency_contract import is_supported_dependency_file
+from dependency_contract import discover_dependency_limitations, is_supported_dependency_file
 
 
 SAFE_RUN_ID = re.compile(r"^(?!.*\.\.)[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$")
@@ -169,6 +169,11 @@ def main() -> int:
                 str(work / "sca-advisories.json"),
                 "--receipt",
                 str(work / "wraith-receipt.json"),
+                *[
+                    item
+                    for index in range(1, len(normalized) + 1)
+                    for item in ("--input-receipt", str(work / f"wraith-{index}-receipt.json"))
+                ],
                 *[str(path) for path in normalized],
             ],
             capture_output=True,
@@ -196,11 +201,26 @@ def main() -> int:
             if receipt.get("normalized_sha256") != hashlib.sha256(artifact.read_bytes()).hexdigest():
                 raise RuntimeError(f"staged receipt hash mismatch: {receipt_name}")
 
+        atomic_json(
+            work / "dependency-limitations.json",
+            {
+                "schema_version": "2.0",
+                "limitations": discover_dependency_limitations(repo),
+            },
+        )
+        validate_document(root, "dependency-limitations.schema.json", work / "dependency-limitations.json")
+
         # Publish the complete normalized set only after every invocation, schema,
         # count, and hash is healthy. No raw scanner file crosses this boundary.
         destination = scan / "tool-collection"
         destination.mkdir(parents=True, exist_ok=True)
-        for name in ("sca-advisories.json", "wraith-receipt.json", "secrets-redacted.json", "poltergeist-receipt.json"):
+        for name in (
+            "sca-advisories.json",
+            "wraith-receipt.json",
+            "secrets-redacted.json",
+            "poltergeist-receipt.json",
+            "dependency-limitations.json",
+        ):
             atomic_bytes(destination / name, (work / name).read_bytes())
 
         finalized = subprocess.run(

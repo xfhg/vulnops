@@ -69,8 +69,12 @@ trap 'finish_launcher 143' TERM
 # search_tool_bm25 is intentionally NOT in --tools: the harness binds its tool set
 # explicitly and --tools allowlisting disables MCP discovery. To enable BM25 tool
 # discovery, add the tool here and remove this comment (Step 10 of the consistency plan).
+cd "$HARNESS_ROOT"
 "${OMP_BIN}" \
     --append-system-prompt "${HARNESS_ROOT}/.omp/main/vulnops-main.md" \
-    --tools "read,bash,edit,write,grep,glob,lsp,task,job,todo,irc,ask" \
+    --tools "read,bash,edit,write,grep,glob,task,job,todo,irc,ask" \
+    --no-lsp \
+    --no-extensions \
+    --extension "${HARNESS_ROOT}/.omp/extensions/offline-guard.ts" \
     --approval-mode yolo \
     "$@"

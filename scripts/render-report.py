@@ -35,13 +35,22 @@ def main()->int:
     if context.get("reproduction_mode")=="off":limitations.append("Safe reproduction was disabled; dynamic claims are limited to other cited deterministic evidence.")
     if int(context.get("recovery_count",0)):
         limitations.append(f"The audit recovered {int(context.get('recovery_count',0))} time(s); previously validated upstream phases were retained under immutable artifact seals and failed/downstream phases were rerun.")
+    dependency_limitations=load(a.scan_base/"tool-collection/dependency-limitations.json",{})
+    for item in dependency_limitations.get("limitations",[]) if isinstance(dependency_limitations,dict) else []:
+        limitations.append(clean(item.get("message","Offline dependency coverage is limited."),1000))
+    network=context.get("network",{}) if isinstance(context.get("network"),dict) else {}
+    if network.get("agent_egress")=="policy_only":
+        limitations.append("Agent shell egress was not technically enforced; offline behavior was an operator policy and the OMP guard was defense-in-depth only.")
+    package=context.get("offline_package",{}) if isinstance(context.get("offline_package"),dict) else {}
+    execution_environment={"network":network,"offline_package":package}
     scans={}
     for phase,directory in (("recon","repo-context"),("tool-collection","tool-collection"),("sast","sast"),("campaign-planning","campaign-planning"),("intrusion","intrusion"),("synthesis","synthesis"),("final-verification","final-verification")):
         manifest=load(a.scan_base/directory/"phase-manifest.json",{});scans[phase]={"status":manifest.get("status"),"coverage":manifest.get("coverage",{})}
         if manifest.get("status")=="degraded":limitations.append(f"{phase} completed in degraded mode; consult its manifest.")
-    report={"schema_version":"2.0","run_id":str(context.get("run_id","")),"repository":str(context.get("repo_name","unknown")),"commit":str(context.get("short_sha","unknown")),"date":now(),"summary":summary,"findings":rendered,"hardening_notes":sanitized(load(a.scan_base/"sast/hardening-notes.json",[])),"positive_patterns":sanitized(load(a.scan_base/"sast/positive-patterns.json",[])),"coverage":sanitized(load(a.scan_base/"sast/coverage-ledger.json",{})),"limitations":limitations,"scans":scans}
+    report={"schema_version":"2.0","run_id":str(context.get("run_id","")),"repository":str(context.get("repo_name","unknown")),"commit":str(context.get("short_sha","unknown")),"date":now(),"summary":summary,"execution_environment":execution_environment,"findings":rendered,"hardening_notes":sanitized(load(a.scan_base/"sast/hardening-notes.json",[])),"positive_patterns":sanitized(load(a.scan_base/"sast/positive-patterns.json",[])),"coverage":sanitized(load(a.scan_base/"sast/coverage-ledger.json",{})),"limitations":limitations,"scans":scans}
     write(a.scan_base/"report/security-report.json",json.dumps(report,indent=2,sort_keys=True)+"\n")
-    lines=["# Security Audit Report","",f"**Repository:** {report['repository']}",f"**Commit:** {report['commit']}",f"**Run:** {report['run_id']}","","## Executive Summary","",f"{summary['total']} verified or environment-required findings; {summary['composite_chain']} composed attack paths, {summary['known_impact_expansion']} known-issue impact expansions, and {summary['independent_discovery']+summary['cross_evidence_discovery']} other added-value discoveries.","","## Findings",""]
+    package_label=package.get("manifest_sha256") or "development tree (no release manifest)"
+    lines=["# Security Audit Report","",f"**Repository:** {report['repository']}",f"**Commit:** {report['commit']}",f"**Run:** {report['run_id']}","","## Executive Summary","",f"{summary['total']} verified or environment-required findings; {summary['composite_chain']} composed attack paths, {summary['known_impact_expansion']} known-issue impact expansions, and {summary['independent_discovery']+summary['cross_evidence_discovery']} other added-value discoveries.","","## Execution Environment","",f"- Agent egress: {network.get('agent_egress','unknown')} ({network.get('backend','unknown')})",f"- Namespace-enforced: {'yes' if network.get('enforced') else 'no'}",f"- Offline package manifest: {package_label}",f"- OSV snapshot: {package.get('osv_snapshot','unknown')}","","## Findings",""]
     for finding in rendered:lines.extend([f"### [{finding['id']}] {finding['title']}","",f"- Severity: {finding['severity']} ({finding['risk_score']}/100)",f"- Origin: {finding['origin']}",f"- Confidence: {finding['confidence']}",f"- Verdict: {finding['verdict']}","",finding["description"],"",f"**Impact:** {finding['impact']}","",f"**Remediation:** {finding['remediation']}","",f"**Evidence:** {', '.join(finding['evidence_refs'])}",""])
     lines.extend(["## Coverage and Limitations",""]+[f"- {x}" for x in limitations]+[""])
     write(a.scan_base/"report/security-report.md","\n".join(lines))

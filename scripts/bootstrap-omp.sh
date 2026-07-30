@@ -82,11 +82,15 @@ task_selector = str(roles.get("task") or selector).strip()
 slow_selector = str(roles.get("slow") or selector).strip()
 smol_selector = str(roles.get("smol") or selector).strip()
 verifier_selector = str(llm.get("verification", {}).get("selector") or "").strip()
+network_mode = str(cfg.get("harness", {}).get("network", {}).get("linux_agent_egress") or "enforced")
 api = str(provider.get("api") or "openai-completions")
 auth = normalize_auth(provider.get("auth", "api-key"))
 
 if not selector:
     print("[bootstrap-omp] llm.selector is required", file=sys.stderr)
+    raise SystemExit(1)
+if network_mode not in {"enforced", "policy_only"}:
+    print("[bootstrap-omp] invalid harness.network.linux_agent_egress", file=sys.stderr)
     raise SystemExit(1)
 
 if not verifier_selector:
@@ -153,6 +157,7 @@ config_lines = [
     "# Source of truth: config.toml.",
     "",
     "setupVersion: 1",
+    f"shellPath: {q(root / 'scripts/agent-shell.sh')}",
     "startup:",
     "  setupWizard: false",
     "",
@@ -168,12 +173,16 @@ config_lines.extend(
         "  enabled: false",
         "web_search:",
         "  enabled: false",
+        "fetch:",
+        "  enabled: false",
         "browser:",
         "  enabled: false",
         "search:",
         "  enabled: false",
         "remote:",
         "  enabled: false",
+        "marketplace:",
+        "  autoUpdate: off",
         "defaultThinkingLevel: low",
         "async:",
         "  enabled: true",
@@ -260,6 +269,8 @@ write_if_changed(agent_dir / "models.yml", "\n".join(models_lines))
 # Mirror the secret-free project config to the harness root .omp/ so the project-level
 # config (.omp/config.yml) stays in lockstep with the agent-home copy. models.yml is
 # intentionally NOT mirrored to root: it carries the live apiKey and the tracked .omp/
-# must stay secret-free. The agent-home copy (.harness/home, gitignored) retains models.yml.
-write_if_changed(project_config_path, "\n".join(config_lines))
+# must stay secret-free and relocatable. The absolute shellPath remains only in
+# the contained agent-home copy generated for this installation.
+project_config_lines = [line for line in config_lines if not line.startswith("shellPath:")]
+write_if_changed(project_config_path, "\n".join(project_config_lines))
 PY

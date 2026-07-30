@@ -19,23 +19,46 @@ if [ "$relative_lockfile" = "$lockfile" ] || ! python3 "${HARNESS_ROOT}/scripts/
     echo "Wraith input is not a supported target-relative dependency file" >&2
     exit 64
 fi
+ecosystem="$(python3 "${HARNESS_ROOT}/scripts/dependency_contract.py" --ecosystem "$relative_lockfile")"
 db="${HARNESS_ROOT}/.harness/osv-db"
+osv_lock="${HARNESS_ROOT}/config/osv-snapshot.lock.json"
 if [ ! -x "${HARNESS_ROOT}/bins/wraith" ] || [ ! -x "${HARNESS_ROOT}/bins/osv-scanner" ]; then
     echo "Wraith or its OSV scanner dependency is unavailable" >&2
     exit 1
 fi
-if [ ! -d "$db" ]; then
-    echo "OSV database is unavailable" >&2
-    exit 1
-fi
+python3 "${HARNESS_ROOT}/scripts/osv_snapshot.py" verify \
+    --lock "$osv_lock" --cache-root "$db" --ecosystem "$ecosystem"
+read -r db_snapshot db_sha < <(
+    python3 - "$osv_lock" "$ecosystem" <<'PY'
+import json,sys
+document=json.load(open(sys.argv[1],encoding="utf-8"))
+item=next(item for item in document["ecosystems"] if item["name"]==sys.argv[2])
+print(document["snapshot"],item["sha256"])
+PY
+)
 export OSV_SCANNER_LOCAL_DB_CACHE_DIRECTORY="$db"
-tmp="$(mktemp "${TMPDIR}/wraith.XXXXXX")"; trap 'rm -f "$tmp"' EXIT
+tmp="$(mktemp "${TMPDIR}/wraith.XXXXXX")"
+stderr_tmp="$(mktemp "${TMPDIR}/wraith-stderr.XXXXXX")"
+trap 'rm -f "$tmp" "$stderr_tmp"' EXIT
 set +e
-"${HARNESS_ROOT}/bins/wraith" scan --offline --format json "$lockfile" >"$tmp"
+"${HARNESS_ROOT}/bins/wraith" scan --offline --format json "$lockfile" >"$tmp" 2>"$stderr_tmp"
 status=$?
 set -e
 if [ "$status" -ne 0 ] && [ "$status" -ne 1 ]; then
     echo "Wraith operational failure (exit ${status})" >&2
     exit "$status"
 fi
-python3 "${HARNESS_ROOT}/scripts/normalize-wraith.py" --repo "$repo" --lockfile "$lockfile" --output "$output" --receipt "$receipt" <"$tmp"
+if [ -s "$stderr_tmp" ]; then
+    detail="$(tr '\n' ' ' <"$stderr_tmp" | tr -s ' ' | cut -c1-500)"
+    echo "Wraith emitted unexpected diagnostics: ${detail}" >&2
+    exit 1
+fi
+python3 "${HARNESS_ROOT}/scripts/normalize-wraith.py" \
+    --repo "$repo" \
+    --lockfile "$lockfile" \
+    --ecosystem "$ecosystem" \
+    --database-snapshot "$db_snapshot" \
+    --database-sha256 "$db_sha" \
+    --output "$output" \
+    --receipt "$receipt" \
+    <"$tmp"

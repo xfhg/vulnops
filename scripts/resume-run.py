@@ -5,9 +5,11 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 from pathlib import Path
 
 from harness_contract import harness_contract_sha256, resolved_sast_budget
+from offline_package import network_identity, package_identity
 
 
 TASK_PHASE = {
@@ -33,6 +35,11 @@ def main() -> int:
     parser.add_argument("depth")
     parser.add_argument("target_fingerprint")
     parser.add_argument("reproduction_mode")
+    parser.add_argument(
+        "--network-mode",
+        choices=("enforced", "policy_only"),
+        default=os.environ.get("VULNOPS_LINUX_AGENT_EGRESS", "enforced"),
+    )
     parser.add_argument("model")
     parser.add_argument("orchestrator_model")
     parser.add_argument("task_model")
@@ -47,6 +54,8 @@ def main() -> int:
     root = Path(__file__).resolve().parent.parent
     current_contract = harness_contract_sha256(root)
     current_budget = resolved_sast_budget(args.depth)
+    current_package = package_identity(root)
+    current_network = network_identity(args.network_mode)
     identity = (
         ("repo_path", args.repo_path),
         ("short_sha", args.commit),
@@ -66,6 +75,8 @@ def main() -> int:
         "smol": args.smol_model.strip(),
     }
     if context.get("model_roles") != expected_roles:
+        return 0
+    if context.get("offline_package") != current_package or context.get("network") != current_network:
         return 0
 
     scan_base = Path(str(context.get("scan_base", "")))
@@ -94,6 +105,8 @@ def main() -> int:
     if str(manifest.get("verifier_model", "")) != args.verifier_model.strip():
         return 0
     if manifest.get("model_roles") != expected_roles:
+        return 0
+    if manifest.get("offline_package") != current_package or manifest.get("network") != current_network:
         return 0
     if manifest.get("status") == "complete":
         return 0

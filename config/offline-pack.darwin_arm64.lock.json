@@ -1,0 +1,59 @@
+{
+  "minimum_python": "3.11",
+  "platform": "darwin_arm64",
+  "runtime_assets": {
+    "omp-natives": {
+      "format": "tar.gz",
+      "members": [
+        {
+          "sha256": "5917857b2e279153f26c198dc949fe980066bc27ed7abb959d9deaa4df80cec0",
+          "size": 131169584,
+          "source": "pi_natives.darwin-arm64.node",
+          "target": "pi_natives.darwin-arm64.node"
+        }
+      ],
+      "sha256": "659a5f9a336c244e5a9aec48f84aa57c7ecfab6810ce0c386d8c073131170cd6",
+      "size": 21230568,
+      "url": "https://registry.npmjs.org/@oh-my-pi/pi-natives-darwin-arm64/-/pi-natives-darwin-arm64-16.4.4.tgz",
+      "version": "v16.4.4"
+    }
+  },
+  "schema": "vulnops.offline-tool-lock.v2",
+  "tools": {
+    "codegraph": {
+      "format": "tar.gz",
+      "sha256": "83a3ecdc52446ab9a67f2a98560eb8cdcc881d8caea8c05bb2a9a3823596054d",
+      "size": 47680673,
+      "url": "https://github.com/colbymchenry/codegraph/releases/download/v1.2.0/codegraph-darwin-arm64.tar.gz",
+      "version": "v1.2.0"
+    },
+    "omp": {
+      "format": "binary",
+      "sha256": "86e6c40a889897e5a127e40f01ec14f724df39af8996878239ec10912541ab62",
+      "size": 125204352,
+      "url": "https://github.com/can1357/oh-my-pi/releases/download/v16.4.4/omp-darwin-arm64",
+      "version": "v16.4.4"
+    },
+    "osv-scanner": {
+      "format": "binary",
+      "sha256": "9ca3185ad63e9ab54f7cb90f46a7362be02d80e37f0123d095a54355ea202f5d",
+      "size": 54304354,
+      "url": "https://github.com/google/osv-scanner/releases/download/v2.4.0/osv-scanner_darwin_arm64",
+      "version": "v2.4.0"
+    },
+    "poltergeist": {
+      "format": "tar.gz",
+      "sha256": "14f4ffbd9f50288eaff62c7e4e3abd14e9c04e0d43136eb8419153388b68f43d",
+      "size": 2974059,
+      "url": "https://github.com/ghostsecurity/poltergeist/releases/download/v2.0.5/poltergeist_darwin_arm64.tar.gz",
+      "version": "v2.0.5"
+    },
+    "wraith": {
+      "format": "tar.gz",
+      "sha256": "0ba07ef6064fbbb0d011b0ba1ba8e9ae56ab5dda9d2b6bf016b425c244032be3",
+      "size": 20125440,
+      "url": "https://github.com/ghostsecurity/wraith/releases/download/v2.0.2/wraith_darwin_arm64.tar.gz",
+      "version": "v2.0.2"
+    }
+  }
+}

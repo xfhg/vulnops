@@ -150,6 +150,7 @@ def main()->int:
     current_contract=harness_contract_sha256(root)
     if context.get("harness_contract_sha256")!=current_contract or run.get("harness_contract_sha256")!=current_contract:errors.append("harness contract fingerprint mismatch")
     if context.get("sast_budget")!=run.get("sast_budget"):errors.append("SAST budget snapshot mismatch")
+    if context.get("network")!=run.get("network") or context.get("offline_package")!=run.get("offline_package"):errors.append("offline package or agent egress identity mismatch")
     if not target.is_dir():errors.append("audit target is unavailable")
     phase=a.phase
     for relative,size,limit in oversized_artifacts(scan):
@@ -160,12 +161,14 @@ def main()->int:
         schema(root,"repo-context.schema.json",scan/"repo-context/repo-context.json",errors,semantic="repo-context",target=target); schema(root,"security-surfaces.schema.json",scan/"repo-context/security-surfaces.json",errors,semantic="security-surfaces",target=target)
         for name in ("overview.json","trust-boundaries.json","input-surfaces.json"):schema(root,"recon-research.schema.json",scan/"repo-context/research"/name,errors)
     elif phase=="tool-collection":
-        schema(root,"sca-advisories.schema.json",scan/"tool-collection/sca-advisories.json",errors,semantic="sca-advisories",target=target); schema(root,"secrets-redacted.schema.json",scan/"tool-collection/secrets-redacted.json",errors,semantic="secrets-redacted",target=target); schema(root,"tool-collection.schema.json",scan/"tool-collection/collection.json",errors)
+        schema(root,"sca-advisories.schema.json",scan/"tool-collection/sca-advisories.json",errors,semantic="sca-advisories",target=target); schema(root,"secrets-redacted.schema.json",scan/"tool-collection/secrets-redacted.json",errors,semantic="secrets-redacted",target=target); schema(root,"dependency-limitations.schema.json",scan/"tool-collection/dependency-limitations.json",errors); schema(root,"tool-collection.schema.json",scan/"tool-collection/collection.json",errors)
         for name,artifact_name in (("wraith-receipt.json","sca-advisories.json"),("poltergeist-receipt.json","secrets-redacted.json")):
             schema(root,"tool-receipt.schema.json",scan/"tool-collection"/name,errors); receipt=load(scan/"tool-collection"/name,errors)
             if isinstance(receipt,dict) and (scan/"tool-collection"/artifact_name).is_file() and receipt.get("normalized_sha256")!=hashlib.sha256((scan/"tool-collection"/artifact_name).read_bytes()).hexdigest():errors.append(f"{name} normalized hash mismatch")
             if isinstance(receipt,dict) and (receipt.get("status")!="ok" or receipt.get("parse_status")!="ok" or receipt.get("warnings")):errors.append(f"{name} must be healthy and warning-free")
         collection_doc=load(scan/"tool-collection/collection.json",errors) or {}
+        limitation_doc=load(scan/"tool-collection/dependency-limitations.json",errors) or {}
+        if collection_doc.get("limitations")!=limitation_doc.get("limitations"):errors.append("tool collection limitations differ from the staged authority")
         if collection_doc.get("warnings"):errors.append("tool collection must not publish warnings")
     elif phase=="sast":
         schema(root,"threat-model.schema.json",scan/"sast/threat-model.json",errors,semantic="threat-model",target=target); schema(root,"hunt-plan.schema.json",scan/"sast/hunt-plan.json",errors,semantic="hunt-plan",target=target); schema(root,"candidate-finding.schema.json",scan/"sast/raw-findings.json",errors,True,"candidate",target); schema(root,"validation-result.schema.json",scan/"sast/validation-results.json",errors,True,"validation-result",target); schema(root,"coverage-ledger.schema.json",scan/"sast/coverage-ledger.json",errors); schema(root,"wishlist.schema.json",scan/"sast/wishlist.json",errors)

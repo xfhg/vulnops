@@ -11,6 +11,7 @@ from pathlib import Path
 
 from harness_contract import harness_contract_sha256, resolved_sast_budget
 from model_identity import model_diversity
+from offline_package import network_identity, package_identity
 
 
 PHASES = (
@@ -49,6 +50,11 @@ def main() -> int:
     parser.add_argument("--depth", choices=("quick", "balanced", "full"), required=True)
     parser.add_argument("--target-fingerprint", required=True)
     parser.add_argument("--reproduction-mode", choices=("off", "safe"), required=True)
+    parser.add_argument(
+        "--network-mode",
+        choices=("enforced", "policy_only"),
+        default=os.environ.get("VULNOPS_LINUX_AGENT_EGRESS", "enforced"),
+    )
     parser.add_argument("--model", required=True)
     parser.add_argument("--orchestrator-model", required=True)
     parser.add_argument("--task-model", required=True)
@@ -72,6 +78,8 @@ def main() -> int:
     root = args.harness_root.resolve()
     contract_sha256 = harness_contract_sha256(root)
     sast_budget = resolved_sast_budget(args.depth)
+    offline_package = package_identity(root)
+    network = network_identity(args.network_mode)
     repo = args.repo_path.resolve()
     scan = args.scan_base.resolve()
     try:
@@ -92,6 +100,10 @@ def main() -> int:
             parser.error("resume manifest was created by a different harness contract")
         if existing_manifest.get("sast_budget") != sast_budget:
             parser.error("resume manifest was created with a different SAST budget")
+        if existing_manifest.get("offline_package") != offline_package:
+            parser.error("resume manifest was created from a different offline package")
+        if existing_manifest.get("network") != network:
+            parser.error("resume manifest was created with a different agent egress policy")
     else:
         created = now()
         atomic_write(
@@ -116,6 +128,8 @@ def main() -> int:
                 "verifier_model": verifier_model,
                 "model_diversity": diversity,
                 "reproduction_mode": args.reproduction_mode,
+                "network": network,
+                "offline_package": offline_package,
                 "phases": {phase: "pending" for phase in PHASES},
                 "phase_seals": {},
                 "recovery_count": 0,
@@ -137,6 +151,7 @@ def main() -> int:
         "sca_receipt": scan / "tool-collection/wraith-receipt.json",
         "secrets_redacted_candidates": scan / "tool-collection/secrets-redacted.json",
         "secrets_receipt": scan / "tool-collection/poltergeist-receipt.json",
+        "dependency_limitations": scan / "tool-collection/dependency-limitations.json",
         "sast": scan / "sast",
         "sast_threat_model": scan / "sast/threat-model.json",
         "sast_threat_model_md": scan / "sast/threat-model.md",
@@ -202,6 +217,8 @@ def main() -> int:
         "finalize_verification": root / "scripts/finalize-verification.py",
         "render_report": root / "scripts/render-report.py",
         "update_run_state": root / "scripts/update-run-state.py",
+        "osv_snapshot": root / "scripts/osv_snapshot.py",
+        "offline_package": root / "scripts/offline_package.py",
     }
     context = {
         "schema_version": "2.0",
@@ -220,6 +237,8 @@ def main() -> int:
         "verifier_model": verifier_model,
         "model_diversity": diversity,
         "reproduction_mode": args.reproduction_mode,
+        "network": network,
+        "offline_package": offline_package,
         "recovery_count": int(existing_manifest.get("recovery_count", 0)) if args.resume else 0,
         "last_recovery": (existing_manifest.get("recovery_history") or [None])[-1] if args.resume else None,
         "launcher_session_id": os.environ.get("VULNOPS_LAUNCHER_SESSION_ID"),

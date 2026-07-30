@@ -1,0 +1,65 @@
+{
+  "minimum_python": "3.11",
+  "platform": "linux_amd64",
+  "runtime_assets": {
+    "omp-natives": {
+      "format": "tar.gz",
+      "members": [
+        {
+          "sha256": "bb888f3765a801a4e9f92dec7769143104230739ab693b04a02bb110518eb60c",
+          "size": 134536744,
+          "source": "pi_natives.linux-x64-baseline.node",
+          "target": "pi_natives.linux-x64-baseline.node"
+        },
+        {
+          "sha256": "b74d96a56e46da77650d452409fae370631d1e0ae4a716fe5f19b016357a5479",
+          "size": 134609640,
+          "source": "pi_natives.linux-x64-modern.node",
+          "target": "pi_natives.linux-x64-modern.node"
+        }
+      ],
+      "sha256": "0014784e3aed1143525333298c6fdf10f9e2a752ec4902629c4488bc58d9f549",
+      "size": 43137251,
+      "url": "https://registry.npmjs.org/@oh-my-pi/pi-natives-linux-x64/-/pi-natives-linux-x64-16.4.4.tgz",
+      "version": "v16.4.4"
+    }
+  },
+  "schema": "vulnops.offline-tool-lock.v2",
+  "tools": {
+    "codegraph": {
+      "format": "tar.gz",
+      "sha256": "a6db0d1d13fe8be96caae70bd326ef5497a3b4d3e78636ff8250046945c33b2d",
+      "size": 52899987,
+      "url": "https://github.com/colbymchenry/codegraph/releases/download/v1.2.0/codegraph-linux-x64.tar.gz",
+      "version": "v1.2.0"
+    },
+    "omp": {
+      "format": "binary",
+      "sha256": "810da5dabe6b2e9428be64edaa169f245f9b4ff932aeae0188a727e9b711af55",
+      "size": 173381760,
+      "url": "https://github.com/can1357/oh-my-pi/releases/download/v16.4.4/omp-linux-x64",
+      "version": "v16.4.4"
+    },
+    "osv-scanner": {
+      "format": "binary",
+      "sha256": "15314940c10d26af9c6649f150b8a47c1262e8fc7e17b1d1029b0e479e8ed8a0",
+      "size": 56676514,
+      "url": "https://github.com/google/osv-scanner/releases/download/v2.4.0/osv-scanner_linux_amd64",
+      "version": "v2.4.0"
+    },
+    "poltergeist": {
+      "format": "tar.gz",
+      "sha256": "7e134684cad61fc75cd56d772e4253e17659a4c2c423b0d5fef6de86317efd38",
+      "size": 6400998,
+      "url": "https://github.com/ghostsecurity/poltergeist/releases/download/v2.0.5/poltergeist_linux_amd64.tar.gz",
+      "version": "v2.0.5"
+    },
+    "wraith": {
+      "format": "tar.gz",
+      "sha256": "26154e382252999e44d6853dfb940d5f997baae9290844302740a4feda118421",
+      "size": 22197662,
+      "url": "https://github.com/ghostsecurity/wraith/releases/download/v2.0.2/wraith_linux_amd64.tar.gz",
+      "version": "v2.0.2"
+    }
+  }
+}

@@ -282,11 +282,14 @@ tasks.
 - Linux when safe reproduction is required; the static workflow may run on a
   prepared supported platform, but it never gains an alternative reproduction
   backend;
-- Python 3 and Bash;
+- Python 3.11 or newer and Bash;
 - Git;
 - bundled `omp`, `wraith`, `poltergeist`, `osv-scanner`, and `codegraph` binaries;
-- a local OSV database; and
-- bubblewrap only if safe reproduction is enabled.
+- the complete checksum-pinned OSV snapshot.
+
+Bubblewrap is not bundled and is not required to install or run the default
+configuration. It is an optional host capability used only when an operator
+explicitly selects enforced Linux agent egress or safe reproduction.
 
 Install or refresh the bundled toolchain and local advisory database using the
 repository scripts appropriate to the deployment environment:
@@ -296,9 +299,23 @@ bash scripts/install-tools.sh
 bash scripts/fetch-osv-db.sh
 ```
 
-OMP is version- and checksum-pinned by the platform lock files. Readiness fails
-if the installed binary differs from that lock, preventing silent regression to
-an orchestration version with known task-lifecycle defects.
+Every downloadable tool asset is version-, byte-size-, and checksum-pinned by a
+strict platform JSON lock. OMP's separately distributed native addons are pinned,
+installed, and verified too; a `--version`-only binary is not considered ready.
+Readiness also verifies all twelve supported OSV ecosystem archives by exact
+size, SHA-256, ZIP integrity, and advisory-JSON presence.
+
+Because upstream OSV `all.zip` objects are mutable, ordinary synchronization
+never changes the reviewed lock. Preparing a new snapshot is a separate,
+explicit online operation:
+
+```bash
+bash scripts/fetch-osv-db.sh --refresh-lock 2026-07-29
+```
+
+Refresh downloads and validates all ecosystems in staging before publishing the
+database files and new lock. Review and commit the resulting lock before building
+a release package.
 
 Copy `config.toml.example` to `config.toml`, configure the selectors and endpoint,
 then place exactly one Git repository beneath `target/`.
@@ -345,19 +362,59 @@ unavailable environment.
 
 ### Offline and controlled deployment
 
-Installation, advisory-database refresh, and target cloning are preparation
-activities. They occur before the contained audit runtime. For disconnected
-environments, `scripts/offline-pack.sh` builds a version-pinned bundle with tool
-hashes, a local OSV database, setup material, and chunk manifests:
+Installation, advisory-database refresh, and target cloning are online
+preparation activities. They occur before the audit runtime. For disconnected
+environments, `scripts/offline-pack.sh` builds a deterministic, relocatable
+bundle with strict tool locks, OMP native runtime files, the complete locked OSV
+snapshot, an exact immutable-file manifest, and a namespaced chunk manifest:
+
+See [offline.md](offline.md) for the complete creation, chunk-rebuild, transfer,
+installation, and configuration runbook.
 
 ```bash
 bash scripts/offline-pack.sh --platform linux_amd64
 ```
 
-The pack excludes live `config.toml` credentials by default and substitutes the
-example configuration. Including live configuration is an explicit sensitive
-operation. Transfer and endpoint policy remain deployment responsibilities; the
-audit itself still permits only the configured LLM connection.
+Release builds require clean source files; prior generated archive and chunk
+outputs are excluded from that check. `--allow-dirty` produces an explicitly
+marked development artifact; `--include-config` is an explicit sensitive
+operation because it may package credentials. The default package substitutes
+`config.toml.example`.
+
+After transfer, reconstruct a chunked archive and verify it before configuration:
+
+```bash
+./offline-build.sh --platform linux_amd64
+mkdir vulnops-offline
+tar -xzf vulnops-offline-linux-amd64-<commit>.tar.gz -C vulnops-offline
+cd vulnops-offline
+bash setup.sh verify
+# edit config.toml with the LLM endpoint and selectors
+# for OAuth subscriptions: bash setup.sh login openai-codex
+bash setup.sh configure
+```
+
+`offline-build.sh` accepts only the selected platform's JSON manifest and rejects
+missing, reordered, tampered, or extra chunks. `setup.sh verify` performs a full
+inventory comparison, rechecks every lock and database, executes all tool version
+probes, starts OMP with its bundled native addon, and validates the package
+configuration without downloading anything.
+
+“Offline package” describes installation, not a restricted runtime. The archive
+contains every locked tool, native library, OSV database, schema, and harness file
+needed to install and start VulnOps without fetching dependencies. It does not
+disable OMP network capabilities or interfere with OMP authentication and traffic
+to the configured LLM provider, including an OpenAI Codex subscription.
+OAuth-backed subscriptions authenticate into the installation-local OMP store
+with `setup.sh login <provider>` before the readiness gate.
+
+Runtime policy remains entirely config-driven and has the same supported surface
+as a source installation. The default packaged template uses `policy_only` egress
+and reproduction `off` so Bubblewrap is not an installation dependency. Operators
+may select enforced egress or safe reproduction when the destination provides a
+functionally supported Bubblewrap installation. Non-LLM online services are not
+required or assumed to be available. Package authenticity is SHA-256 based; no
+signing authority is claimed.
 
 A target may be placed manually or cloned during preparation:
 
@@ -376,8 +433,13 @@ small deliberately:
 - LLM base URL, API key, primary selector, tiered role selectors, verifier
   selector, and one optional custom-provider model registry;
 - default depth;
+- Linux agent-egress mode (`enforced` or explicit `policy_only`);
 - SAST packet-size and per-depth task/question/gapfill/attempt bounds; and
 - safe-reproduction resource limits.
+
+Source and offline-package installations support the same configuration surface.
+Package creation and verification validate configuration syntax and bundled
+dependencies; they do not rewrite or narrow runtime capabilities.
 
 Scanner binary choices, raw-output switches, model-authored reporting, redundant
 phase toggles, and multiple custom endpoints are not configuration options. The
@@ -400,8 +462,9 @@ max_parallel = 1
 ## Run identity and resumability
 
 Each run records repository path, commit, exact target fingerprint, depth,
-reproduction mode, primary selector, every orchestration role selector, verifier
-selector, workflow identity, resolved SAST budget, and a fingerprint of the
+reproduction mode, offline-package manifest identity, effective agent-egress
+backend, primary selector, every orchestration role selector, verifier selector,
+workflow identity, resolved SAST budget, and a fingerprint of the
 schemas, planners, validators, recovery tools, and phase-agent contracts that
 govern the workflow. Only the current incomplete run
 resumes when its immutable target and model/policy identity matches. Completed
@@ -427,7 +490,8 @@ Every run lives at `scans/<repo-id>/runs/<run-id>/`:
 run-manifest.json                 run identity, phase state, model metadata
 task-ledger.json                  task attempts, status, artifacts, errors
 repo-context/                     repository model and immutable surfaces
-tool-collection/                  normalized SCA/secrets evidence and receipts
+tool-collection/                  normalized SCA/secrets evidence, database receipts,
+                                  and structured dependency coverage limitations
 sast/                             threat model, hunts, validation, coverage
 campaign-planning/                evidence index and bounded campaign plan
 intrusion/                        per-campaign and aggregate terminal results

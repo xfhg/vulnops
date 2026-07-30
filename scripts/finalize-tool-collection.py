@@ -33,6 +33,7 @@ def main() -> int:
     context = load(Path(os.environ.get("VULNOPS_AUDIT_CONTEXT", root / ".harness/audit-context.json")))
     sca = load(args.scan_base / "tool-collection/sca-advisories.json")
     secrets = load(args.scan_base / "tool-collection/secrets-redacted.json")
+    dependency_limitations = load(args.scan_base / "tool-collection/dependency-limitations.json")
     receipts = ["tool-collection/wraith-receipt.json", "tool-collection/poltergeist-receipt.json"]
     versions: dict[str, str] = {}
 
@@ -50,6 +51,7 @@ def main() -> int:
         "sca_ref": "tool-collection/sca-advisories.json",
         "secrets_ref": "tool-collection/secrets-redacted.json",
         "receipts": receipts,
+        "limitations": dependency_limitations.get("limitations", []),
         "warnings": [],
     }
     write(args.scan_base / "tool-collection/collection.json", collection)
@@ -62,6 +64,7 @@ def main() -> int:
         f"- Secret match occurrences: {match_count}\n"
         f"- Unique redacted secret candidates: {candidate_count}\n"
         f"- Healthy tool receipts: {len(receipts)}\n"
+        f"- Structured dependency limitations: {len(dependency_limitations.get('limitations', []))}\n"
     )
 
     manifest = {
@@ -74,6 +77,7 @@ def main() -> int:
             "tool-collection/collection.json",
             "tool-collection/sca-advisories.json",
             "tool-collection/secrets-redacted.json",
+            "tool-collection/dependency-limitations.json",
             *receipts,
             "tool-collection/summary.md",
         ],

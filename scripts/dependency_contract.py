@@ -25,7 +25,6 @@ SUPPORTED_BASENAMES = frozenset(
         "bun.lock",
         "cabal.project.freeze",
         "composer.lock",
-        "conan.lock",
         "deps.json",
         "gems.locked",
         "go.mod",
@@ -47,6 +46,34 @@ SUPPORTED_BASENAMES = frozenset(
         "yarn.lock",
     }
 )
+DEPENDENCY_ECOSYSTEMS = {
+    "Cargo.lock": "crates.io",
+    "Gemfile.lock": "RubyGems",
+    "Pipfile.lock": "PyPI",
+    "buildscript-gradle.lockfile": "Maven",
+    "bun.lock": "npm",
+    "cabal.project.freeze": "Hackage",
+    "composer.lock": "Packagist",
+    "deps.json": "NuGet",
+    "gems.locked": "RubyGems",
+    "go.mod": "Go",
+    "gradle.lockfile": "Maven",
+    "mix.lock": "Hex",
+    "package-lock.json": "npm",
+    "packages.config": "NuGet",
+    "packages.lock.json": "NuGet",
+    "pdm.lock": "PyPI",
+    "pnpm-lock.yaml": "npm",
+    "poetry.lock": "PyPI",
+    "pom.xml": "Maven",
+    "pubspec.lock": "Pub",
+    "pylock.toml": "PyPI",
+    "renv.lock": "CRAN",
+    "requirements.txt": "PyPI",
+    "stack.yaml.lock": "Hackage",
+    "uv.lock": "PyPI",
+    "yarn.lock": "npm",
+}
 DEFAULT_EXCLUDED_DIRECTORIES = frozenset(
     {".git", ".harness", ".codegraph", "node_modules", "vendor", ".venv", "venv", "dist", "build", ".next", "coverage"}
 )
@@ -76,6 +103,15 @@ def is_supported_dependency_file(value: object) -> bool:
 
 def supported_display_names() -> list[str]:
     return [*sorted(SUPPORTED_BASENAMES), "gradle/verification-metadata.xml"]
+
+
+def ecosystem_for_dependency_file(value: object) -> str | None:
+    path = normalized_target_relative(value)
+    if path is None or not is_supported_dependency_file(value):
+        return None
+    if path.name == "verification-metadata.xml":
+        return "Maven"
+    return DEPENDENCY_ECOSYSTEMS.get(path.name)
 
 
 def discover_dependency_files(repo: Path, ignored_patterns: list[str] | tuple[str, ...] = ()) -> list[str]:
@@ -124,20 +160,76 @@ def dependency_language(path: str) -> frozenset[str]:
         "Gemfile.lock": {"ruby"}, "gems.locked": {"ruby"}, "composer.lock": {"php"}, "pom.xml": {"java"},
         "gradle.lockfile": {"java", "kotlin"}, "buildscript-gradle.lockfile": {"java", "kotlin"},
         "verification-metadata.xml": {"java", "kotlin"}, "pubspec.lock": {"dart"}, "mix.lock": {"elixir"},
-        "conan.lock": {"c", "c++", "cpp"}, "deps.json": {"c#", "csharp", ".net", "dotnet"},
+        "deps.json": {"c#", "csharp", ".net", "dotnet"},
         "packages.config": {"c#", "csharp", ".net", "dotnet"}, "packages.lock.json": {"c#", "csharp", ".net", "dotnet"},
         "cabal.project.freeze": {"haskell"}, "stack.yaml.lock": {"haskell"}, "renv.lock": {"r"},
     }
     return frozenset(mapping.get(name, set()))
 
 
+def discover_dependency_limitations(repo: Path) -> list[dict[str, object]]:
+    """Return deterministic structured gaps that cannot be scanned offline."""
+    root = repo.resolve(strict=True)
+    conan: list[str] = []
+    maven_manifests: list[str] = []
+    for current, directories, files in os.walk(root, followlinks=False):
+        current_path = Path(current)
+        relative_dir = current_path.relative_to(root)
+        directories[:] = [
+            name
+            for name in sorted(directories)
+            if name not in DEFAULT_EXCLUDED_DIRECTORIES and not (current_path / name).is_symlink()
+        ]
+        for name in sorted(files):
+            candidate = current_path / name
+            if candidate.is_symlink():
+                continue
+            relative = (relative_dir / name).as_posix()
+            if name in {"conan.lock", "conanfile.py", "conanfile.txt"}:
+                conan.append(relative)
+            elif name == "pom.xml":
+                maven_manifests.append(relative)
+    limitations: list[dict[str, object]] = []
+    if conan:
+        limitations.append(
+            {
+                "code": "conan_offline_sca_unsupported",
+                "message": "Conan dependency inputs are excluded because OSV has no offline Conan ecosystem database.",
+                "files": conan,
+            }
+        )
+    if maven_manifests:
+        limitations.append(
+            {
+                "code": "maven_transitive_resolution_offline",
+                "message": "Offline Maven scanning covers declared packages but cannot resolve transitive dependencies through deps.dev.",
+                "files": maven_manifests,
+            }
+        )
+    return limitations
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("paths", nargs="*")
     parser.add_argument("--list", action="store_true")
+    parser.add_argument("--ecosystem", action="store_true")
+    parser.add_argument("--limitations", type=Path)
     args = parser.parse_args()
     if args.list:
         print(json.dumps(supported_display_names(), indent=2))
+        return 0
+    if args.limitations is not None:
+        print(json.dumps(discover_dependency_limitations(args.limitations), indent=2, sort_keys=True))
+        return 0
+    if args.ecosystem:
+        if len(args.paths) != 1:
+            parser.error("--ecosystem requires exactly one target-relative dependency path")
+        ecosystem = ecosystem_for_dependency_file(args.paths[0])
+        if ecosystem is None:
+            print(f"unsupported Wraith dependency input: {args.paths[0]}", file=__import__("sys").stderr)
+            return 1
+        print(ecosystem)
         return 0
     invalid = [path for path in args.paths if not is_supported_dependency_file(path)]
     if invalid:

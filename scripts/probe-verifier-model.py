@@ -74,7 +74,10 @@ def main() -> int:
             None,
         )
         if match is None:
-            raise RuntimeError(f"verifier model is absent from OMP catalog: {provider}/{model_id}")
+            raise RuntimeError(
+                f"verifier model is absent from OMP catalog: {provider}/{model_id}; "
+                f"authenticate that provider or supply its documented credential environment variable"
+            )
         supported = match.get("thinking")
         if effort and (not isinstance(supported, list) or effort not in supported):
             raise RuntimeError(

@@ -8,9 +8,12 @@ import os
 from pathlib import Path
 
 
-CONTRACT_VERSION = "canonical-redteam-v2-recoverable-phases-v2"
+CONTRACT_VERSION = "canonical-redteam-v2-offline-install-package-v5"
 CONTRACT_FILES = (
     "config/attack-taxonomy-v2.json",
+    "config/osv-snapshot.lock.json",
+    "config/offline-pack.linux_amd64.lock.json",
+    "config/offline-pack.darwin_arm64.lock.json",
     "schemas/v2/campaign-plan.schema.json",
     "schemas/v2/evidence-index.schema.json",
     "schemas/v2/threat-model.schema.json",
@@ -19,6 +22,13 @@ CONTRACT_FILES = (
     "schemas/v2/candidate-finding.schema.json",
     "schemas/v2/coverage-ledger.schema.json",
     "schemas/v2/run-manifest.schema.json",
+    "schemas/v2/tool-collection.schema.json",
+    "schemas/v2/tool-receipt.schema.json",
+    "schemas/v2/dependency-limitations.schema.json",
+    "schemas/v2/report.schema.json",
+    ".omp/guards/target-readonly.ts",
+    "scripts/agent-shell.sh",
+    "scripts/agent-shell-isolator.sh",
     "scripts/artifact_policy.py",
     "scripts/build-campaign-plan.py",
     "scripts/build-evidence-index.py",
@@ -26,6 +36,19 @@ CONTRACT_FILES = (
     "scripts/bootstrap-omp.sh",
     "scripts/close-interrupted-run.py",
     "scripts/harness_contract.py",
+    "scripts/dependency_contract.py",
+    "scripts/collect-tools.py",
+    "scripts/run-wraith.sh",
+    "scripts/normalize-wraith.py",
+    "scripts/merge-wraith.py",
+    "scripts/finalize-tool-collection.py",
+    "scripts/render-report.py",
+    "scripts/osv_snapshot.py",
+    "scripts/offline_package.py",
+    "scripts/probe-agent-isolation.sh",
+    "scripts/probe-bubblewrap.sh",
+    "scripts/run-safe-reproduction.sh",
+    "scripts/safe-reproduction-backend.sh",
     "scripts/init-run.py",
     "scripts/phase_seal.py",
     "scripts/recover-run.py",

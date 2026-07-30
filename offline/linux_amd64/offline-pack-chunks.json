@@ -1,0 +1,73 @@
+{
+  "archive": {
+    "file": "vulnops-offline-linux-amd64-4c6adeba003e.tar.gz",
+    "format": "tar.gz",
+    "sha256": "e17745f5e66d5a10fc0941b2384584b25e3611b7dd4aa985151b9a232e74911d",
+    "size": 431212807
+  },
+  "chunk_size": 47185920,
+  "chunks": [
+    {
+      "file": "vulnops-offline-linux-amd64-4c6adeba003e.tar.gz.part-aa",
+      "index": 0,
+      "sha256": "770d1e14e43987cdc4d5758a00a127d84407df2214d914e34413a03bb088403b",
+      "size": 47185920
+    },
+    {
+      "file": "vulnops-offline-linux-amd64-4c6adeba003e.tar.gz.part-ab",
+      "index": 1,
+      "sha256": "ca88311215321f0ba4fbd38609b3564a739566c038cfdf5a41b50a4a4ed49e8d",
+      "size": 47185920
+    },
+    {
+      "file": "vulnops-offline-linux-amd64-4c6adeba003e.tar.gz.part-ac",
+      "index": 2,
+      "sha256": "332cb99a7b8c8f5a83de282477b8a6608fcaa19b17481968d4266571001e780d",
+      "size": 47185920
+    },
+    {
+      "file": "vulnops-offline-linux-amd64-4c6adeba003e.tar.gz.part-ad",
+      "index": 3,
+      "sha256": "f0a5e9aac93ead6496d5991017ebc7108d98601cc9ce48a48720d487411dea3f",
+      "size": 47185920
+    },
+    {
+      "file": "vulnops-offline-linux-amd64-4c6adeba003e.tar.gz.part-ae",
+      "index": 4,
+      "sha256": "2a944f8e6d40ddb285ecea36a7d00e3a421e22f3eae7a1c4172e542fdc32111c",
+      "size": 47185920
+    },
+    {
+      "file": "vulnops-offline-linux-amd64-4c6adeba003e.tar.gz.part-af",
+      "index": 5,
+      "sha256": "1ff24fe21709a910370208e8cffbc28369ff6de4d2e4bd5fa826ac6c72d44854",
+      "size": 47185920
+    },
+    {
+      "file": "vulnops-offline-linux-amd64-4c6adeba003e.tar.gz.part-ag",
+      "index": 6,
+      "sha256": "9b4431fb3c2970719e8fb68d1e59d9472c721307fa026e86adab75b47016dde5",
+      "size": 47185920
+    },
+    {
+      "file": "vulnops-offline-linux-amd64-4c6adeba003e.tar.gz.part-ah",
+      "index": 7,
+      "sha256": "7a730d8628eac83baa5a9c6b8056d0da125eb60377cda0dc8eb96e9e8f172ab4",
+      "size": 47185920
+    },
+    {
+      "file": "vulnops-offline-linux-amd64-4c6adeba003e.tar.gz.part-ai",
+      "index": 8,
+      "sha256": "acdee25de462d6e529b0fb22a44a56319e74ac5a253d0b6eeb45f2008d21001a",
+      "size": 47185920
+    },
+    {
+      "file": "vulnops-offline-linux-amd64-4c6adeba003e.tar.gz.part-aj",
+      "index": 9,
+      "sha256": "1043a1bb96e80e1499145c74ba3d1ee31106e6ebf67ccae8043c05375ff0bbfb",
+      "size": 6539527
+    }
+  ],
+  "platform": "linux_amd64",
+  "schema": "vulnops.offline-pack-chunks.v2"
+}

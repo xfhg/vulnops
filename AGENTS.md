@@ -65,6 +65,40 @@ and populate the local OSV database. Then run:
 bash scripts/validate-config.sh
 ```
 
+For a transferable offline deployment, build only on the matching supported
+platform from clean source files (prior generated archive and chunk outputs are
+not source inputs):
+
+```bash
+bash scripts/offline-pack.sh --platform linux_amd64
+```
+
+Online preparation ends when this command succeeds. It must consume only
+strictly locked assets, copy the already verified local OSV snapshot, verify the
+OMP native runtime and every OSV ecosystem, pass relocation and setup smoke
+tests, then publish the final archive and platform-namespaced JSON chunk
+manifest. `--allow-dirty` is development-only;
+`--include-config` may disclose endpoint credentials. SHA-256 proves integrity,
+not publisher authenticity.
+
+Ordinary `scripts/fetch-osv-db.sh` synchronization never updates the OSV lock.
+When an operator intentionally prepares a new reviewed database snapshot, use
+`bash scripts/fetch-osv-db.sh --refresh-lock <snapshot-id>`. The refresh must
+stage and validate every ecosystem before publishing databases and replacing the
+lock last.
+
+After transfer, reconstruct with `./offline-build.sh --platform <platform>`,
+extract into an empty directory, run `bash setup.sh verify`, edit `config.toml`,
+authenticate an OAuth-backed provider with `bash setup.sh login <provider>` when
+needed, and run `bash setup.sh configure`. Verify and configure never download
+anything; login may contact only the selected provider's authentication service
+and must not install dependencies.
+The package is an offline installer, not a restricted runtime: it must not rewrite
+or narrow configured OMP, network, or reproduction capabilities. OMP must retain
+normal access to the configured LLM provider. The default configuration avoids a
+Bubblewrap dependency, while explicitly configured enforced egress or safe
+reproduction still requires a functional host Bubblewrap installation.
+
 Start OMP through the contained launcher:
 
 ```bash
@@ -797,7 +831,11 @@ analysis and record the environment limitation.
 | `init-remediation.py`, `build-remediation-plan.py`, `update-remediation-state.py` | Linked post-audit identity, exact per-finding planning, lifecycle |
 | `prepare-remediation-work.py`, `publish-remediation-patch.py` | Disposable production edits and safe Git patch publication |
 | `finalize-remediation.py`, `validate-remediation.py`, `remediation-status.sh` | Exact dispositions, bundle integrity, read-only status |
-| `probe-toolchain.sh`, `probe-bubblewrap.sh` | Functional readiness and containment support |
+| `offline-pack.sh`, `offline_package.py`, `offline-build.sh`, `setup.sh` | Strict locks, deterministic relocatable archives, exact manifests/chunks, offline installation |
+| `osv_snapshot.py`, `fetch-osv-db.sh` | Complete checksum-pinned OSV snapshot synchronization, explicit staged lock refresh, and verification |
+| `agent-shell.sh`, `run-safe-reproduction.sh` | Stable profile-aware shell and reproduction entrypoints |
+| `agent-shell-isolator.sh`, `probe-agent-isolation.sh` | Optional source-tree Linux agent-egress containment and proof |
+| `safe-reproduction-backend.sh`, `probe-bubblewrap.sh` | Optional source-tree safe-reproduction containment and proof |
 | `validate-config.sh`, `validate-phase.sh`, `validate-scan.sh` | Readiness, phase integrity, and whole-scan gates |
 
 ## 16. Agent and skill ownership

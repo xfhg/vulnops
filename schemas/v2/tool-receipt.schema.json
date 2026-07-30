@@ -16,6 +16,27 @@
     "result_count": {"type": "integer", "minimum": 0},
     "normalized_sha256": {"type": ["string", "null"], "pattern": "^[a-f0-9]{64}$"},
     "meaningful": {"type": "boolean"},
+    "packages_scanned": {"type": "integer", "minimum": 0},
+    "databases": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["ecosystem", "snapshot", "sha256"],
+        "properties": {
+          "ecosystem": {"type": "string", "minLength": 1},
+          "snapshot": {"type": "string", "minLength": 1},
+          "sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"}
+        }
+      }
+    },
     "warnings": {"type": "array", "items": {"type": "string"}}
-  }
+  },
+  "allOf": [
+    {
+      "if": {"properties": {"tool": {"const": "wraith"}}, "required": ["tool"]},
+      "then": {"required": ["packages_scanned", "databases"]}
+    }
+  ]
 }

@@ -381,13 +381,20 @@ marked development artifact; `--include-config` is an explicit sensitive
 operation because it may package credentials. The default package substitutes
 `config.toml.example`.
 
-After transfer, reconstruct a chunked archive and verify it before configuration:
+After transfer, reconstruct a chunked archive and install it into a new, empty
+directory. Keep the archive itself outside the installation directory and use
+tar's `-p` option so the packaged Unix permissions survive the destination's
+`umask`:
 
 ```bash
 ./offline-build.sh --platform linux_amd64
-mkdir vulnops-offline
-tar -xzf vulnops-offline-linux-amd64-<commit>.tar.gz -C vulnops-offline
-cd vulnops-offline
+
+archive="$PWD/vulnops-offline-linux-amd64-<commit>.tar.gz"
+install_dir="$PWD/vulnops-offline"
+mkdir "$install_dir" # must be empty
+tar -xzpf "$archive" -C "$install_dir"
+cd "$install_dir"
+
 bash setup.sh verify
 # edit config.toml with the LLM endpoint and selectors
 # for OAuth subscriptions: bash setup.sh login openai-codex
@@ -398,7 +405,14 @@ bash setup.sh configure
 missing, reordered, tampered, or extra chunks. `setup.sh verify` performs a full
 inventory comparison, rechecks every lock and database, executes all tool version
 probes, starts OMP with its bundled native addon, and validates the package
-configuration without downloading anything.
+configuration without downloading anything. Do not extract with `unzip`, a GUI
+archive utility, or plain `tar -xzf`: those paths may normalize `0664`/`0775` to
+`0644`/`0755`, which preserves content but causes the package's current exact-mode
+inventory check to fail. A failure listing many unrelated files as `changed`
+immediately after extraction usually indicates this permission normalization;
+re-extract with `tar -xzpf` into a fresh empty directory rather than manually
+changing files. Leaving the `.tar.gz` inside the installation directory also
+fails verification as an unexpected extra file.
 
 “Offline package” describes installation, not a restricted runtime. The archive
 contains every locked tool, native library, OSV database, schema, and harness file

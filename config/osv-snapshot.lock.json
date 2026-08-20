@@ -1,7 +1,7 @@
 {
   "schema": "vulnops.osv-snapshot-lock.v1",
   "snapshot": "2026-08-20",
-  "generated_at": "2026-08-20T01:11:45Z",
+  "generated_at": "2026-08-20T02:16:28Z",
   "ecosystems": [
     {
       "name": "CRAN",
@@ -72,8 +72,8 @@
     {
       "name": "npm",
       "url": "https://osv-vulnerabilities.storage.googleapis.com/npm/all.zip",
-      "size": 219943062,
-      "sha256": "b71b6b78dc7a8b32cfe1936dd3f23da5fcb34997fc66468b6c40eecd705cc573"
+      "size": 219959646,
+      "sha256": "875ce62b02a17417f2a3f289f703047f5cf476ac472293a3909b80839ac34a2f"
     }
   ]
 }

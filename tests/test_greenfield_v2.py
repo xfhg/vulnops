@@ -7,14 +7,29 @@ import os
 import subprocess
 import sys
 import tempfile
+import tomllib
 import unittest
 from pathlib import Path
 from unittest import mock
+
+from scripts import operator_context as operator_context_module
+from scripts.operator_context import identity as operator_context_identity
+from scripts.operator_context import inspect_context
 
 ROOT = Path(__file__).resolve().parents[1]
 PYTHON = sys.executable
 ROLE_ARGS = ("--orchestrator-model", "p/orchestrator", "--task-model", "p/task", "--slow-model", "p/main", "--smol-model", "p/smol")
 ROLE_MAP = {"orchestrator": "p/orchestrator", "task": "p/task", "slow": "p/main", "smol": "p/smol"}
+OPERATOR_CONTEXT = operator_context_identity(inspect_context(ROOT / "context"))
+OPERATOR_CONTEXT_ARGS = ("--operator-context-json", json.dumps(OPERATOR_CONTEXT))
+
+
+def configured_egress_mode() -> str:
+    config = ROOT / "config.toml"
+    if not config.is_file():
+        return "enforced"
+    with config.open("rb") as handle:
+        return str(tomllib.load(handle).get("harness", {}).get("network", {}).get("linux_agent_egress", "enforced"))
 
 
 def run(*args: str, input_text: str | None = None, env: dict[str, str] | None = None) -> subprocess.CompletedProcess[str]:
@@ -54,6 +69,8 @@ def write_minimal_recon(scan: Path, target: Path, run_id: str, dependency_files:
     }
     write(scan / "repo-context/repo-context.json", context)
     write(scan / "repo-context/security-surfaces.json", surfaces)
+    operator_context = inspect_context(ROOT / "context")
+    write(scan / "repo-context/operator-context.json", operator_context)
     (scan / "repo-context/repo.md").write_text("# Fixture\n")
     for name, worker in (("overview.json", "overview"), ("trust-boundaries.json", "trust-boundaries"), ("input-surfaces.json", "input-surfaces")):
         write(scan / "repo-context/research" / name, {"schema_version": "2.0", "worker": worker, "status": "ok", "started_at": "2026-01-01T00:00:00Z", "completed_at": "2026-01-01T00:00:01Z", "observations": [], "warnings": [], "errors": []})
@@ -61,12 +78,73 @@ def write_minimal_recon(scan: Path, target: Path, run_id: str, dependency_files:
         "repo-context/repo.md", "repo-context/repo-context.json", "repo-context/security-surfaces.json",
         "repo-context/research/overview.json", "repo-context/research/trust-boundaries.json",
         "repo-context/research/input-surfaces.json",
+        "repo-context/operator-context.json",
     ]
     write(scan / "repo-context/phase-manifest.json", {
         "phase": "recon", "status": "ok", "started_at": "now", "completed_at": "now",
-        "inputs": [], "outputs": outputs, "coverage": {"projects": 1},
+        "inputs": [], "outputs": outputs, "coverage": {"projects": 1, "operator_context_skipped": operator_context["skipped_files"]},
         "tool_versions": {"fixture": "1"}, "warnings": [], "errors": [],
     })
+
+
+class OperatorContextTests(unittest.TestCase):
+    def test_inventory_is_stable_bounded_and_skips_unsafe_inputs(self) -> None:
+        with tempfile.TemporaryDirectory(dir=ROOT / ".harness") as tmp:
+            base = Path(tmp); absent = base / "absent"; empty = base / "empty"; empty.mkdir()
+            self.assertEqual(operator_context_identity(inspect_context(absent)), operator_context_identity(inspect_context(empty)))
+            (empty / ".hidden").write_text("first\nsecond\n")
+            (empty / "nested").mkdir(); (empty / "nested/note.txt").write_text("note")
+            (empty / "binary.bin").write_bytes(b"\x00\xff")
+            os.symlink("nested/note.txt", empty / "link")
+            document = inspect_context(empty)
+            self.assertEqual([item["path"] for item in document["files"]], [".hidden", "binary.bin", "link", "nested/note.txt"])
+            self.assertEqual(document["accepted_files"], 2)
+            self.assertEqual({item["reason"] for item in document["files"] if item["status"] == "skipped"}, {"binary_or_non_utf8", "symlink_not_followed"})
+            with mock.patch.object(operator_context_module, "MAX_FILES", 1), mock.patch.object(operator_context_module, "MAX_BYTES", 4):
+                bounded = inspect_context(empty)
+            self.assertEqual(bounded["accepted_files"], 1)
+            self.assertTrue(any(item["reason"] in {"file_limit", "byte_limit"} for item in bounded["files"]))
+
+    def test_context_only_evidence_cannot_be_a_finding(self) -> None:
+        scripts_path = str(ROOT / "scripts"); sys.path.insert(0, scripts_path)
+        try:
+            spec = importlib.util.spec_from_file_location("validate_phase_v2", ROOT / "scripts/validate-phase-v2.py")
+            self.assertIsNotNone(spec.loader); validator = importlib.util.module_from_spec(spec); spec.loader.exec_module(validator)
+        finally:
+            sys.path.remove(scripts_path)
+        with tempfile.TemporaryDirectory(dir=ROOT / ".harness") as tmp:
+            base = Path(tmp); target = base / "target"; scan = base / "scan"; target.mkdir(); scan.mkdir(); (target / "app.py").write_text("pass\n")
+            write(scan / "repo-context/operator-context.json", {"observations": []}); write(scan / "campaign-planning/campaign-plan.json", {"campaigns": []})
+            finding = {"id": "F-001", "finding_kind": "code", "origin": "cross_evidence_discovery", "root_causes": [{"file": "app.py"}], "trace": [{"kind": "entrypoint", "file": "app.py"}, {"kind": "sink", "file": "app.py"}], "verification": {"model": "p/main", "source_validation_refs": []}, "primitive_steps": [], "source_refs": [{"kind": "operator_context", "source_id": "CTX-A123456789AB", "artifact_ref": "repo-context/operator-context.json:CTX-A123456789AB"}], "graph_receipt_refs": [], "dependency": None, "secret": None}
+            errors: list[str] = []
+            validator.semantic_synthesis(scan, target, {"findings": [finding]}, {"records": [{"source_kind": "operator_context", "source_id": "CTX-A123456789AB"}], "primitives": []}, {"results": []}, "p/main", errors)
+            self.assertIn("F-001 operator context cannot be the sole finding source", errors)
+
+    def test_recon_derives_context_metadata_and_campaign_seed_without_raw_copy(self) -> None:
+        with tempfile.TemporaryDirectory(dir=ROOT / ".harness") as tmp:
+            base = Path(tmp); target = base / "target"; scan = base / "scan"; supplied = base / "context"
+            target.mkdir(); supplied.mkdir(); (target / "app.py").write_text("def entry():\n    return True\n")
+            raw_marker = "internal deployment assumes a trusted reverse proxy"
+            (supplied / "deployment.txt").write_text(raw_marker + "\n")
+            inventory = inspect_context(supplied)
+            context_path = base / "audit-context.json"
+            write(context_path, {"schema_version": "2.0", "run_id": "run", "depth": "quick", "model": "p/main", "repo_path": str(target), "scan_base": str(scan), "operator_context": operator_context_identity(inventory), "paths": {"operator_context": str(supplied)}})
+            write_minimal_recon(scan, target, "run", [])
+            write(scan / "repo-context/research/overview.json", {"schema_version": "2.0", "worker": "overview", "status": "ok", "started_at": "2026-01-01T00:00:00Z", "completed_at": "2026-01-01T00:00:01Z", "observations": [{"id": "proxy-assumption", "category": "deployment", "title": "Proxy trust assumption", "description": "The target expects an upstream trust boundary.", "evidence_refs": ["app.py:1"], "context_refs": ["context/deployment.txt:1"], "context_assessment": "corroborated"}], "warnings": [], "errors": []})
+            env = {"VULNOPS_AUDIT_CONTEXT": str(context_path)}
+            finalized = run(PYTHON, "scripts/finalize-recon.py", str(target), str(scan), env=env)
+            self.assertEqual(finalized.returncode, 0, finalized.stderr)
+            artifact_text = (scan / "repo-context/operator-context.json").read_text()
+            self.assertNotIn(raw_marker, artifact_text)
+            artifact = json.loads(artifact_text); self.assertEqual(artifact["observations"][0]["assessment"], "corroborated")
+            indexed = run(PYTHON, "scripts/build-evidence-index.py", str(scan), "--context", str(context_path)); self.assertEqual(indexed.returncode, 0, indexed.stderr)
+            planned = run(PYTHON, "scripts/build-campaign-plan.py", str(scan), "--context", str(context_path)); self.assertEqual(planned.returncode, 0, planned.stderr)
+            index = json.loads((scan / "campaign-planning/evidence-index.json").read_text()); record = next(item for item in index["records"] if item["source_kind"] == "operator_context")
+            plan = json.loads((scan / "campaign-planning/campaign-plan.json").read_text())
+            self.assertTrue(any(record["id"] in item["starting_evidence"] for item in plan["campaigns"]))
+            overview = json.loads((scan / "repo-context/research/overview.json").read_text()); overview["observations"][0]["context_refs"] = ["deployment.txt:1"]; write(scan / "repo-context/research/overview.json", overview)
+            rejected = run(PYTHON, "scripts/finalize-recon.py", str(target), str(scan), env=env)
+            self.assertNotEqual(rejected.returncode, 0)
 
 
 class ScannerContractTests(unittest.TestCase):
@@ -118,7 +196,7 @@ class ScannerContractTests(unittest.TestCase):
             base = Path(tmp); scan = base / "run"; target = base / "target"; target.mkdir()
             (target / "main.go").write_text("package main\n"); (target / "go.mod").write_text("module fixture\ngo 1.22\n"); (target / "go.sum").write_text("sum\n"); (target / "package.json").write_text("{}\n")
             fingerprint = run(PYTHON, "scripts/target-fingerprint.py", str(target)).stdout.strip(); context = base / "context.json"; env = {"VULNOPS_AUDIT_CONTEXT": str(context)}
-            initialized = run(PYTHON, "scripts/init-run.py", "--harness-root", str(ROOT), "--repo-path", str(target), "--scan-base", str(scan), "--run-id", "run", "--repo-name", "fixture", "--remote-url", "local", "--repo-id", "fixture", "--commit", "abc", "--depth", "quick", "--target-fingerprint", fingerprint, "--reproduction-mode", "off", "--model", "p/main", *ROLE_ARGS, "--verifier-model", "p/verifier", env=env)
+            initialized = run(PYTHON, "scripts/init-run.py", "--harness-root", str(ROOT), "--repo-path", str(target), "--scan-base", str(scan), "--run-id", "run", "--repo-name", "fixture", "--remote-url", "local", "--repo-id", "fixture", "--commit", "abc", "--depth", "quick", "--target-fingerprint", fingerprint, *OPERATOR_CONTEXT_ARGS, "--reproduction-mode", "off", "--model", "p/main", *ROLE_ARGS, "--verifier-model", "p/verifier", env=env)
             self.assertEqual(initialized.returncode, 0, initialized.stderr)
             write_minimal_recon(scan, target, "run", ["go.sum", "package.json"])
             finalized = run(PYTHON, "scripts/finalize-recon.py", str(target), str(scan), env=env)
@@ -356,14 +434,15 @@ class GreenfieldContractTests(unittest.TestCase):
         with tempfile.TemporaryDirectory(dir=ROOT / "scans") as tmp:
             base=Path(tmp);scan=base/"run";target=base/"target";target.mkdir();(target/"app.py").write_text("def entry():\n    return 1\n")
             fingerprint=run(PYTHON,"scripts/target-fingerprint.py",str(target)).stdout.strip();context_path=base/"context.json"
-            init=[PYTHON,"scripts/init-run.py","--harness-root",str(ROOT),"--repo-path",str(target),"--scan-base",str(scan),"--run-id","run","--repo-name","fixture","--remote-url","local","--repo-id","fixture-id","--commit","abc","--depth","quick","--target-fingerprint",fingerprint,"--reproduction-mode","off","--model","p/main",*ROLE_ARGS,"--verifier-model","p/verifier"]
-            env={"VULNOPS_AUDIT_CONTEXT":str(context_path)};created=run(*init,env=env);self.assertEqual(created.returncode,0,created.stderr)
+            init=[PYTHON,"scripts/init-run.py","--harness-root",str(ROOT),"--repo-path",str(target),"--scan-base",str(scan),"--run-id","run","--repo-name","fixture","--remote-url","local","--repo-id","fixture-id","--commit","abc","--depth","quick","--target-fingerprint",fingerprint,*OPERATOR_CONTEXT_ARGS,"--reproduction-mode","off","--model","p/main",*ROLE_ARGS,"--verifier-model","p/verifier"]
+            env={"VULNOPS_AUDIT_CONTEXT":str(context_path),"VULNOPS_LINUX_AGENT_EGRESS":configured_egress_mode()};created=run(*init,env=env);self.assertEqual(created.returncode,0,created.stderr)
             def manifest(phase:str,outputs:list[str],coverage:dict|None=None):return {"phase":phase,"status":"ok","started_at":"2026-01-01T00:00:00Z","completed_at":"2026-01-01T00:00:01Z","inputs":[],"outputs":outputs,"coverage":coverage or {},"tool_versions":{"fixture":"1"},"warnings":[],"errors":[]}
             write(scan/"repo-context/repo-context.json",{"schema_version":"2.0","repository":"fixture","comparable":{"name":None,"basis":"fixture","confidence":"not_applicable"},"projects":[{"id":"PRJ-1","type":"library","base_path":".","languages":["python"],"frameworks":[],"dependency_files":[],"entry_points":[{"id":"EP-1","path":"app.py","kind":"library","evidence_refs":["app.py:1"]}],"trust_boundary_ids":["TB-1"],"ignore_patterns":[],"evidence_refs":["app.py:1"]}],"actors":[],"domain_tags":[],"sensitive_data_types":[],"build_ci":[],"generated_ignorable":[],"evidence_refs":["app.py:1"],"warnings":[],"errors":[]})
             write(scan/"repo-context/security-surfaces.json",{"schema_version":"2.0","repository":"fixture","entry_points":[{"id":"EP-1","project_id":"PRJ-1","path":"app.py","kind":"library","trust_boundary_ids":["TB-1"],"evidence_refs":["app.py:1"]}],"trust_boundaries":[{"id":"TB-1","project_id":"PRJ-1","source_trust":"caller","target_trust":"library","description":"caller to library","evidence_refs":["app.py:1"]}],"security_relevant_files":[{"path":"app.py","categories":["entry_point"],"evidence_refs":["app.py:1"]}],"ignore_patterns":[],"generated_ignorable":[],"sensitive_data_types":[],"domain_tags":[],"warnings":[],"errors":[]})
             (scan/"repo-context/repo.md").write_text("# Fixture\n")
             for name,worker in (("overview.json","overview"),("trust-boundaries.json","trust-boundaries"),("input-surfaces.json","input-surfaces")):write(scan/"repo-context/research"/name,{"schema_version":"2.0","worker":worker,"status":"ok","started_at":"2026-01-01T00:00:00Z","completed_at":"2026-01-01T00:00:01Z","observations":[],"warnings":[],"errors":[]})
-            recon_outputs=["repo-context/repo.md","repo-context/repo-context.json","repo-context/security-surfaces.json","repo-context/research/overview.json","repo-context/research/trust-boundaries.json","repo-context/research/input-surfaces.json","repo-context/phase-manifest.json"];write(scan/"repo-context/phase-manifest.json",manifest("recon",recon_outputs))
+            operator_context=inspect_context(ROOT/"context");write(scan/"repo-context/operator-context.json",operator_context)
+            recon_outputs=["repo-context/repo.md","repo-context/repo-context.json","repo-context/security-surfaces.json","repo-context/operator-context.json","repo-context/research/overview.json","repo-context/research/trust-boundaries.json","repo-context/research/input-surfaces.json","repo-context/phase-manifest.json"];write(scan/"repo-context/phase-manifest.json",manifest("recon",recon_outputs,{"operator_context_skipped":operator_context["skipped_files"]}))
             sca={"schema_version":"2.0","tool":"wraith","packages_scanned":0,"advisory_count":0,"advisories":[]};secrets={"schema_version":"2.0","tool":"poltergeist","match_count":0,"candidate_count":0,"candidates":[]};write(scan/"tool-collection/sca-advisories.json",sca);write(scan/"tool-collection/secrets-redacted.json",secrets);write(scan/"tool-collection/dependency-limitations.json",{"schema_version":"2.0","limitations":[]})
             for tool,artifact_name,receipt_name in (("wraith","sca-advisories.json","wraith-receipt.json"),("poltergeist","secrets-redacted.json","poltergeist-receipt.json")):
                 digest=hashlib.sha256((scan/"tool-collection"/artifact_name).read_bytes()).hexdigest();receipt={"schema_version":"2.0","tool":tool,"operation":"fixture","status":"ok","version":"fixture","started_at":"now","completed_at":"now","parse_status":"ok","result_count":0,"normalized_sha256":digest,"warnings":[]};receipt.update({"packages_scanned":0,"databases":[]} if tool=="wraith" else {});write(scan/"tool-collection"/receipt_name,receipt)
@@ -421,7 +500,7 @@ class RuntimeIsolationTests(unittest.TestCase):
         with tempfile.TemporaryDirectory(dir=ROOT / "scans") as tmp:
             base = Path(tmp); scan = base / "run"; target = base / "target"; target.mkdir(); (target / "main.py").write_text("pass\n"); (target / "go.sum").write_text("sum\n")
             fingerprint = run(PYTHON, "scripts/target-fingerprint.py", str(target)).stdout.strip(); context = base / "context.json"; env = {"VULNOPS_AUDIT_CONTEXT": str(context)}
-            initialized = run(PYTHON, "scripts/init-run.py", "--harness-root", str(ROOT), "--repo-path", str(target), "--scan-base", str(scan), "--run-id", "run", "--repo-name", "fixture", "--remote-url", "local", "--repo-id", "fixture", "--commit", "abc", "--depth", "quick", "--target-fingerprint", fingerprint, "--reproduction-mode", "off", "--model", "p/main", *ROLE_ARGS, "--verifier-model", "p/verifier", env=env)
+            initialized = run(PYTHON, "scripts/init-run.py", "--harness-root", str(ROOT), "--repo-path", str(target), "--scan-base", str(scan), "--run-id", "run", "--repo-name", "fixture", "--remote-url", "local", "--repo-id", "fixture", "--commit", "abc", "--depth", "quick", "--target-fingerprint", fingerprint, *OPERATOR_CONTEXT_ARGS, "--reproduction-mode", "off", "--model", "p/main", *ROLE_ARGS, "--verifier-model", "p/verifier", env=env)
             self.assertEqual(initialized.returncode, 0, initialized.stderr)
             write_minimal_recon(scan, target, "run", ["go.sum"])
             collected = run(PYTHON, "scripts/collect-tools.py", str(scan), "--context", str(context), env=env)
@@ -480,9 +559,12 @@ class RuntimeIsolationTests(unittest.TestCase):
 
     @unittest.skipUnless(all((ROOT/f"bins/{name}").is_file() for name in ("wraith","osv-scanner","poltergeist")) and (ROOT/".harness/osv-db").is_dir(), "offline scanner toolchain unavailable")
     def test_deterministic_tool_collection_runs_parallel_phase(self) -> None:
+        database = run(PYTHON, "scripts/osv_snapshot.py", "verify", "--lock", "config/osv-snapshot.lock.json", "--cache-root", ".harness/osv-db", "--ecosystem", "Go")
+        if database.returncode:
+            self.skipTest("offline OSV database is unavailable or invalid")
         with tempfile.TemporaryDirectory(dir=ROOT/"scans") as tmp:
             base=Path(tmp);scan=base/"run";target=base/"target";target.mkdir();(target/"go.mod").write_text("module fixture\ngo 1.22\n");(target/"main.go").write_text("package main\nfunc main() {}\n");fingerprint=run(PYTHON,"scripts/target-fingerprint.py",str(target)).stdout.strip();context=base/"context.json";env={"VULNOPS_AUDIT_CONTEXT":str(context)}
-            init=run(PYTHON,"scripts/init-run.py","--harness-root",str(ROOT),"--repo-path",str(target),"--scan-base",str(scan),"--run-id","run","--repo-name","fixture","--remote-url","local","--repo-id","fixture","--commit","abc","--depth","quick","--target-fingerprint",fingerprint,"--reproduction-mode","off","--model","p/main",*ROLE_ARGS,"--verifier-model","p/verifier",env=env);self.assertEqual(init.returncode,0,init.stderr)
+            init=run(PYTHON,"scripts/init-run.py","--harness-root",str(ROOT),"--repo-path",str(target),"--scan-base",str(scan),"--run-id","run","--repo-name","fixture","--remote-url","local","--repo-id","fixture","--commit","abc","--depth","quick","--target-fingerprint",fingerprint,*OPERATOR_CONTEXT_ARGS,"--reproduction-mode","off","--model","p/main",*ROLE_ARGS,"--verifier-model","p/verifier",env=env);self.assertEqual(init.returncode,0,init.stderr)
             write_minimal_recon(scan, target, "run", ["go.mod"])
             collected=run(PYTHON,"scripts/collect-tools.py",str(scan),"--context",str(context),env=env);self.assertEqual(collected.returncode,0,collected.stderr)
             validated=run("bash","scripts/validate-phase.sh",str(scan),"tool-collection",env=env);self.assertEqual(validated.returncode,0,validated.stderr)

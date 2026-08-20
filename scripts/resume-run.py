@@ -34,6 +34,7 @@ def main() -> int:
     parser.add_argument("commit")
     parser.add_argument("depth")
     parser.add_argument("target_fingerprint")
+    parser.add_argument("--operator-context-json", required=True)
     parser.add_argument("reproduction_mode")
     parser.add_argument(
         "--network-mode",
@@ -47,6 +48,10 @@ def main() -> int:
     parser.add_argument("smol_model")
     parser.add_argument("verifier_model")
     args = parser.parse_args()
+    try:
+        operator_context = json.loads(args.operator_context_json)
+    except json.JSONDecodeError:
+        return 0
 
     context = load(args.context)
     if context is None or context.get("schema_version") != "2.0" or context.get("workflow") != "canonical-redteam-v2":
@@ -78,6 +83,8 @@ def main() -> int:
         return 0
     if context.get("offline_package") != current_package or context.get("network") != current_network:
         return 0
+    if context.get("operator_context") != operator_context:
+        return 0
 
     scan_base = Path(str(context.get("scan_base", "")))
     try:
@@ -107,6 +114,8 @@ def main() -> int:
     if manifest.get("model_roles") != expected_roles:
         return 0
     if manifest.get("offline_package") != current_package or manifest.get("network") != current_network:
+        return 0
+    if manifest.get("operator_context") != operator_context:
         return 0
     if manifest.get("status") == "complete":
         return 0

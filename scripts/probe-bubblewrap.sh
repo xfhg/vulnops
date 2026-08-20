@@ -5,7 +5,7 @@
 set -euo pipefail
 
 if [ "$(uname -s 2>/dev/null || true)" != "Linux" ]; then
-    echo "safe reproduction requires Linux" >&2
+    echo "safe reproduction unavailable: requires Linux" >&2
     exit 1
 fi
 

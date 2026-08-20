@@ -6,7 +6,7 @@
   "required": [
     "schema_version", "workflow", "run_id", "repo_id", "repository", "commit",
     "depth", "status", "scan_base", "created_at", "updated_at",
-    "target_fingerprint", "harness_contract_sha256", "sast_budget", "model", "model_roles", "verifier_model", "model_diversity", "reproduction_mode",
+    "target_fingerprint", "operator_context", "harness_contract_sha256", "sast_budget", "model", "model_roles", "verifier_model", "model_diversity", "reproduction_mode",
     "network", "offline_package",
     "phases", "phase_seals", "recovery_count", "recovery_history"
   ],
@@ -23,6 +23,7 @@
     "created_at": {"type": "string", "minLength": 1},
     "updated_at": {"type": "string", "minLength": 1},
     "target_fingerprint": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+    "operator_context": {"$ref": "#/$defs/operatorContextIdentity"},
     "harness_contract_sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
     "sast_budget": {
       "type": "object",
@@ -114,6 +115,18 @@
     }
   },
   "$defs": {
+    "operatorContextIdentity": {
+      "type": "object", "additionalProperties": false,
+      "required": ["fingerprint", "limits", "discovered_files", "accepted_files", "accepted_bytes", "skipped_files"],
+      "properties": {
+        "fingerprint": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+        "limits": {"type": "object", "additionalProperties": false, "required": ["max_files", "max_bytes"], "properties": {"max_files": {"const": 1024}, "max_bytes": {"const": 16777216}}},
+        "discovered_files": {"type": "integer", "minimum": 0},
+        "accepted_files": {"type": "integer", "minimum": 0},
+        "accepted_bytes": {"type": "integer", "minimum": 0},
+        "skipped_files": {"type": "integer", "minimum": 0}
+      }
+    },
     "phaseName": {
       "enum": ["recon", "tool-collection", "sast", "campaign-planning", "intrusion", "synthesis", "final-verification", "report"]
     },

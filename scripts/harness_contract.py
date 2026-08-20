@@ -8,7 +8,7 @@ import os
 from pathlib import Path
 
 
-CONTRACT_VERSION = "canonical-redteam-v2-offline-install-package-v5"
+CONTRACT_VERSION = "canonical-redteam-v2-offline-install-package-v6"
 CONTRACT_FILES = (
     "config/attack-taxonomy-v2.json",
     "config/osv-snapshot.lock.json",
@@ -26,6 +26,10 @@ CONTRACT_FILES = (
     "schemas/v2/tool-receipt.schema.json",
     "schemas/v2/dependency-limitations.schema.json",
     "schemas/v2/report.schema.json",
+    "schemas/v2/operator-context.schema.json",
+    "schemas/v2/recon-research.schema.json",
+    "schemas/v2/synthesis-findings.schema.json",
+    "schemas/v2/final-findings.schema.json",
     ".omp/guards/target-readonly.ts",
     "scripts/agent-shell.sh",
     "scripts/agent-shell-isolator.sh",
@@ -45,6 +49,7 @@ CONTRACT_FILES = (
     "scripts/render-report.py",
     "scripts/osv_snapshot.py",
     "scripts/offline_package.py",
+    "scripts/operator_context.py",
     "scripts/probe-agent-isolation.sh",
     "scripts/probe-bubblewrap.sh",
     "scripts/run-safe-reproduction.sh",
@@ -55,6 +60,7 @@ CONTRACT_FILES = (
     "scripts/resume-run.py",
     "scripts/run-audit.sh",
     "scripts/finalize-sast.py",
+    "scripts/finalize-recon.py",
     "scripts/sast_contract.py",
     "scripts/validate-json.py",
     "scripts/validate-omp-agents.py",
@@ -67,6 +73,13 @@ CONTRACT_FILES = (
     ".omp/agents/vulnops-deepdive-chunk.md",
     ".omp/agents/vulnops-sast-lead.md",
     ".omp/agents/vulnops-independent-verify-one.md",
+    ".omp/agents/vulnops-recon.md",
+    ".omp/agents/vulnops-recon-overview.md",
+    ".omp/agents/vulnops-recon-trust.md",
+    ".omp/agents/vulnops-recon-inputs.md",
+    ".omp/agents/vulnops-campaign-planning.md",
+    ".omp/agents/vulnops-intrusion-campaign.md",
+    ".omp/agents/vulnops-synthesis.md",
 )
 DEFAULT_SAST_BUDGETS = {
     "quick": {"max_concurrency": 4, "max_hunt_tasks": 12, "max_hunt_questions": 24, "max_gapfill_rounds": 1, "max_attempts": 2},

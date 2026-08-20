@@ -6,6 +6,8 @@ from pathlib import Path
 from typing import Any
 from artifact_policy import oversized_artifacts, phase_for_artifact
 from harness_contract import harness_contract_sha256
+from operator_context import identity as operator_context_identity
+from operator_context import inspect_context
 from sast_contract import validate_hunt_result
 PHASE_DIR={"recon":"repo-context","tool-collection":"tool-collection","sast":"sast","campaign-planning":"campaign-planning","intrusion":"intrusion","synthesis":"synthesis","final-verification":"final-verification","report":"report"}
 def load(path:Path,errors:list[str])->Any:
@@ -59,6 +61,10 @@ def semantic_campaign(scan:Path,target:Path,index:dict,plan:dict,errors:list[str
     indexed_sources={(str(item.get("source_kind")),str(item.get("source_id"))) for item in records.values()}
     for source in expected_sources:
         if source not in indexed_sources:errors.append(f"upstream evidence is missing from canonical index: {source[0]}:{source[1]}")
+    operator_doc=load(scan/"repo-context/operator-context.json",errors) or {}
+    for item in operator_doc.get("observations",[]) if isinstance(operator_doc,dict) else []:
+        source=("operator_context",str(item.get("id")))
+        if source not in indexed_sources:errors.append(f"upstream evidence is missing from canonical index: {source[0]}:{source[1]}")
     for primitive in primitives.values():
         for rid in primitive.get("source_record_ids",[]):
             if rid not in records:errors.append(f"primitive {primitive.get('id')} references unknown record {rid}")
@@ -96,9 +102,10 @@ def semantic_synthesis(scan:Path,target:Path,doc:dict,index:dict,intrusion:dict,
         for source in finding.get("source_refs",[]):
             if artifact(scan,str(source.get("artifact_ref",""))) is None:errors.append(f"{fid} unresolved source reference: {source.get('artifact_ref')}")
             kind=str(source.get("kind"));source_id=str(source.get("source_id"));index_kind="secret" if kind=="secret" else kind
-            if kind in {"recon","sca","secret","sast","reproduction"} and (index_kind,source_id) not in evidence_sources:errors.append(f"{fid} source ID does not resolve in evidence index: {kind}:{source_id}")
+            if kind in {"recon","operator_context","sca","secret","sast","reproduction"} and (index_kind,source_id) not in evidence_sources:errors.append(f"{fid} source ID does not resolve in evidence index: {kind}:{source_id}")
             if kind=="campaign" and source_id not in campaign_ids:errors.append(f"{fid} references unknown campaign: {source_id}")
             if kind=="intrusion" and source_id not in intrusion_ids:errors.append(f"{fid} references unknown intrusion result: {source_id}")
+        if finding.get("source_refs") and all(source.get("kind")=="operator_context" for source in finding["source_refs"]):errors.append(f"{fid} operator context cannot be the sole finding source")
         for ref in [*(finding.get("verification") or {}).get("source_validation_refs",[]),*finding.get("graph_receipt_refs",[])]:
             if artifact(scan,str(ref)) is None:errors.append(f"{fid} unresolved validation reference: {ref}")
         for ref in finding.get("graph_receipt_refs",[]):
@@ -150,6 +157,10 @@ def main()->int:
     current_contract=harness_contract_sha256(root)
     if context.get("harness_contract_sha256")!=current_contract or run.get("harness_contract_sha256")!=current_contract:errors.append("harness contract fingerprint mismatch")
     if context.get("sast_budget")!=run.get("sast_budget"):errors.append("SAST budget snapshot mismatch")
+    try: current_operator_context=inspect_context(Path(str((context.get("paths") or {}).get("operator_context",root/"context"))))
+    except (OSError,ValueError) as exc:errors.append(f"cannot inspect operator context: {exc}");current_operator_context={}
+    current_operator_identity=operator_context_identity(current_operator_context) if current_operator_context else {}
+    if context.get("operator_context")!=current_operator_identity or run.get("operator_context")!=current_operator_identity:errors.append("operator context changed during audit")
     if context.get("network")!=run.get("network") or context.get("offline_package")!=run.get("offline_package"):errors.append("offline package or agent egress identity mismatch")
     if not target.is_dir():errors.append("audit target is unavailable")
     phase=a.phase
@@ -160,6 +171,9 @@ def main()->int:
             if not path.is_file():errors.append(f"missing {path}")
         schema(root,"repo-context.schema.json",scan/"repo-context/repo-context.json",errors,semantic="repo-context",target=target); schema(root,"security-surfaces.schema.json",scan/"repo-context/security-surfaces.json",errors,semantic="security-surfaces",target=target)
         for name in ("overview.json","trust-boundaries.json","input-surfaces.json"):schema(root,"recon-research.schema.json",scan/"repo-context/research"/name,errors)
+        schema(root,"operator-context.schema.json",scan/"repo-context/operator-context.json",errors)
+        operator_artifact=load(scan/"repo-context/operator-context.json",errors) or {}
+        if current_operator_context and operator_artifact.get("files")!=current_operator_context.get("files"):errors.append("operator-context artifact inventory differs from live immutable input")
     elif phase=="tool-collection":
         schema(root,"sca-advisories.schema.json",scan/"tool-collection/sca-advisories.json",errors,semantic="sca-advisories",target=target); schema(root,"secrets-redacted.schema.json",scan/"tool-collection/secrets-redacted.json",errors,semantic="secrets-redacted",target=target); schema(root,"dependency-limitations.schema.json",scan/"tool-collection/dependency-limitations.json",errors); schema(root,"tool-collection.schema.json",scan/"tool-collection/collection.json",errors)
         for name,artifact_name in (("wraith-receipt.json","sca-advisories.json"),("poltergeist-receipt.json","secrets-redacted.json")):
@@ -217,7 +231,7 @@ def main()->int:
     phase_manifest=manifest(scan,phase,errors)
     coverage=phase_manifest.get("coverage",{}) if isinstance(phase_manifest.get("coverage"),dict) else {}
     expected_phase_status={
-        "recon":"ok",
+        "recon":"degraded" if coverage.get("operator_context_skipped") else "ok",
         "tool-collection":"ok",
         "campaign-planning":"ok",
         "intrusion":"degraded" if coverage.get("needs_environment") else "ok",

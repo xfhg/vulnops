@@ -73,7 +73,7 @@ Repository ── Recon ── Tool Collection ── SAST ── Campaign Plann
 
 | Stage | Purpose | Sole authoritative output |
 |---|---|---|
-| Recon | Model projects, inputs, entrypoints, assets, and trust boundaries | Repository context and immutable security surfaces |
+| Recon | Model projects, inputs, entrypoints, assets, trust boundaries, and operator context | Repository context, immutable security surfaces, and derived context metadata |
 | Tool Collection | Run deterministic scanners concurrently and normalize healthy output | SCA records, redacted secret records, tool receipts |
 | SAST | Threat-model concrete attacker paths and hunt source-backed security questions | Validated source findings, closures, and coverage ledger |
 | Campaign Planning | Convert all prior evidence into typed primitives and bounded hypotheses | Evidence index and campaign plan |
@@ -217,6 +217,14 @@ normalized result hash matches, and the result contains a real relationship or
 result node. Even then, graph output is context—not proof of attacker control,
 unsafe behavior, or impact.
 
+Operator-supplied material follows the same evidence rule. Files placed under
+`context/` may describe intended behavior, deployment assumptions, prior audit
+notes, or target-specific constraints. Recon inventories and hashes them, then
+persists only file metadata and concise derived observations in
+`repo-context/operator-context.json`. Context can prioritize campaigns and
+support finding reasoning, but it cannot prove a vulnerability; target source
+and canonical tool evidence win on conflict.
+
 ## Safety and trust boundary
 
 VulnOps is intentionally fail-closed:
@@ -228,6 +236,7 @@ VulnOps is intentionally fail-closed:
   writes are constrained to `remediations/`, `work/`, and `.harness/`.
 - Audit execution is offline except for the configured LLM endpoint.
 - Raw scanner output and raw proof output never enter scan artifacts or reports.
+- Raw `context/` contents never enter scans, reports, or offline packages.
 - Secret values, partial identifiers, entropy material, and proof tokens are not
   persisted.
 - Target code is never executed by a model or normal shell step.
@@ -318,7 +327,10 @@ database files and new lock. Review and commit the resulting lock before buildin
 a release package.
 
 Copy `config.toml.example` to `config.toml`, configure the selectors and endpoint,
-then place exactly one Git repository beneath `target/`.
+then place exactly one Git repository beneath `target/`. Optionally place
+target-specific supporting material beneath `context/`; an absent or empty folder
+is valid. Context accepts at most 1,024 UTF-8 text files and 16 MiB of content;
+symlinks, binary/non-UTF-8 files, and overflow are skipped with Recon warnings.
 
 Validate readiness before spending model budget:
 
@@ -475,7 +487,8 @@ max_parallel = 1
 
 ## Run identity and resumability
 
-Each run records repository path, commit, exact target fingerprint, depth,
+Each run records repository path, commit, exact target fingerprint, the hashed
+operator-context inventory, depth,
 reproduction mode, offline-package manifest identity, effective agent-egress
 backend, primary selector, every orchestration role selector, verifier selector,
 workflow identity, resolved SAST budget, and a fingerprint of the
@@ -504,6 +517,7 @@ Every run lives at `scans/<repo-id>/runs/<run-id>/`:
 run-manifest.json                 run identity, phase state, model metadata
 task-ledger.json                  task attempts, status, artifacts, errors
 repo-context/                     repository model and immutable surfaces
+  operator-context.json           hashes, inventory status, derived observations
 tool-collection/                  normalized SCA/secrets evidence, database receipts,
                                   and structured dependency coverage limitations
 sast/                             threat model, hunts, validation, coverage
@@ -603,6 +617,7 @@ schemas/v2/            strict JSON contracts
 scripts/               deterministic execution, adapters, finalizers, gates
 tests/                 configuration, phase, lifecycle, and integration tests
 target/                exactly one read-only Git repository
+context/               optional target-specific operator input; never packaged
 scans/                 isolated durable run artifacts
 remediations/           versioned patches linked to completed audit runs
 .harness/              contained runtime state and immutable graph snapshots

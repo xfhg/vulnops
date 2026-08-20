@@ -49,6 +49,7 @@ def main() -> int:
     parser.add_argument("--commit", required=True)
     parser.add_argument("--depth", choices=("quick", "balanced", "full"), required=True)
     parser.add_argument("--target-fingerprint", required=True)
+    parser.add_argument("--operator-context-json", required=True)
     parser.add_argument("--reproduction-mode", choices=("off", "safe"), required=True)
     parser.add_argument(
         "--network-mode",
@@ -74,6 +75,12 @@ def main() -> int:
     if not model or not verifier_model or any(not value for value in model_roles.values()):
         parser.error("model selectors and model roles must be non-empty")
     diversity = model_diversity(model, verifier_model)
+    try:
+        operator_context = json.loads(args.operator_context_json)
+    except json.JSONDecodeError as exc:
+        parser.error(f"invalid operator context identity: {exc}")
+    if not isinstance(operator_context, dict) or not operator_context.get("fingerprint"):
+        parser.error("operator context identity is incomplete")
 
     root = args.harness_root.resolve()
     contract_sha256 = harness_contract_sha256(root)
@@ -104,6 +111,8 @@ def main() -> int:
             parser.error("resume manifest was created from a different offline package")
         if existing_manifest.get("network") != network:
             parser.error("resume manifest was created with a different agent egress policy")
+        if existing_manifest.get("operator_context") != operator_context:
+            parser.error("resume manifest was created with different operator context")
     else:
         created = now()
         atomic_write(
@@ -121,6 +130,7 @@ def main() -> int:
                 "created_at": created,
                 "updated_at": created,
                 "target_fingerprint": args.target_fingerprint,
+                "operator_context": operator_context,
                 "harness_contract_sha256": contract_sha256,
                 "sast_budget": sast_budget,
                 "model": model,
@@ -143,6 +153,7 @@ def main() -> int:
 
     paths = {
         "repo_context": scan / "repo-context",
+        "operator_context_manifest": scan / "repo-context/operator-context.json",
         "repo_md": scan / "repo-context/repo.md",
         "repo_context_json": scan / "repo-context/repo-context.json",
         "security_surfaces_json": scan / "repo-context/security-surfaces.json",
@@ -186,6 +197,7 @@ def main() -> int:
         "task_ledger": ledger_path,
         "codegraph_runtime": root / ".harness/codegraph" / args.run_id,
         "codegraph_project": root / ".harness/codegraph" / args.run_id / "project",
+        "operator_context": root / "context",
     }
     tools = {
         "wraith": root / "bins/wraith",
@@ -219,6 +231,7 @@ def main() -> int:
         "update_run_state": root / "scripts/update-run-state.py",
         "osv_snapshot": root / "scripts/osv_snapshot.py",
         "offline_package": root / "scripts/offline_package.py",
+        "operator_context": root / "scripts/operator_context.py",
     }
     context = {
         "schema_version": "2.0",
@@ -230,6 +243,7 @@ def main() -> int:
         "short_sha": args.commit,
         "depth": args.depth,
         "target_fingerprint": args.target_fingerprint,
+        "operator_context": operator_context,
         "harness_contract_sha256": contract_sha256,
         "sast_budget": sast_budget,
         "model": model,

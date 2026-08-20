@@ -27,6 +27,10 @@ greater impact. Every output capability must exactly satisfy the next step's
 input capability. Do not promote graph-only, advisory-only, secret-candidate,
 or environment-only hypotheses.
 
+Operator context may support intended behavior or necessary conditions and may
+appear as an `operator_context` source reference. It must never be the only
+source for a finding, root cause, attacker trace, or impact claim.
+
 Run `python3 scripts/finalize-synthesis.py <scan_base>`, validate `synthesis`,
 and yield.
 

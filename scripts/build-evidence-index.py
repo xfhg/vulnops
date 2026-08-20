@@ -25,6 +25,13 @@ def main() -> int:
         sid=str(item.get("id")); ref=f"repo-context/security-surfaces.json:{sid}"; rid=record("recon",sid,ref,"promoted",f"{item.get('kind')} entry point at {item.get('path')}",[str(item.get("path"))]); primitive("access","context_only",rid,["Attacker can provide input to this entry point."],f"Influence input at {item.get('path')}",",".join(strings(item.get("trust_boundary_ids"))) or "Entry-point boundary",[str(item.get("path"))],[],[ref])
     for item in surfaces.get("trust_boundaries",[]) if isinstance(surfaces,dict) else []:
         sid=str(item.get("id")); ref=f"repo-context/security-surfaces.json:{sid}"; rid=record("recon",sid,ref,"promoted",str(item.get("description")),[]); primitive("state_transition","context_only",rid,[str(item.get("source_trust"))],str(item.get("target_trust")),str(item.get("description")),[],[],[ref])
+    operator_context=load(a.scan_base/"repo-context/operator-context.json",{})
+    for item in operator_context.get("observations",[]) if isinstance(operator_context,dict) else []:
+        sid=str(item.get("id")); assessment=str(item.get("assessment")); disposition="promoted" if assessment=="corroborated" else "rejected" if assessment=="contradicted" else "unresolved"; files=[]
+        for ref in strings(item.get("target_evidence_refs")):
+            relative=ref.split(":",1)[0].split("#",1)[0]
+            if relative and relative not in files:files.append(relative)
+        record("operator_context",sid,f"repo-context/operator-context.json:{sid}",disposition,str(item.get("summary")),files)
     sca=load(a.scan_base/"tool-collection/sca-advisories.json",{})
     for item in sca.get("advisories",[]) if isinstance(sca,dict) else []:
         sid=str(item.get("id")); ref=f"tool-collection/sca-advisories.json:{sid}"; rid=record("sca",sid,ref,"unresolved",f"{item.get('advisory_id')} affects {item.get('package')} {item.get('version')}",[str(item.get("source_lockfile"))]); primitive("vulnerability","candidate",rid,["Affected dependency use is reachable from an attacker-controlled path."],f"Potential capability described by {item.get('advisory_id')}","Dependency boundary",[str(item.get("package"))],[],[ref])

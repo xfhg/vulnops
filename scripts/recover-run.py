@@ -104,6 +104,7 @@ def main() -> int:
         parser.error("recovery depth differs from the run identity")
     identity_pairs = (
         ("target_fingerprint", "target_fingerprint"),
+        ("operator_context", "operator_context"),
         ("reproduction_mode", "reproduction_mode"),
         ("model", "model"),
         ("model_roles", "model_roles"),

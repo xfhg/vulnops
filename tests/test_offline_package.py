@@ -38,7 +38,15 @@ from scripts.offline_package import (
     verify_runtime_install,
     write_chunks,
 )
-from scripts.osv_snapshot import ECOSYSTEMS, SnapshotError, load_lock, refresh_lock, verify
+from scripts.osv_snapshot import (
+    ECOSYSTEMS,
+    SnapshotError,
+    canonicalize_ecosystem_directory,
+    load_lock,
+    migrate_legacy_database_root,
+    refresh_lock,
+    verify,
+)
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -77,6 +85,8 @@ class OfflinePackageTests(unittest.TestCase):
             )
             (package / "target").mkdir()
             (package / "target/input.txt").write_text("mutable target\n")
+            (package / "context").mkdir()
+            (package / "context/operator.txt").write_text("private context\n")
             tool_lock = package / "config/offline-pack.linux_amd64.lock.json"
             osv_lock = package / "config/osv-snapshot.lock.json"
             manifest = package / "offline-pack-manifest.json"
@@ -97,7 +107,7 @@ class OfflinePackageTests(unittest.TestCase):
                 )
             )
             document = verify_manifest(package, manifest)
-            self.assertEqual(document["schema"], "vulnops.offline-pack-manifest.v5")
+            self.assertEqual(document["schema"], "vulnops.offline-pack-manifest.v6")
             self.assertEqual(
                 document["security"],
                 {
@@ -112,6 +122,7 @@ class OfflinePackageTests(unittest.TestCase):
             self.assertNotIn("scripts/__pycache__/osv_snapshot.cpython-314.pyc", inventory)
             self.assertNotIn("config.toml", inventory)
             self.assertNotIn("target/input.txt", inventory)
+            self.assertNotIn("context/operator.txt", inventory)
 
             relocated = base / "relocated"
             shutil.copytree(package, relocated, symlinks=True)
@@ -128,6 +139,7 @@ class OfflinePackageTests(unittest.TestCase):
             self.assertTrue(all(member.uid == 0 and member.gid == 0 and member.mtime == 1_700_000_000 for member in members))
             self.assertFalse(any(Path(member.name).name.startswith("._") for member in members))
             self.assertFalse(any("__pycache__" in Path(member.name).parts for member in members))
+            self.assertFalse(any(Path(member.name).parts[0] in {"context", "target"} for member in members))
 
             (relocated / "scripts/run.sh").write_text("tampered\n")
             with self.assertRaises(ContractError):
@@ -302,7 +314,7 @@ class OfflinePackageTests(unittest.TestCase):
             cache = base / "cache"
             items = []
             for ecosystem in ECOSYSTEMS:
-                database = cache / "osv-scanner" / ecosystem / "all.zip"
+                database = cache / "osv-scalibr" / ecosystem / "all.zip"
                 database.parent.mkdir(parents=True)
                 with zipfile.ZipFile(database, "w", compression=zipfile.ZIP_DEFLATED) as archive:
                     archive.writestr("OSV-FIXTURE.json", "{}")
@@ -326,9 +338,36 @@ class OfflinePackageTests(unittest.TestCase):
             )
             lock = load_lock(lock_path)
             verify(lock, cache)
-            (cache / "osv-scanner/Packagist/all.zip").unlink()
+            (cache / "osv-scalibr/Packagist/all.zip").unlink()
             with self.assertRaises(SnapshotError):
                 verify(lock, cache)
+
+    def test_osv_snapshot_normalizes_legacy_ecosystem_directory_case(self) -> None:
+        with tempfile.TemporaryDirectory(dir=ROOT / ".harness") as temporary_name:
+            cache = Path(temporary_name) / "cache"
+            legacy = cache / "osv-scalibr/go"
+            legacy.mkdir(parents=True)
+            (legacy / "all.zip").write_bytes(b"fixture")
+
+            canonicalize_ecosystem_directory(cache, "Go")
+
+            names = [path.name for path in (cache / "osv-scalibr").iterdir()]
+            self.assertIn("Go", names)
+            self.assertNotIn("go", names)
+            self.assertEqual((cache / "osv-scalibr/Go/all.zip").read_bytes(), b"fixture")
+
+    def test_osv_snapshot_migrates_legacy_database_root(self) -> None:
+        with tempfile.TemporaryDirectory(dir=ROOT / ".harness") as temporary_name:
+            cache = Path(temporary_name) / "cache"
+            legacy = cache / "osv-scanner/Go"
+            legacy.mkdir(parents=True)
+            (legacy / "all.zip").write_bytes(b"fixture")
+            (cache / "osv-scalibr").mkdir()
+
+            migrate_legacy_database_root(cache)
+
+            self.assertFalse((cache / "osv-scanner").exists())
+            self.assertEqual((cache / "osv-scalibr/Go/all.zip").read_bytes(), b"fixture")
 
     def test_osv_lock_refresh_stages_all_databases_before_publication(self) -> None:
         with tempfile.TemporaryDirectory(dir=ROOT / ".harness") as temporary_name:
@@ -340,7 +379,7 @@ class OfflinePackageTests(unittest.TestCase):
             payload = archive_buffer.getvalue()
             items = []
             for ecosystem in ECOSYSTEMS:
-                database = cache / "osv-scanner" / ecosystem / "all.zip"
+                database = cache / "osv-scalibr" / ecosystem / "all.zip"
                 database.parent.mkdir(parents=True)
                 database.write_bytes(payload)
                 items.append({
@@ -376,7 +415,7 @@ class OfflinePackageTests(unittest.TestCase):
             refreshed = load_lock(lock_path)
             self.assertEqual(refreshed["snapshot"], "new-snapshot")
             verify(refreshed, cache)
-            receipt = json.loads((cache / "osv-scanner/snapshot.json").read_text())
+            receipt = json.loads((cache / "osv-scalibr/snapshot.json").read_text())
             self.assertEqual(receipt["snapshot"], "new-snapshot")
 
     def test_dependency_ecosystem_mapping_and_structured_gaps_are_complete(self) -> None:

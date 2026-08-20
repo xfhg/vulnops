@@ -40,6 +40,8 @@ class SnapshotError(ValueError):
 
 
 MAX_ECOSYSTEM_BYTES = 1024 * 1024 * 1024
+DATABASE_DIRECTORY = "osv-scalibr"
+LEGACY_DATABASE_DIRECTORY = "osv-scanner"
 
 
 def sha256(path: Path) -> str:
@@ -93,7 +95,53 @@ def validate_zip(path: Path, ecosystem: str) -> None:
 
 
 def target_path(cache_root: Path, ecosystem: str) -> Path:
-    return cache_root / "osv-scanner" / ecosystem / "all.zip"
+    return cache_root / DATABASE_DIRECTORY / ecosystem / "all.zip"
+
+
+def migrate_legacy_database_root(cache_root: Path) -> None:
+    current = cache_root / DATABASE_DIRECTORY
+    legacy = cache_root / LEGACY_DATABASE_DIRECTORY
+    if current.exists() and legacy.exists():
+        if current.is_dir() and not current.is_symlink() and not any(current.iterdir()):
+            current.rmdir()
+        elif legacy.is_dir() and not legacy.is_symlink() and not any(legacy.iterdir()):
+            legacy.rmdir()
+            return
+        else:
+            raise SnapshotError("both current and legacy OSV database directories exist")
+    if current.exists() or not legacy.exists():
+        return
+    if legacy.is_symlink() or not legacy.is_dir():
+        raise SnapshotError("legacy OSV database path is not a regular directory")
+    legacy.replace(current)
+    nested = current / DATABASE_DIRECTORY
+    if nested.is_dir() and not nested.is_symlink() and not any(nested.iterdir()):
+        nested.rmdir()
+
+
+def canonicalize_ecosystem_directory(cache_root: Path, ecosystem: str) -> None:
+    database_root = cache_root / DATABASE_DIRECTORY
+    if not database_root.is_dir():
+        return
+    matches = [
+        path
+        for path in database_root.iterdir()
+        if path.name.casefold() == ecosystem.casefold()
+    ]
+    exact = [path for path in matches if path.name == ecosystem]
+    if exact:
+        if len(matches) > 1:
+            raise SnapshotError(f"duplicate OSV ecosystem database directories for {ecosystem}")
+        return
+    if not matches:
+        return
+    if len(matches) > 1 or matches[0].is_symlink() or not matches[0].is_dir():
+        raise SnapshotError(f"ambiguous OSV ecosystem database directory for {ecosystem}")
+    temporary = database_root / f".{ecosystem}.casefix.{os.getpid()}"
+    if temporary.exists():
+        raise SnapshotError(f"temporary OSV case-normalization path already exists for {ecosystem}")
+    matches[0].replace(temporary)
+    temporary.replace(database_root / ecosystem)
 
 
 def download(url: str, destination: Path, maximum_bytes: int) -> None:
@@ -130,7 +178,7 @@ def verify(lock: dict[str, Any], cache_root: Path, ecosystem: str | None = None)
         verify_item(cache_root, item)
     if ecosystem is None:
         expected = {str(item["name"]) for item in lock["ecosystems"]}
-        database_root = cache_root / "osv-scanner"
+        database_root = cache_root / DATABASE_DIRECTORY
         actual = {path.parent.name for path in database_root.glob("*/all.zip")} if database_root.is_dir() else set()
         extra = sorted(actual - expected)
         if extra:
@@ -138,8 +186,10 @@ def verify(lock: dict[str, Any], cache_root: Path, ecosystem: str | None = None)
 
 
 def sync(lock: dict[str, Any], lock_path: Path, cache_root: Path) -> None:
+    migrate_legacy_database_root(cache_root)
     for item in lock["ecosystems"]:
         ecosystem = str(item["name"])
+        canonicalize_ecosystem_directory(cache_root, ecosystem)
         destination = target_path(cache_root, ecosystem)
         if destination.is_file():
             try:
@@ -168,7 +218,7 @@ def sync(lock: dict[str, Any], lock_path: Path, cache_root: Path) -> None:
         "lock_sha256": sha256(lock_path),
         "ecosystems": list(ECOSYSTEMS),
     }
-    receipt = cache_root / "osv-scanner/snapshot.json"
+    receipt = cache_root / DATABASE_DIRECTORY / "snapshot.json"
     receipt.parent.mkdir(parents=True, exist_ok=True)
     descriptor, temporary_name = tempfile.mkstemp(prefix=".snapshot.", suffix=".json", dir=receipt.parent)
     os.close(descriptor)
@@ -190,6 +240,7 @@ def refresh_lock(lock_path: Path, cache_root: Path, snapshot: str) -> None:
     os.close(descriptor)
     candidate_path = Path(candidate_name)
     try:
+        migrate_legacy_database_root(cache_root)
         staged_cache = staging_root / "cache"
         ecosystems: list[dict[str, Any]] = []
         for ecosystem in ECOSYSTEMS:
@@ -221,6 +272,7 @@ def refresh_lock(lock_path: Path, cache_root: Path, snapshot: str) -> None:
         for item in validated["ecosystems"]:
             ecosystem = str(item["name"])
             source = target_path(staged_cache, ecosystem)
+            canonicalize_ecosystem_directory(cache_root, ecosystem)
             destination = target_path(cache_root, ecosystem)
             destination.parent.mkdir(parents=True, exist_ok=True)
             source.replace(destination)

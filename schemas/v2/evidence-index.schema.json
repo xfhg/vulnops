@@ -16,7 +16,7 @@
       "required": ["id", "source_kind", "source_id", "artifact_ref", "disposition", "summary", "files"],
       "properties": {
         "id": {"type": "string", "pattern": "^E-[A-F0-9]{12}$"},
-        "source_kind": {"enum": ["recon", "sca", "secret", "sast", "coverage", "hardening", "positive_pattern", "reproduction", "tool_warning"]},
+        "source_kind": {"enum": ["recon", "operator_context", "sca", "secret", "sast", "coverage", "hardening", "positive_pattern", "reproduction", "tool_warning"]},
         "source_id": {"type": "string", "minLength": 1}, "artifact_ref": {"type": "string", "minLength": 1},
         "disposition": {"enum": ["promoted", "closed", "rejected", "needs_environment", "unresolved"]},
         "summary": {"type": "string", "minLength": 1, "maxLength": 2000}, "files": {"type": "array", "items": {"type": "string"}, "uniqueItems": true}

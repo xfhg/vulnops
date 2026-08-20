@@ -150,9 +150,15 @@ def main() -> int:
 
         with concurrent.futures.ThreadPoolExecutor(max_workers=min(4, len(commands))) as pool:
             results = list(pool.map(invoke, commands))
-        failed = [(Path(command[1]).name, result.returncode) for command, result in results if result.returncode]
+        failed = [
+            (Path(command[1]).name, result.returncode, " ".join(result.stderr.split())[:500])
+            for command, result in results if result.returncode
+        ]
         if failed:
-            summary = ", ".join(f"{name} exited {status}" for name, status in failed)
+            summary = ", ".join(
+                f"{name} exited {status}" + (f": {detail}" if detail else "")
+                for name, status, detail in failed
+            )
             raise RuntimeError(f"deterministic scanner invocation failed: {summary}")
 
         for index, output in enumerate(normalized, 1):

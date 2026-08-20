@@ -16,12 +16,13 @@ def write(path:Path,doc:object)->None:
 def now()->str:return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 def main()->int:
     p=argparse.ArgumentParser(); p.add_argument("scan_base",type=Path); p.add_argument("--context",type=Path); a=p.parse_args(); root=Path(__file__).resolve().parent.parent
-    context=load(a.context or root/".harness/audit-context.json",{}); depth=str(context.get("depth","quick")); index=load(a.scan_base/"campaign-planning/evidence-index.json",{}); records={r["id"]:r for r in index.get("records",[]) if isinstance(r,dict)}; primitives=[x for x in index.get("primitives",[]) if isinstance(x,dict)]; quotas=BUDGETS[depth]; campaigns=[]
+    context=load(a.context or root/".harness/audit-context.json",{}); depth=str(context.get("depth","quick")); index=load(a.scan_base/"campaign-planning/evidence-index.json",{}); records={r["id"]:r for r in index.get("records",[]) if isinstance(r,dict)}; primitives=[x for x in index.get("primitives",[]) if isinstance(x,dict)]; context_records=[r for r in records.values() if r.get("source_kind")=="operator_context" and r.get("disposition")!="rejected"]; quotas=BUDGETS[depth]; campaigns=[]
     def add(lane:str,selected:list[dict],evidence:list[str],hypothesis:str,expected:str)->None:
         if not evidence:return
         files=[]
         for rid in evidence:files.extend(records.get(rid,{}).get("files",[]))
         files=list(dict.fromkeys(f for f in files if f))
+        evidence=list(dict.fromkeys([*evidence,*[record["id"] for record in context_records if set(record.get("files",[]))&set(files)]]))
         subject=files[0] if files else next((x for x in (p.get("reachable_assets",[]) for p in selected) for x in x if x),"")
         questions=[]
         if subject:questions=[{"id":f"Q-{len(campaigns)+1:03d}-1","type":"affected" if "." in subject else "query","subject":subject,"reason":"Test whether the suspected capability reaches another security-relevant component."}]
@@ -42,7 +43,7 @@ def main()->int:
             add("primitive_led",[primitive],primitive.get("source_record_ids",[]),f"Trace what consumes the capability granted by {primitive['id']} and determine whether it exposes a second weakness, bypasses a compensating control, or expands reachability.","A newly proven downstream weakness or impact expansion rooted in the known primitive."); used+=1
     gap_records=[records[rid] for rid in index.get("coverage_gaps",[]) if rid in records]
     recon_records=[r for r in records.values() if r.get("source_kind")=="recon"]
-    for item in (gap_records+recon_records)[:quotas["gap_driven"]]:
+    for item in (context_records+gap_records+recon_records)[:quotas["gap_driven"]]:
         selected=[p for p in ranked if item["id"] in p.get("source_record_ids",[])][:1]
         add("gap_driven",selected,[item["id"]],f"Investigate {item['summary']} for state/order/replay violations, races, parser differentials, fallback paths, or implicit trust assumptions not covered by known-pattern checks.","A code-backed root cause or an evidence-backed closure of this uncovered boundary or state transition.")
     candidates=[p for p in actionable if p.get("trust")=="candidate"]
@@ -50,5 +51,5 @@ def main()->int:
         add("direct_validation",[primitive],primitive.get("source_record_ids",[]),f"Validate {primitive['id']} for installed/active state, attacker reachability, affected use, concrete impact, and at least one downstream consumer of the gained capability.","Reachability and impact evidence for the known issue, plus any newly proven one-hop expansion.")
     doc={"schema_version":"2.0","run_id":str(context.get("run_id","")),"depth":depth,"budget":quotas,"campaigns":campaigns,"coverage":{"evidence_records":len(records),"primitives":len(primitives),"campaigns":len(campaigns)},"warnings":[]}; write(a.scan_base/"campaign-planning/campaign-plan.json",doc)
     counts={lane:sum(x["lane"]==lane for x in campaigns) for lane in quotas}; (a.scan_base/"campaign-planning/summary.md").write_text("# Red-Team Campaign Planning\n\n"+"\n".join(f"- {k.replace('_',' ').title()}: {v}" for k,v in counts.items())+f"\n- Evidence records: {len(records)}\n- Attack primitives: {len(primitives)}\n")
-    manifest={"phase":"campaign-planning","status":"ok","started_at":now(),"completed_at":now(),"inputs":["repo-context/security-surfaces.json","tool-collection/collection.json","tool-collection/wraith-receipt.json","tool-collection/poltergeist-receipt.json","sast/verified-findings.json","sast/dropped-findings.json","sast/validation-results.json","sast/coverage-ledger.json","sast/wishlist.json"],"outputs":["campaign-planning/evidence-index.json","campaign-planning/campaign-plan.json","campaign-planning/summary.md"],"coverage":{"evidence_records":len(records),"primitives":len(primitives),"campaigns":len(campaigns),**counts},"tool_versions":{"planner":"deterministic-v2","primary_model":str(context.get("model","unknown"))},"warnings":[],"errors":[]};write(a.scan_base/"campaign-planning/phase-manifest.json",manifest);print(a.scan_base/"campaign-planning/campaign-plan.json");return 0
+    manifest={"phase":"campaign-planning","status":"ok","started_at":now(),"completed_at":now(),"inputs":["repo-context/security-surfaces.json","repo-context/operator-context.json","tool-collection/collection.json","tool-collection/wraith-receipt.json","tool-collection/poltergeist-receipt.json","sast/verified-findings.json","sast/dropped-findings.json","sast/validation-results.json","sast/coverage-ledger.json","sast/wishlist.json"],"outputs":["campaign-planning/evidence-index.json","campaign-planning/campaign-plan.json","campaign-planning/summary.md"],"coverage":{"evidence_records":len(records),"primitives":len(primitives),"campaigns":len(campaigns),**counts},"tool_versions":{"planner":"deterministic-v2","primary_model":str(context.get("model","unknown"))},"warnings":[],"errors":[]};write(a.scan_base/"campaign-planning/phase-manifest.json",manifest);print(a.scan_base/"campaign-planning/campaign-plan.json");return 0
 if __name__=="__main__":raise SystemExit(main())

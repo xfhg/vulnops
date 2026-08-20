@@ -1,79 +1,79 @@
 {
+  "schema": "vulnops.osv-snapshot-lock.v1",
+  "snapshot": "2026-08-20",
+  "generated_at": "2026-08-20T01:11:45Z",
   "ecosystems": [
     {
       "name": "CRAN",
-      "sha256": "b092239a51d546052e39e99d9be2076ec1b16af17d8209486132e00cbe4a2360",
+      "url": "https://osv-vulnerabilities.storage.googleapis.com/CRAN/all.zip",
       "size": 12434,
-      "url": "https://osv-vulnerabilities.storage.googleapis.com/CRAN/all.zip"
+      "sha256": "b092239a51d546052e39e99d9be2076ec1b16af17d8209486132e00cbe4a2360"
     },
     {
       "name": "Go",
-      "sha256": "1c66a0fa4eff9463225f340374d60d8a72109bf84344f14eab4e4c9001b36345",
-      "size": 10901863,
-      "url": "https://osv-vulnerabilities.storage.googleapis.com/Go/all.zip"
+      "url": "https://osv-vulnerabilities.storage.googleapis.com/Go/all.zip",
+      "size": 11236890,
+      "sha256": "b02dac3387b729cfee7462ecca24991f6a5fe4f534ec9c5e8304c2c395dcb67f"
     },
     {
       "name": "Hackage",
-      "sha256": "dc35a58ed6c7cf88b69eaf956dc5cfc12438b1f33fbdf9030b6303b55e82ec4e",
+      "url": "https://osv-vulnerabilities.storage.googleapis.com/Hackage/all.zip",
       "size": 51080,
-      "url": "https://osv-vulnerabilities.storage.googleapis.com/Hackage/all.zip"
+      "sha256": "dc35a58ed6c7cf88b69eaf956dc5cfc12438b1f33fbdf9030b6303b55e82ec4e"
     },
     {
       "name": "Hex",
-      "sha256": "3b8c3962c5d37b047982410d0590c4fa573a160226f629353b624cdb3b4a3d53",
-      "size": 382091,
-      "url": "https://osv-vulnerabilities.storage.googleapis.com/Hex/all.zip"
+      "url": "https://osv-vulnerabilities.storage.googleapis.com/Hex/all.zip",
+      "size": 457968,
+      "sha256": "38d1ba9a851912a8c1c628f68b23551dbeb8da98d619546ddc06e52f00e9401f"
     },
     {
       "name": "Maven",
-      "sha256": "ecaeba9cb98ffe140842c5ebbc86f84c3211abc504f0630ccae10978dd588d9a",
-      "size": 9907905,
-      "url": "https://osv-vulnerabilities.storage.googleapis.com/Maven/all.zip"
+      "url": "https://osv-vulnerabilities.storage.googleapis.com/Maven/all.zip",
+      "size": 10061301,
+      "sha256": "bec80df3151fe762e269fd94689fc7d44ba4b2591dfc94a3ebe658553f232f3f"
     },
     {
       "name": "NuGet",
-      "sha256": "e37f3df8b313f446a5e754063cb299d0100a5fe5fac6ea05240b6ed2927d1089",
-      "size": 2469822,
-      "url": "https://osv-vulnerabilities.storage.googleapis.com/NuGet/all.zip"
+      "url": "https://osv-vulnerabilities.storage.googleapis.com/NuGet/all.zip",
+      "size": 2507881,
+      "sha256": "83383e0b78863a8a3a6eee06cfb343f8153c186c0343d39f1cac32b592631f3b"
     },
     {
       "name": "Packagist",
-      "sha256": "99e371ef9dc007c5890a6a2e7e59d3a0eb2a163756588a48075a09b9223aa455",
-      "size": 10101952,
-      "url": "https://osv-vulnerabilities.storage.googleapis.com/Packagist/all.zip"
+      "url": "https://osv-vulnerabilities.storage.googleapis.com/Packagist/all.zip",
+      "size": 10318194,
+      "sha256": "b36635c19cec20090bfe1b5ef6e46a4dae1394914a01b6540771808a123e9773"
     },
     {
       "name": "Pub",
-      "sha256": "5fdd3db5059b4f935a507385cb93cab3c35ba3d632332a5c8f5deb604f95a5c0",
+      "url": "https://osv-vulnerabilities.storage.googleapis.com/Pub/all.zip",
       "size": 19448,
-      "url": "https://osv-vulnerabilities.storage.googleapis.com/Pub/all.zip"
+      "sha256": "5fdd3db5059b4f935a507385cb93cab3c35ba3d632332a5c8f5deb604f95a5c0"
     },
     {
       "name": "PyPI",
-      "sha256": "35292e9604211ba95aa46ec5e706b41593ed8dd44256e0fe048db7d8b0eda4a6",
-      "size": 32617950,
-      "url": "https://osv-vulnerabilities.storage.googleapis.com/PyPI/all.zip"
+      "url": "https://osv-vulnerabilities.storage.googleapis.com/PyPI/all.zip",
+      "size": 33610048,
+      "sha256": "704f162141759e9c52351b83189b6ab7d7b1320dc3e60bff5d0c8e98d1245332"
     },
     {
       "name": "RubyGems",
-      "sha256": "f127e67f1efef9819c9bcc3cfbeb91330a44210a8eaa2b739b5b088cf3131987",
-      "size": 4323697,
-      "url": "https://osv-vulnerabilities.storage.googleapis.com/RubyGems/all.zip"
+      "url": "https://osv-vulnerabilities.storage.googleapis.com/RubyGems/all.zip",
+      "size": 4357388,
+      "sha256": "fc8b0b07c5c6e74e14e3601ed2690da512845ba540b57d3880554307774d842b"
     },
     {
       "name": "crates.io",
-      "sha256": "0b08ee327283615665c254366dbc4c1b6a27f83843f5f8518d216a5c508b0b9d",
-      "size": 3314429,
-      "url": "https://osv-vulnerabilities.storage.googleapis.com/crates.io/all.zip"
+      "url": "https://osv-vulnerabilities.storage.googleapis.com/crates.io/all.zip",
+      "size": 3378640,
+      "sha256": "6c9e74d8562d5bef161786cba5b518028573141c4eef2b3bb8ee02742ece25ef"
     },
     {
       "name": "npm",
-      "sha256": "2da3841aabfb786a40c5348594f2fd1a6cb234198ce2db4f46866bba4ca93c96",
-      "size": 212994100,
-      "url": "https://osv-vulnerabilities.storage.googleapis.com/npm/all.zip"
+      "url": "https://osv-vulnerabilities.storage.googleapis.com/npm/all.zip",
+      "size": 219943062,
+      "sha256": "b71b6b78dc7a8b32cfe1936dd3f23da5fcb34997fc66468b6c40eecd705cc573"
     }
-  ],
-  "generated_at": "2026-07-29T00:00:00Z",
-  "schema": "vulnops.osv-snapshot-lock.v1",
-  "snapshot": "2026-07-29"
+  ]
 }

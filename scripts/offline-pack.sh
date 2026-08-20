@@ -108,7 +108,7 @@ trap cleanup EXIT
 copy_candidate() {
     local relative="$1"
     case "$relative" in
-        offline/*|bins/*|.git/*|.harness/*|target/*|scans/*|remediations/*|work/*) return ;;
+        offline/*|bins/*|.git/*|.harness/*|target/*|context/*|scans/*|remediations/*|work/*) return ;;
         vulnops-offline-*.tar.gz|*.tar.gz.part-*) return ;;
     esac
     [ -e "${HARNESS_ROOT}/${relative}" ] || [ -L "${HARNESS_ROOT}/${relative}" ] || return

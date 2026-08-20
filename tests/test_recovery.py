@@ -8,6 +8,9 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from scripts.operator_context import identity as operator_context_identity
+from scripts.operator_context import inspect_context
+
 
 ROOT = Path(__file__).resolve().parents[1]
 PYTHON = sys.executable
@@ -34,6 +37,7 @@ TASKS = {
 }
 ROLES = {"orchestrator": "p/main:low", "task": "p/main:medium", "slow": "p/main:high", "smol": "p/main:minimal"}
 BUDGET = {"max_concurrency": 8, "max_hunt_tasks": 32, "max_hunt_questions": 64, "max_gapfill_rounds": 2, "max_attempts": 2, "context_packet_bytes": 65536}
+OPERATOR_CONTEXT = operator_context_identity(inspect_context(ROOT / "context"))
 
 
 def write(path: Path, value: object) -> None:
@@ -90,6 +94,7 @@ class RecoveryTests(unittest.TestCase):
                 "created_at": "before",
                 "updated_at": "before",
                 "target_fingerprint": fingerprint,
+                "operator_context": OPERATOR_CONTEXT,
                 "harness_contract_sha256": "a" * 64,
                 "sast_budget": BUDGET,
                 "model": "p/main:high",
@@ -121,6 +126,7 @@ class RecoveryTests(unittest.TestCase):
                 "scan_base": str(scan),
                 "depth": "balanced",
                 "target_fingerprint": fingerprint,
+                "operator_context": OPERATOR_CONTEXT,
                 "harness_contract_sha256": "a" * 64,
                 "sast_budget": BUDGET,
                 "reproduction_mode": "off",
@@ -203,6 +209,7 @@ class RecoveryTests(unittest.TestCase):
                 "created_at": "before",
                 "updated_at": "before",
                 "target_fingerprint": fingerprint,
+                "operator_context": OPERATOR_CONTEXT,
                 "harness_contract_sha256": "a" * 64,
                 "sast_budget": BUDGET,
                 "model": "p/main:high",
@@ -235,6 +242,7 @@ class RecoveryTests(unittest.TestCase):
                 "scan_base": str(scan),
                 "depth": "balanced",
                 "target_fingerprint": fingerprint,
+                "operator_context": OPERATOR_CONTEXT,
                 "harness_contract_sha256": "a" * 64,
                 "sast_budget": BUDGET,
                 "reproduction_mode": "off",

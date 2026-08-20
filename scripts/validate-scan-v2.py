@@ -8,6 +8,8 @@ from artifact_policy import artifact_size_limit
 from harness_contract import harness_contract_sha256
 from model_identity import model_diversity
 from offline_package import network_identity, package_identity
+from operator_context import identity as operator_context_identity
+from operator_context import inspect_context
 from phase_seal import directory_sha256
 PHASES=("recon","tool-collection","sast","campaign-planning","intrusion","synthesis","final-verification","report")
 DIRS={"recon":"repo-context",**{x:x for x in PHASES if x!="recon"}}
@@ -30,6 +32,9 @@ def main()->int:
     if context.get("run_id")!=run.get("run_id") or Path(str(context.get("scan_base",""))).resolve()!=scan:errors.append("audit context identity mismatch")
     if context.get("harness_contract_sha256")!=harness_contract_sha256(root) or run.get("harness_contract_sha256")!=harness_contract_sha256(root):errors.append("harness contract fingerprint mismatch")
     if context.get("sast_budget")!=run.get("sast_budget"):errors.append("SAST budget snapshot mismatch")
+    try:current_operator_identity=operator_context_identity(inspect_context(Path(str((context.get("paths") or {}).get("operator_context",root/"context")))))
+    except (OSError,ValueError) as exc:errors.append(f"cannot inspect operator context: {exc}");current_operator_identity={}
+    if context.get("operator_context")!=current_operator_identity or run.get("operator_context")!=current_operator_identity:errors.append("operator context identity mismatch")
     try:
         with (root/"config.toml").open("rb") as handle:current_mode=str(tomllib.load(handle).get("harness",{}).get("network",{}).get("linux_agent_egress","enforced"))
         current_network=network_identity(current_mode);current_package=package_identity(root)

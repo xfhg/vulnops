@@ -18,7 +18,7 @@ output:
 
 Read the validated evidence index and campaign plan. Spawn one
 `vulnops-intrusion-campaign` per campaign with depth-bounded concurrency and
-stable campaign IDs. Use OMP 16.4.4 `task` waves with a short shared context
+stable campaign IDs. Use bundled OMP `task` waves with a short shared context
 and per-item `id`/`assignment`; nested calls are synchronous and their
 structured results are the completion signal. An empty plan skips worker
 fanout and remains valid.

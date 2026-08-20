@@ -29,6 +29,10 @@ only the checksum-locked tool assets. The resulting package contains the tools,
 OMP native runtime, reviewed OSV database snapshot, schemas, agents, and harness
 source required by the disconnected destination.
 
+Local `context/` data is runtime input and is never included in an offline
+package, even for a development build. Transfer it separately only when the
+destination audit requires that target-specific background.
+
 ### Build-host prerequisites
 
 - Git;

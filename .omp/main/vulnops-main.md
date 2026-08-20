@@ -22,7 +22,7 @@ top-level task IDs.
 For each model-owned phase:
 
 1. Start its canonical phase/task atomically and increment the attempt.
-2. Call OMP `task` once using the 16.4.4 batch shape:
+2. Call the bundled OMP `task` once using the supported batch shape:
 
    ```text
    task agent=<canonical-agent> context=<short phase context> tasks=[

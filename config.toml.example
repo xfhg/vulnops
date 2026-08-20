@@ -12,23 +12,23 @@ base_url = ""
 api_key = ""
 
 # Canonical primary selector used for source-validation identity.
-selector = "openai-codex/gpt-5.5:high"
+selector = "openai-codex/gpt-5.6-sol:high"
 
 # Model ID retained only for custom-provider metadata consistency.
-model = "gpt-5.5:high"
+model = "gpt-5.6-sol:high"
 
 # Use the same underlying model at lower effort for orchestration and mechanical
 # work. These selectors are part of run/resume identity.
 [llm.roles]
-orchestrator = "openai-codex/gpt-5.5:low"
-task = "openai-codex/gpt-5.5:medium"
-slow = "openai-codex/gpt-5.5:high"
-smol = "openai-codex/gpt-5.5:minimal"
+orchestrator = "openai-codex/gpt-5.6-sol:high"
+task = "openai-codex/gpt-5.6-sol:high"
+slow = "openai-codex/gpt-5.6-sol:high"
+smol = "openai-codex/gpt-5.6-sol:high"
 
 # Independent verification may use a different model/provider. Empty inherits
 # llm.selector.
 [llm.verification]
-selector = "openai-codex/gpt-5.4:xhigh"
+selector = "openai-codex/gpt-5.6-sol:xhigh"
 
 # Provider metadata (used by scripts/bootstrap-omp.sh to generate
 # .harness/home/.omp/agent/models.yml)

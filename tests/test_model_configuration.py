@@ -3,9 +3,13 @@ import json, os, subprocess, sys, tempfile, tomllib, unittest
 from pathlib import Path
 from scripts.model_identity import model_diversity
 from scripts.offline_package import network_identity, package_identity
+from scripts.operator_context import identity as operator_context_identity
+from scripts.operator_context import inspect_context
 ROOT=Path(__file__).resolve().parents[1]
 ROLE_ARGS=["--orchestrator-model","p/orchestrator","--task-model","p/task","--slow-model","p/main","--smol-model","p/smol"]
 ROLE_MAP={"orchestrator":"p/orchestrator","task":"p/task","slow":"p/main","smol":"p/smol"}
+OPERATOR_CONTEXT=operator_context_identity(inspect_context(ROOT/"context"))
+OPERATOR_CONTEXT_ARGS=["--operator-context-json",json.dumps(OPERATOR_CONTEXT)]
 class ModelIdentityTests(unittest.TestCase):
     def bootstrap(self, config: str):
         tmp=tempfile.TemporaryDirectory(dir=ROOT/".harness");base=Path(tmp.name);config_path=base/"config.toml";config_path.write_text(config);agent=base/"agent";project=base/"project-config.yml";env=os.environ.copy();env.update({"VULNOPS_CONFIG_PATH":str(config_path),"VULNOPS_PROJECT_OMP_CONFIG":str(project),"VULNOPS_BOOTSTRAP_AGENT_DIR":str(agent)})
@@ -25,7 +29,7 @@ class ModelIdentityTests(unittest.TestCase):
     def test_init_derives_boolean_diversity(self):
         with tempfile.TemporaryDirectory(dir=ROOT/"scans") as tmp:
             scan=Path(tmp)/"run";repo=Path(tmp)/"repo";repo.mkdir()
-            cmd=[sys.executable,str(ROOT/"scripts/init-run.py"),"--harness-root",str(ROOT),"--repo-path",str(repo),"--scan-base",str(scan),"--run-id","r","--repo-name","repo","--remote-url","local","--repo-id","repo-id","--commit","abc","--depth","quick","--target-fingerprint","a"*64,"--reproduction-mode","off","--model","p/main",*ROLE_ARGS,"--verifier-model","p/verify"]
+            cmd=[sys.executable,str(ROOT/"scripts/init-run.py"),"--harness-root",str(ROOT),"--repo-path",str(repo),"--scan-base",str(scan),"--run-id","r","--repo-name","repo","--remote-url","local","--repo-id","repo-id","--commit","abc","--depth","quick","--target-fingerprint","a"*64,*OPERATOR_CONTEXT_ARGS,"--reproduction-mode","off","--model","p/main",*ROLE_ARGS,"--verifier-model","p/verify"]
             env=os.environ.copy();env["VULNOPS_AUDIT_CONTEXT"]=str(Path(tmp)/"context.json")
             result=subprocess.run(cmd,capture_output=True,text=True,check=False,env=env)
             self.assertEqual(result.returncode,0,result.stderr)
@@ -38,24 +42,28 @@ class ModelIdentityTests(unittest.TestCase):
     def test_thinking_effort_is_not_model_diversity(self):
         with tempfile.TemporaryDirectory(dir=ROOT/"scans") as tmp:
             scan=Path(tmp)/"run";repo=Path(tmp)/"repo";repo.mkdir();context=Path(tmp)/"context.json"
-            cmd=[sys.executable,str(ROOT/"scripts/init-run.py"),"--harness-root",str(ROOT),"--repo-path",str(repo),"--scan-base",str(scan),"--run-id","r","--repo-name","repo","--remote-url","local","--repo-id","repo-id","--commit","abc","--depth","quick","--target-fingerprint","a"*64,"--reproduction-mode","off","--model","p/model:high",*ROLE_ARGS,"--verifier-model","p/model:xhigh"]
+            cmd=[sys.executable,str(ROOT/"scripts/init-run.py"),"--harness-root",str(ROOT),"--repo-path",str(repo),"--scan-base",str(scan),"--run-id","r","--repo-name","repo","--remote-url","local","--repo-id","repo-id","--commit","abc","--depth","quick","--target-fingerprint","a"*64,*OPERATOR_CONTEXT_ARGS,"--reproduction-mode","off","--model","p/model:high",*ROLE_ARGS,"--verifier-model","p/model:xhigh"]
             result=subprocess.run(cmd,capture_output=True,text=True,check=False,env={**os.environ,"VULNOPS_AUDIT_CONTEXT":str(context)})
             self.assertEqual(result.returncode,0,result.stderr);self.assertIs(json.loads((scan/"run-manifest.json").read_text())["model_diversity"],False)
-    def test_example_config_uses_a_genuinely_diverse_verifier(self):
+    def test_example_config_uses_required_sol_policy(self):
         config=tomllib.loads((ROOT/"config.toml.example").read_text())
-        primary=config["llm"]["selector"];verifier=config["llm"]["verification"]["selector"]
-        self.assertTrue(model_diversity(primary,verifier))
+        llm=config["llm"];primary=llm["selector"];verifier=llm["verification"]["selector"]
+        self.assertEqual([primary,*llm["roles"].values()],["openai-codex/gpt-5.6-sol:high"]*5)
+        self.assertEqual(verifier,"openai-codex/gpt-5.6-sol:xhigh")
+        self.assertFalse(model_diversity(primary,verifier))
     def test_primary_or_verifier_change_prevents_resume(self):
         with tempfile.TemporaryDirectory(dir=ROOT/"scans") as tmp:
-            base=Path(tmp);scan=base/"scan";scan.mkdir();contract=subprocess.run([sys.executable,str(ROOT/"scripts/harness_contract.py")],capture_output=True,text=True,check=True).stdout.strip();budget={"max_concurrency":4,"max_hunt_tasks":12,"max_hunt_questions":24,"max_gapfill_rounds":1,"max_attempts":2,"context_packet_bytes":65536};network=network_identity("enforced");package=package_identity(ROOT);context={"schema_version":"2.0","workflow":"canonical-redteam-v2","run_id":"r","repo_path":str(base/"repo"),"short_sha":"abc","depth":"quick","target_fingerprint":"a"*64,"harness_contract_sha256":contract,"sast_budget":budget,"reproduction_mode":"off","network":network,"offline_package":package,"model":"p/main","model_roles":ROLE_MAP,"verifier_model":"p/verify","scan_base":str(scan)};Path(context["repo_path"]).mkdir();(base/"context.json").write_text(json.dumps(context));(scan/"run-manifest.json").write_text(json.dumps({"schema_version":"2.0","workflow":"canonical-redteam-v2","run_id":"r","commit":"abc","depth":"quick","target_fingerprint":"a"*64,"reproduction_mode":"off","network":network,"offline_package":package,"status":"running","harness_contract_sha256":contract,"sast_budget":budget,"model":"p/main","model_roles":ROLE_MAP,"verifier_model":"p/verify","phases":{phase:"pending" for phase in ("recon","tool-collection","sast","campaign-planning","intrusion","synthesis","final-verification","report")}}));(scan/"task-ledger.json").write_text(json.dumps({"schema_version":"2.0","run_id":"r","tasks":[]}))
-            args=[sys.executable,str(ROOT/"scripts/resume-run.py"),str(base/"context.json"),context["repo_path"],"abc","quick","a"*64,"off"]
+            base=Path(tmp);scan=base/"scan";scan.mkdir();contract=subprocess.run([sys.executable,str(ROOT/"scripts/harness_contract.py")],capture_output=True,text=True,check=True).stdout.strip();budget={"max_concurrency":4,"max_hunt_tasks":12,"max_hunt_questions":24,"max_gapfill_rounds":1,"max_attempts":2,"context_packet_bytes":65536};network=network_identity("enforced");package=package_identity(ROOT);context={"schema_version":"2.0","workflow":"canonical-redteam-v2","run_id":"r","repo_path":str(base/"repo"),"short_sha":"abc","depth":"quick","target_fingerprint":"a"*64,"operator_context":OPERATOR_CONTEXT,"harness_contract_sha256":contract,"sast_budget":budget,"reproduction_mode":"off","network":network,"offline_package":package,"model":"p/main","model_roles":ROLE_MAP,"verifier_model":"p/verify","scan_base":str(scan)};Path(context["repo_path"]).mkdir();(base/"context.json").write_text(json.dumps(context));(scan/"run-manifest.json").write_text(json.dumps({"schema_version":"2.0","workflow":"canonical-redteam-v2","run_id":"r","commit":"abc","depth":"quick","target_fingerprint":"a"*64,"operator_context":OPERATOR_CONTEXT,"reproduction_mode":"off","network":network,"offline_package":package,"status":"running","harness_contract_sha256":contract,"sast_budget":budget,"model":"p/main","model_roles":ROLE_MAP,"verifier_model":"p/verify","phases":{phase:"pending" for phase in ("recon","tool-collection","sast","campaign-planning","intrusion","synthesis","final-verification","report")}}));(scan/"task-ledger.json").write_text(json.dumps({"schema_version":"2.0","run_id":"r","tasks":[]}))
+            args=[sys.executable,str(ROOT/"scripts/resume-run.py"),str(base/"context.json"),context["repo_path"],"abc","quick","a"*64,"off","p/main",*ROLE_MAP.values(),"p/verify",*OPERATOR_CONTEXT_ARGS]
             role_values=[ROLE_MAP[name] for name in ("orchestrator","task","slow","smol")]
-            same=subprocess.run([*args,"p/main",*role_values,"p/verify"],capture_output=True,text=True,check=False);self.assertIn("r\t",same.stdout)
-            primary=subprocess.run([*args,"p/other",*role_values,"p/verify"],capture_output=True,text=True,check=False);self.assertEqual(primary.stdout,"")
-            verifier=subprocess.run([*args,"p/main",*role_values,"p/other"],capture_output=True,text=True,check=False);self.assertEqual(verifier.stdout,"")
+            same=subprocess.run(args,capture_output=True,text=True,check=False);self.assertIn("r\t",same.stdout)
+            primary=subprocess.run([*args[:8],"p/other",*role_values,"p/verify",*OPERATOR_CONTEXT_ARGS],capture_output=True,text=True,check=False);self.assertEqual(primary.stdout,"")
+            verifier=subprocess.run([*args[:8],"p/main",*role_values,"p/other",*OPERATOR_CONTEXT_ARGS],capture_output=True,text=True,check=False);self.assertEqual(verifier.stdout,"")
+            changed_context={**OPERATOR_CONTEXT,"fingerprint":"b"*64}
+            operator=subprocess.run([*args[:-2],"--operator-context-json",json.dumps(changed_context)],capture_output=True,text=True,check=False);self.assertEqual(operator.stdout,"")
             changed_roles=["p/other",*role_values[1:]]
-            roles=subprocess.run([*args,"p/main",*changed_roles,"p/verify"],capture_output=True,text=True,check=False);self.assertEqual(roles.stdout,"")
-            budget_changed=subprocess.run([*args,"p/main",*role_values,"p/verify"],capture_output=True,text=True,check=False,env={**os.environ,"VULNOPS_SAST_QUICK_MAX_HUNT_QUESTIONS":"25"});self.assertIn("\trecover",budget_changed.stdout)
+            roles=subprocess.run([*args[:8],"p/main",*changed_roles,"p/verify",*OPERATOR_CONTEXT_ARGS],capture_output=True,text=True,check=False);self.assertEqual(roles.stdout,"")
+            budget_changed=subprocess.run(args,capture_output=True,text=True,check=False,env={**os.environ,"VULNOPS_SAST_QUICK_MAX_HUNT_QUESTIONS":"25"});self.assertIn("\trecover",budget_changed.stdout)
     def test_builtin_primary_inherits_verifier(self):
         tmp,base,agent,project,result=self.bootstrap('[llm]\nselector="builtin/main"\nmodel=""\n[llm.verification]\nselector=""\n[llm.provider]\nname="on-prem"\nauth="api-key"\ndiscovery="explicit"\n')
         with tmp:

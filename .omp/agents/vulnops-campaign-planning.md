@@ -27,6 +27,10 @@ references. Known findings are first-class capabilities: explicitly test what
 each grants, what consumes it, and whether multiple known primitives produce a
 new boundary crossing or impact. Novelty is not a seed requirement.
 
+Review every `operator_context` evidence record. It is supporting background,
+not proof: use it to refine intended behavior, assumptions, validation methods,
+and campaign relevance while retaining canonical record references.
+
 Never assume a candidate primitive is true. Never invent a campaign to fill a
 quota. Preserve the zero-campaign path. Validate `campaign-planning` and yield.
 

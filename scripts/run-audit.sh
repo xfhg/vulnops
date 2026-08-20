@@ -151,6 +151,8 @@ main() {
 
     local target_fingerprint
     target_fingerprint="$(python3 "${HARNESS_ROOT}/scripts/target-fingerprint.py" "$clone_dir")"
+    local operator_context_json
+    operator_context_json="$(python3 "${HARNESS_ROOT}/scripts/operator_context.py" "${HARNESS_ROOT}/context" --identity)"
 
     local repo_scan_root="${HARNESS_ROOT}/scans/${repo_id}"
     local ctx="${HARNESS_ROOT}/.harness/audit-context.json"
@@ -179,7 +181,7 @@ main() {
             "$ctx" "$clone_dir" "$short_sha" "$depth" "$target_fingerprint" \
             "$reproduction_mode" "$primary_model" "$orchestrator_model" \
             "$task_model" "$slow_model" "$smol_model" "$verifier_model" \
-            --network-mode "$network_mode")"
+            --network-mode "$network_mode" --operator-context-json "$operator_context_json")"
         if [ -n "$resume_fields" ]; then
             IFS=$'\t' read -r run_id scan_base resume_mode <<<"$resume_fields"
             resumed=true
@@ -241,6 +243,7 @@ main() {
         --commit "$short_sha"
         --depth "$depth"
         --target-fingerprint "$target_fingerprint"
+        --operator-context-json "$operator_context_json"
         --reproduction-mode "$reproduction_mode"
         --network-mode "$network_mode"
         --model "$primary_model"

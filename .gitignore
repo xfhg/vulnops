@@ -1,6 +1,9 @@
 # Target repos — cloned at runtime, never committed
 target/*
 
+# Operator-supplied audit context — runtime input, never committed
+context/
+
 # Scan results
 scans/*
 

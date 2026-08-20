@@ -96,6 +96,7 @@ later stage run.
 ┌──────────────────────────── VulnOps repository ────────────────────────────┐
 │                                                                            │
 │  target/<repo>             Immutable audit input                           │
+│  context/                  Optional untrusted operator input                │
 │       │                                                                    │
 │       ├──────────── read-only source reads ───────────────┐                 │
 │       │                                                   │                 │
@@ -122,6 +123,12 @@ The target is never a workspace. Agents may read it, but all writes belong under
 `scans/` or `.harness/`. Containment helpers relocate homes, caches, and temporary
 state so third-party tools do not leak runtime files into operator or target
 directories.
+
+`context/` is a second read-only input boundary. Its deterministic inventory is
+limited to 1,024 accepted UTF-8 text files and 16 MiB; symlinks are not followed,
+and unsupported or excess inputs close Recon as degraded with explicit warnings.
+The run identity binds paths, sizes, hashes, and acceptance decisions. Raw bytes
+are never copied into canonical artifacts or packages.
 
 ### 3.1 Offline distribution boundary
 
@@ -208,6 +215,7 @@ only bounded stage transitions and peer questions.
 The data plane carries:
 
 - repository structure and security surfaces;
+- operator-context metadata and concise Recon-derived observations;
 - normalized tool observations and receipts;
 - SAST candidates, validation results, closures, and coverage;
 - canonical evidence records and attack primitives;
@@ -230,6 +238,7 @@ The complete compatibility identity is:
 repository path
 + commit
 + exact working-tree fingerprint
++ operator-context inventory fingerprint and limits
 + depth
 + reproduction mode
 + offline-package manifest and OSV snapshot identity
@@ -263,6 +272,11 @@ A Git commit does not capture ignored files, uncommitted changes, generated sour
 or modified tracked files. `target-fingerprint.py` covers the working tree used by
 the audit. The fingerprint is rechecked after graph snapshot creation, after every
 phase, and at whole-scan validation. Any mismatch invalidates the run.
+
+Operator context is supporting evidence, not a vulnerability authority. It may
+refine intended behavior, environmental assumptions, Campaign Planning, and
+Intrusion hypotheses. A finding may cite its derived observation only alongside
+source or canonical tool evidence, and target evidence prevails on conflict.
 
 ### 5.2 State machines
 

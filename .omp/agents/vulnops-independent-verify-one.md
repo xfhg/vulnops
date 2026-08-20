@@ -19,6 +19,10 @@ every claim is wrong until the cited source proves attacker reachability,
 boundary crossing, intended behavior, root cause, ordered trace, conditions,
 impact, severity, confidence, and remediation.
 
+Independently check every cited operator-context observation. It may support
+intended behavior or environmental conditions, but target source and canonical
+tool evidence win on conflict and must independently establish the finding.
+
 For dependency findings, confirm the installed version, affected use, and
 reachability. For secret findings, confirm only the redacted location and
 exposure path. For chains, verify every primitive independently, then verify

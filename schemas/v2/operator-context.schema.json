@@ -1,0 +1,53 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "VulnOps v2 Operator Context",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "fingerprint", "limits", "discovered_files", "accepted_files", "accepted_bytes", "skipped_files", "files", "observations", "warnings"],
+  "properties": {
+    "schema_version": {"const": "2.0"},
+    "fingerprint": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+    "limits": {
+      "type": "object", "additionalProperties": false,
+      "required": ["max_files", "max_bytes"],
+      "properties": {"max_files": {"const": 1024}, "max_bytes": {"const": 16777216}}
+    },
+    "discovered_files": {"type": "integer", "minimum": 0},
+    "accepted_files": {"type": "integer", "minimum": 0},
+    "accepted_bytes": {"type": "integer", "minimum": 0},
+    "skipped_files": {"type": "integer", "minimum": 0},
+    "files": {
+      "type": "array",
+      "items": {
+        "type": "object", "additionalProperties": false,
+        "required": ["path", "type", "size", "sha256", "status", "reason", "lines"],
+        "properties": {
+          "path": {"type": "string", "minLength": 1},
+          "type": {"enum": ["file", "symlink", "other"]},
+          "size": {"type": "integer", "minimum": 0},
+          "sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+          "status": {"enum": ["accepted", "skipped"]},
+          "reason": {"type": ["string", "null"]},
+          "lines": {"type": ["integer", "null"], "minimum": 0}
+        }
+      }
+    },
+    "observations": {
+      "type": "array",
+      "items": {
+        "type": "object", "additionalProperties": false,
+        "required": ["id", "worker", "category", "summary", "assessment", "context_refs", "target_evidence_refs"],
+        "properties": {
+          "id": {"type": "string", "pattern": "^CTX-[A-F0-9]{12}$"},
+          "worker": {"enum": ["overview", "trust-boundaries", "input-surfaces"]},
+          "category": {"type": "string", "minLength": 1},
+          "summary": {"type": "string", "minLength": 1, "maxLength": 2000},
+          "assessment": {"enum": ["corroborated", "context_only", "contradicted"]},
+          "context_refs": {"type": "array", "items": {"type": "string", "minLength": 1}, "minItems": 1, "uniqueItems": true},
+          "target_evidence_refs": {"type": "array", "items": {"type": "string", "minLength": 1}, "uniqueItems": true}
+        }
+      }
+    },
+    "warnings": {"type": "array", "items": {"type": "string"}}
+  }
+}

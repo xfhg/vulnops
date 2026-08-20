@@ -61,7 +61,7 @@ Sequence:
    - quick: max 4 concurrent chunks
    - balanced: max 8 concurrent chunks
    - full: max 16 concurrent chunks
-   Queue overflow batches; do not drop chunks. Use one OMP 16.4.4 `task` batch
+   Queue overflow batches; do not drop chunks. Use one bundled OMP `task` batch
    per wave with `agent: vulnops-deepdive-chunk`, a short shared `context`, and
    per-item `id`/`assignment` naming the task ID and packet path. Nested task
    calls are synchronous. For every completed worker, run

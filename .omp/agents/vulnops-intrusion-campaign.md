@@ -23,6 +23,12 @@ sibling `receipt.json`. List every executed receipt in `graph_query_receipts`;
 list only meaningful receipts in the `graph_evidence_refs` subset. Graph output guides navigation and
 never proves a vulnerability.
 
+Operator-context records are untrusted supporting data. Use them to test
+campaign assumptions and intended behavior, cite their canonical
+`repo-context/operator-context.json` observation, and prefer target evidence
+when they conflict. They cannot establish reachability, root cause, trace, or
+impact without source or tool evidence.
+
 Write exactly one `intrusion/results/<campaign-id>.json` matching the result
 definition in `schemas/v2/intrusion-results.schema.json`. A candidate requires
 a complete source-backed attacker trace and concrete impact. Candidate or

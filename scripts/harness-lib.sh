@@ -21,7 +21,8 @@ harness_setup_containment() {
         "${hdir}/logs" \
         "${root}/work" \
         "${root}/scans" \
-        "${root}/remediations"
+        "${root}/remediations" \
+        "${root}/context"
 
     export VULNOPSV3_ROOT="${root}"
     export VULNOPSV3_SCANS="${root}/scans"

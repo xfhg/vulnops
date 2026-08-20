@@ -30,7 +30,7 @@ except ModuleNotFoundError:  # Imported as scripts.offline_package in tests.
 
 
 TOOL_LOCK_SCHEMA = "vulnops.offline-tool-lock.v2"
-MANIFEST_SCHEMA = "vulnops.offline-pack-manifest.v5"
+MANIFEST_SCHEMA = "vulnops.offline-pack-manifest.v6"
 CHUNK_SCHEMA = "vulnops.offline-pack-chunks.v2"
 TOOLS = ("wraith", "poltergeist", "omp", "osv-scanner", "codegraph")
 RUNTIME_ASSETS = ("omp-natives",)
@@ -44,6 +44,7 @@ MUTABLE_PREFIXES = (
     "target/",
     "scans/",
     "remediations/",
+    "context/",
     "work/",
     ".harness/",
 )
@@ -174,12 +175,18 @@ def runtime_field(path: Path, asset: str, field: str) -> str:
     return str(lock["runtime_assets"][asset][field])
 
 
-def is_mutable(relative: str) -> bool:
-    if relative in MUTABLE_PATHS:
-        return True
-    if any(relative.startswith(prefix) for prefix in IMMUTABLE_HARNESS_PREFIXES):
+def matches_prefix(relative: str, prefix: str) -> bool:
+    return relative == prefix.rstrip("/") or relative.startswith(prefix)
+
+
+def is_mutable_prefix(relative: str) -> bool:
+    if any(matches_prefix(relative, prefix) for prefix in IMMUTABLE_HARNESS_PREFIXES):
         return False
-    return any(relative.startswith(prefix) for prefix in MUTABLE_PREFIXES)
+    return any(matches_prefix(relative, prefix) for prefix in MUTABLE_PREFIXES)
+
+
+def is_mutable(relative: str) -> bool:
+    return relative in MUTABLE_PATHS or is_mutable_prefix(relative)
 
 
 def is_runtime_cache(relative: str) -> bool:
@@ -444,6 +451,7 @@ def create_archive(root: Path, output: Path, epoch: int) -> None:
             path
             for path in root.rglob("*")
             if not is_runtime_cache(safe_relative(path, root))
+            and not is_mutable_prefix(safe_relative(path, root))
         ),
         key=lambda item: item.relative_to(root).as_posix(),
     )

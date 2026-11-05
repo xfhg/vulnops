@@ -1,0 +1,107 @@
+# Application inputs, audit evidence, reports, and remediation outputs stay local.
+/target/
+/scans/
+/remediations/
+/work/
+/context/
+/reports/
+/report/
+security-report.json
+security-report.md
+
+# Contained credentials, sessions, scanner databases, caches, and graph indexes.
+/.harness/
+.codegraph/
+codedb.snapshot
+/.omp/config.yml
+/.omp/agent/
+/.omp/sessions/
+/.omp/logs/
+/.omp/mcp.json
+/.mcp.json
+
+# Installation-local configuration and credentials; commit templates instead.
+/config.toml
+.env
+.env.*
+!.env.example
+auth.json
+credentials.json
+*.pem
+*.key
+*.p12
+*.pfx
+/.netrc
+/.npmrc
+
+# Downloaded tools, dependencies, and build products are reproducible inputs.
+/bins/
+node_modules/
+.venv/
+venv/
+/build/
+/dist/
+*.node
+*.dylib
+*.so
+*.dll
+*.exe
+*.o
+*.a
+
+# Offline packages and transport chunks never belong in source history.
+# Keep checksum/version locks under config/, not generated package manifests.
+/offline/
+/offline-pack-manifest.json
+*.tar
+*.tar.provenance.json
+*.tar.gz
+*.tgz
+*.zip
+*.7z
+*.xz
+*.zst
+*.part-*
+offline-pack-chunks.json
+
+# Private development material is not part of the product distribution.
+# Existing tracked planning remains local; publish a separate product snapshot.
+/dsh/
+/openspec/
+/stake/VERIFICATION.md
+
+# Generated editor adapters; native .omp/agents/, .omp/main/ and VulnOps skills ship.
+**/skills/openspec-*/
+**/prompts/opsx-*.md
+**/commands/opsx-*.md
+/.agents/skills/.openspec-target
+
+# Logs, local databases, coverage, and language/tool caches.
+/logs/
+/log/
+*.log
+*.log.*
+*.jsonl
+*.sqlite
+*.sqlite3
+*.sqlite-wal
+*.sqlite-shm
+*.db
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.cache/
+.coverage
+.coverage.*
+coverage/
+htmlcov/
+
+# OS/editor and local scratch files.
+.DS_Store
+._*
+*.swp
+*.swo
+*~
+.cate

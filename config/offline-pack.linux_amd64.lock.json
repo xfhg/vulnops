@@ -1,0 +1,422 @@
+{
+  "minimum_python": "3.11",
+  "platform": "linux_amd64",
+  "runtime_assets": {
+    "omp-natives": {
+      "format": "tar.gz",
+      "members": [
+        {
+          "sha256": "b6c9f01221780f487735b217e2756754db4b9c84d57e32f8dd3d331f1542d1be",
+          "size": 116566184,
+          "source": "pi_natives.linux-x64-baseline.node",
+          "target": "pi_natives.linux-x64-baseline.node"
+        },
+        {
+          "sha256": "369bd8f4840a6be1e075db17c3294c42c8725c3a3f06cc8668a3b704ead127f6",
+          "size": 116474536,
+          "source": "pi_natives.linux-x64-modern.node",
+          "target": "pi_natives.linux-x64-modern.node"
+        }
+      ],
+      "sha256": "82639bdbea669e517ae48fa40b50cbe236aac2ff35e62cc0a999686dfaf514d4",
+      "size": 93378695,
+      "url": "https://registry.npmjs.org/@oh-my-pi/pi-natives-linux-x64/-/pi-natives-linux-x64-18.13.1.tgz",
+      "version": "v18.13.1"
+    }
+  },
+  "schema": "vulnops.offline-tool-lock.v2",
+  "tools": {
+    "codegraph": {
+      "format": "tar.gz",
+      "sha256": "a6db0d1d13fe8be96caae70bd326ef5497a3b4d3e78636ff8250046945c33b2d",
+      "size": 52899987,
+      "url": "https://github.com/colbymchenry/codegraph/releases/download/v1.2.0/codegraph-linux-x64.tar.gz",
+      "version": "v1.2.0"
+    },
+    "omp": {
+      "format": "binary",
+      "sha256": "ee2961c7da02e514a2475ee958c2fd85dbabf4d0907949ba5022edb2951f84b5",
+      "size": 275986608,
+      "url": "https://github.com/can1357/oh-my-pi/releases/download/v18.13.1/omp-linux-x64",
+      "version": "v18.13.1"
+    },
+    "osv-scanner": {
+      "format": "binary",
+      "sha256": "ca69b3d3cd08f889a49dc0a383122f71cc528b83803671df5fd874d97485b108",
+      "size": 57524384,
+      "url": "https://github.com/google/osv-scanner/releases/download/v2.6.0/osv-scanner_linux_amd64",
+      "version": "v2.6.0"
+    },
+    "poltergeist": {
+      "format": "tar.gz",
+      "sha256": "7e134684cad61fc75cd56d772e4253e17659a4c2c423b0d5fef6de86317efd38",
+      "size": 6400998,
+      "url": "https://github.com/ghostsecurity/poltergeist/releases/download/v2.0.5/poltergeist_linux_amd64.tar.gz",
+      "version": "v2.0.5"
+    },
+    "wraith": {
+      "format": "tar.gz",
+      "sha256": "26154e382252999e44d6853dfb940d5f997baae9290844302740a4feda118421",
+      "size": 22197662,
+      "url": "https://github.com/ghostsecurity/wraith/releases/download/v2.0.2/wraith_linux_amd64.tar.gz",
+      "version": "v2.0.2"
+    }
+  },
+  "grammar_assets": {
+    "members": [
+      {
+        "installed_sha256": "612c83b88b97ba7cc53a4808aebf71196442d2aea70955333b114212b771a4d7",
+        "installed_size": 24622,
+        "language": "astro",
+        "sha256": "7802965ed20cc8191ab34c1fd784c28fd6f990c5b99563e37bcb421bd3bc5d0a",
+        "size": 7367,
+        "target": "astro-612c83b88b97ba7c.wasm",
+        "url": "https://github.com/stencil-hq/wasm-grammars/releases/download/v1/astro-612c83b88b97ba7c.wasm.zst"
+      },
+      {
+        "installed_sha256": "f63ecd31939b06c315c49794a628059b6f16de191a17b148a290e5f8faffbc0a",
+        "installed_size": 97934,
+        "language": "clojure",
+        "sha256": "de6aebd2b8d9cccf8581f796f2c2c9d810c55929734464da4fb2c4905915bd1d",
+        "size": 18069,
+        "target": "clojure-f63ecd31939b06c3.wasm",
+        "url": "https://github.com/stencil-hq/wasm-grammars/releases/download/v1/clojure-f63ecd31939b06c3.wasm.zst"
+      },
+      {
+        "installed_sha256": "38a05d65733bf24f4469b01d644d6b8e26e779fcc40ae562037dd699aee6e103",
+        "installed_size": 75504,
+        "language": "cmake",
+        "sha256": "ff68d6c6a67a511c01e513e18ecd6d5fe9afc400dcc74886f9d1cc1114ab91f4",
+        "size": 11986,
+        "target": "cmake-38a05d65733bf24f.wasm",
+        "url": "https://github.com/stencil-hq/wasm-grammars/releases/download/v1/cmake-38a05d65733bf24f.wasm.zst"
+      },
+      {
+        "installed_sha256": "f265130d20fe62d3dc0cec756ee5a4159bd9825894a48fc0f7e72c8bd30ef099",
+        "installed_size": 5328197,
+        "language": "csharp",
+        "sha256": "1ad594e1cc1ef4556bdbf024e2c5b205de67f6a63f1e75880630ed421f758b0d",
+        "size": 190157,
+        "target": "csharp-f265130d20fe62d3.wasm",
+        "url": "https://github.com/stencil-hq/wasm-grammars/releases/download/v1/csharp-f265130d20fe62d3.wasm.zst"
+      },
+      {
+        "installed_sha256": "52bdbf469a2343a52385f75dab61097fe9c157e747ddfcc52200c153c4259d4b",
+        "installed_size": 1269300,
+        "language": "dart",
+        "sha256": "519309dfd97e40015d85e8391d4511b6f884bdd65bfe554338f3c19da0ec06f9",
+        "size": 90439,
+        "target": "dart-52bdbf469a2343a5.wasm",
+        "url": "https://github.com/stencil-hq/wasm-grammars/releases/download/v1/dart-52bdbf469a2343a5.wasm.zst"
+      },
+      {
+        "installed_sha256": "6d95cfe08d32ad32cd4e3e13e209f03ae59fbd495ad61014e1873fbbbb6c5078",
+        "installed_size": 48699,
+        "language": "dockerfile",
+        "sha256": "b7cb6cd7e4ccf1cec1faba9ebab82ae651416650bb0fdf2b0639776fb4bde630",
+        "size": 14988,
+        "target": "dockerfile-6d95cfe08d32ad32.wasm",
+        "url": "https://github.com/stencil-hq/wasm-grammars/releases/download/v1/dockerfile-6d95cfe08d32ad32.wasm.zst"
+      },
+      {
+        "installed_sha256": "1160c3b90a7c1eb7cb8f8e5c3a1960db3219c97c10fa21b1421b79142cc2e556",
+        "installed_size": 1412268,
+        "language": "elixir",
+        "sha256": "284b99a7cf84fe4c24f9146bd33add8195b2794b913606b2118b3dbd32a20bbc",
+        "size": 109372,
+        "target": "elixir-1160c3b90a7c1eb7.wasm",
+        "url": "https://github.com/stencil-hq/wasm-grammars/releases/download/v1/elixir-1160c3b90a7c1eb7.wasm.zst"
+      },
+      {
+        "installed_sha256": "d4fee941a25f646467cebe60317f46eb0f47b617c76fb9a1a60e7e7982b43415",
+        "installed_size": 52513,
+        "language": "emacs-lisp",
+        "sha256": "66c0260cb3cbb649e37bab7c6a5679c305dba1919369d8e30b417629e831c3ad",
+        "size": 7895,
+        "target": "emacs-lisp-d4fee941a25f6464.wasm",
+        "url": "https://github.com/stencil-hq/wasm-grammars/releases/download/v1/emacs-lisp-d4fee941a25f6464.wasm.zst"
+      },
+      {
+        "installed_sha256": "bb8809212393e68687d0f2bc1309c4ca7601fa704a8a96edaffaa34585f1b1b7",
+        "installed_size": 418478,
+        "language": "erlang",
+        "sha256": "92d74ea7653b4b25b9508a7c86fcd414b49066e9c34441adc50259b52aa2b32a",
+        "size": 36812,
+        "target": "erlang-bb8809212393e686.wasm",
+        "url": "https://github.com/stencil-hq/wasm-grammars/releases/download/v1/erlang-bb8809212393e686.wasm.zst"
+      },
+      {
+        "installed_sha256": "f72872963184cdb4ccb623be3e4e40606066a317be6d5d61cdc929b51bba6d22",
+        "installed_size": 6591350,
+        "language": "fortran",
+        "sha256": "61635bdb0a9077e1a93d4837b80048bf02bb98e04d71bc7b98fb1c1ad4f91eef",
+        "size": 198757,
+        "target": "fortran-f72872963184cdb4.wasm",
+        "url": "https://github.com/stencil-hq/wasm-grammars/releases/download/v1/fortran-f72872963184cdb4.wasm.zst"
+      },
+      {
+        "installed_sha256": "fd4081c84308f5db14a4a6e1bea91c08f9c38e5ab47e5a0730c4a39448844d00",
+        "installed_size": 57563,
+        "language": "graphql",
+        "sha256": "e7861b278c8a3792e1a5dc82d335938cd240d83bf8c5c34eb9f87090b6f3f9f8",
+        "size": 11400,
+        "target": "graphql-fd4081c84308f5db.wasm",
+        "url": "https://github.com/stencil-hq/wasm-grammars/releases/download/v1/graphql-fd4081c84308f5db.wasm.zst"
+      },
+      {
+        "installed_sha256": "ddc4978970326bc46369f3dff15027c54dac79adb7aca9ba7b6d3a20ebb1b3e0",
+        "installed_size": 3805634,
+        "language": "haskell",
+        "sha256": "76a22d5f2d4ccf5efbf282e6747c252638be62a87e706c9edb226f4ab041fb3e",
+        "size": 197186,
+        "target": "haskell-ddc4978970326bc4.wasm",
+        "url": "https://github.com/stencil-hq/wasm-grammars/releases/download/v1/haskell-ddc4978970326bc4.wasm.zst"
+      },
+      {
+        "installed_sha256": "1b4b186da007c48980f7ec7259b15edb2ea6cb1b8cf7ad01d5c9c39456aa52fb",
+        "installed_size": 93351,
+        "language": "hcl",
+        "sha256": "6e9801104e7cf7548ce0d7eece2878da18b77d58af79e4154e57a2223c566a01",
+        "size": 16273,
+        "target": "hcl-1b4b186da007c489.wasm",
+        "url": "https://github.com/stencil-hq/wasm-grammars/releases/download/v1/hcl-1b4b186da007c489.wasm.zst"
+      },
+      {
+        "installed_sha256": "4884a74e0e60d02fc897b1f780c044e578ff839c9eeb6f4742d2feaef9839ece",
+        "installed_size": 4710,
+        "language": "ini",
+        "sha256": "06f6acdfdb68705d4edafbe7fcee651ac63afb8896f5d0d9b14f9c6110a0b496",
+        "size": 1657,
+        "target": "ini-4884a74e0e60d02f.wasm",
+        "url": "https://github.com/stencil-hq/wasm-grammars/releases/download/v1/ini-4884a74e0e60d02f.wasm.zst"
+      },
+      {
+        "installed_sha256": "78d8e1aa3b207c290631bbb071ebbe20f91d631e91dd2d78a71358472660978a",
+        "installed_size": 6223351,
+        "language": "julia",
+        "sha256": "0d2fa2c248f6b8d067f2463292f97fbf85638daef327ae064781c715538d2aa3",
+        "size": 333824,
+        "target": "julia-78d8e1aa3b207c29.wasm",
+        "url": "https://github.com/stencil-hq/wasm-grammars/releases/download/v1/julia-78d8e1aa3b207c29.wasm.zst"
+      },
+      {
+        "installed_sha256": "989d19dab6b349337e0335e8f8bfe39de40f27639dc34c23a0d8c63678a69e68",
+        "installed_size": 44632,
+        "language": "just",
+        "sha256": "484c4fe8f30fe9945a431d12b4867e38e169f3766e5373661bcffc128ad4f79f",
+        "size": 11481,
+        "target": "just-989d19dab6b34933.wasm",
+        "url": "https://github.com/stencil-hq/wasm-grammars/releases/download/v1/just-989d19dab6b34933.wasm.zst"
+      },
+      {
+        "installed_sha256": "83d1aa9580f91a32b51a057ad4216166c29e488bf750aa891ae528f7a04dd4bf",
+        "installed_size": 5772696,
+        "language": "kotlin",
+        "sha256": "35ac7221a294bfa3df9e38e8f098f8fdcda898038d676527ad8e1c25fc0a7cb0",
+        "size": 195308,
+        "target": "kotlin-83d1aa9580f91a32.wasm",
+        "url": "https://github.com/stencil-hq/wasm-grammars/releases/download/v1/kotlin-83d1aa9580f91a32.wasm.zst"
+      },
+      {
+        "installed_sha256": "83446c583739247d74ae0953a1844b642fc126a5e773b797ecd0f7b5af686c84",
+        "installed_size": 53205,
+        "language": "lua",
+        "sha256": "93e6efeb10c2d3cdc1a99f846c68314a1e563a2181b29283979744f5ab79c5aa",
+        "size": 11125,
+        "target": "lua-83446c583739247d.wasm",
+        "url": "https://github.com/stencil-hq/wasm-grammars/releases/download/v1/lua-83446c583739247d.wasm.zst"
+      },
+      {
+        "installed_sha256": "c2a057ef58739b2f8025bc3f7d04a62ae3daad8aeb7979b2db6097800950cded",
+        "installed_size": 147044,
+        "language": "make",
+        "sha256": "058792e213ca82140dcf83a8105a175f8877f3ac425442f892586f319a30a2fd",
+        "size": 28344,
+        "target": "make-c2a057ef58739b2f.wasm",
+        "url": "https://github.com/stencil-hq/wasm-grammars/releases/download/v1/make-c2a057ef58739b2f.wasm.zst"
+      },
+      {
+        "installed_sha256": "10a66e15b62be1a59cd256abf4b48fdeac07e50c0a8e50ceb64296fcec019930",
+        "installed_size": 79503,
+        "language": "nix",
+        "sha256": "526e818f9c609480db3f95169edaf9502b0cfcb710b7a8f2345b73f3b5f60186",
+        "size": 13475,
+        "target": "nix-10a66e15b62be1a5.wasm",
+        "url": "https://github.com/stencil-hq/wasm-grammars/releases/download/v1/nix-10a66e15b62be1a5.wasm.zst"
+      },
+      {
+        "installed_sha256": "ede2d58688f085d4d36ccdf7f2b50aa61f70ea4f134dd3741c23ad857473a148",
+        "installed_size": 5317156,
+        "language": "objc",
+        "sha256": "ca8b53ec55a93430bf87678b25aac27c67947d4da6796b228afa685ec7cc006b",
+        "size": 164110,
+        "target": "objc-ede2d58688f085d4.wasm",
+        "url": "https://github.com/stencil-hq/wasm-grammars/releases/download/v1/objc-ede2d58688f085d4.wasm.zst"
+      },
+      {
+        "installed_sha256": "c60bd9980a698106c09dccf5a089841e7d285721ad8ce9e4fd5a326bf3316d0f",
+        "installed_size": 5553927,
+        "language": "ocaml",
+        "sha256": "923cfe1581780e917fff4f851f6c848b48ae9725c062f08e2dd29946d115f7ce",
+        "size": 349744,
+        "target": "ocaml-c60bd9980a698106.wasm",
+        "url": "https://github.com/stencil-hq/wasm-grammars/releases/download/v1/ocaml-c60bd9980a698106.wasm.zst"
+      },
+      {
+        "installed_sha256": "0fa018a7182e62a6414379018fb1bbe2e46ca39f6f1cd6584a4609481c1f303e",
+        "installed_size": 2215304,
+        "language": "odin",
+        "sha256": "c0bdf5395cf03ff88e314b1f4d4c03e4ed12d2eaec7c86b1374de16bf46a2d3c",
+        "size": 135819,
+        "target": "odin-0fa018a7182e62a6.wasm",
+        "url": "https://github.com/stencil-hq/wasm-grammars/releases/download/v1/odin-0fa018a7182e62a6.wasm.zst"
+      },
+      {
+        "installed_sha256": "cb7397cba44a21ce6882d8173c597d66e32a257cb1f628ba45cdf23f9d8d7c6a",
+        "installed_size": 1002409,
+        "language": "php",
+        "sha256": "b8290e8e74aa5d7fc74fb42a54dac24468fa341aea220de904bdbae994e41bce",
+        "size": 70140,
+        "target": "php-cb7397cba44a21ce.wasm",
+        "url": "https://github.com/stencil-hq/wasm-grammars/releases/download/v1/php-cb7397cba44a21ce.wasm.zst"
+      },
+      {
+        "installed_sha256": "2a24f946f96e67ac812fb6c7d647576a033febc0c48f4c91a340b549e7eac73d",
+        "installed_size": 990743,
+        "language": "powershell",
+        "sha256": "06caa1f1293148bfd4fc55d75416d661b6e1f832967ea2af3486027c033fa851",
+        "size": 68548,
+        "target": "powershell-2a24f946f96e67ac.wasm",
+        "url": "https://github.com/stencil-hq/wasm-grammars/releases/download/v1/powershell-2a24f946f96e67ac.wasm.zst"
+      },
+      {
+        "installed_sha256": "0b226f4132ac4493642b8df1fbeb7541c92e36e3fb152064ef662d072135b795",
+        "installed_size": 73836,
+        "language": "protobuf",
+        "sha256": "eabc3d8007c4b79bb2698056bacfed65dc4f52c08c57a842e612424198127c6f",
+        "size": 11025,
+        "target": "protobuf-0b226f4132ac4493.wasm",
+        "url": "https://github.com/stencil-hq/wasm-grammars/releases/download/v1/protobuf-0b226f4132ac4493.wasm.zst"
+      },
+      {
+        "installed_sha256": "908227b85fae8f37660f9991110349a2ce6ecde650549c8a72cda800caa5e948",
+        "installed_size": 484429,
+        "language": "r",
+        "sha256": "eaa2f8062f917345dd55b6d3909bce830d432c42e8514a69494e282df8f6d37a",
+        "size": 36953,
+        "target": "r-908227b85fae8f37.wasm",
+        "url": "https://github.com/stencil-hq/wasm-grammars/releases/download/v1/r-908227b85fae8f37.wasm.zst"
+      },
+      {
+        "installed_sha256": "e77f88559b47c0fe2771821c6c160cdf6bbfe17afcd642ab3fdda9aebb70b2f3",
+        "installed_size": 2106322,
+        "language": "ruby",
+        "sha256": "03af99c8de7c2987563fdd2eca01cfa8d34073b410d4b0f75179bc65b35e6c1f",
+        "size": 113629,
+        "target": "ruby-e77f88559b47c0fe.wasm",
+        "url": "https://github.com/stencil-hq/wasm-grammars/releases/download/v1/ruby-e77f88559b47c0fe.wasm.zst"
+      },
+      {
+        "installed_sha256": "f1699072abf3668a995ece3950a52c00f9da168a58684fe104e98214b0a74903",
+        "installed_size": 3922744,
+        "language": "scala",
+        "sha256": "500b452e39b11fb4f985ff1cabf9fc531272d15bebf064a21d124df79803ad6c",
+        "size": 316082,
+        "target": "scala-f1699072abf3668a.wasm",
+        "url": "https://github.com/stencil-hq/wasm-grammars/releases/download/v1/scala-f1699072abf3668a.wasm.zst"
+      },
+      {
+        "installed_sha256": "ac4d44dc54b7a475c2284ae27ab0af932043e2cfd4e200a416b2ac5d40f433d7",
+        "installed_size": 508585,
+        "language": "solidity",
+        "sha256": "41e41e5b632ec07616514af7f048b535e0413ef11930838478c0c49e64d26c63",
+        "size": 37893,
+        "target": "solidity-ac4d44dc54b7a475.wasm",
+        "url": "https://github.com/stencil-hq/wasm-grammars/releases/download/v1/solidity-ac4d44dc54b7a475.wasm.zst"
+      },
+      {
+        "installed_sha256": "f9d5638965f6f7ecc6b6979b8717f44e756687a1cbe4fef411b84506bdb81451",
+        "installed_size": 2433442,
+        "language": "sql",
+        "sha256": "c735696bd827b6df5965479a71b8dc2e76177e6d1bdc289224139b2b4f4facb8",
+        "size": 241116,
+        "target": "sql-f9d5638965f6f7ec.wasm",
+        "url": "https://github.com/stencil-hq/wasm-grammars/releases/download/v1/sql-f9d5638965f6f7ec.wasm.zst"
+      },
+      {
+        "installed_sha256": "1f892a95b3d42e69e71eeb3efdba3cc605a5c8b221b554e250f5418c64c682a6",
+        "installed_size": 329944,
+        "language": "starlark",
+        "sha256": "a96ac305afdc4c3d3ec9b41d36bc43a503ccf2e920f41ddac80777bf215bc074",
+        "size": 42685,
+        "target": "starlark-1f892a95b3d42e69.wasm",
+        "url": "https://github.com/stencil-hq/wasm-grammars/releases/download/v1/starlark-1f892a95b3d42e69.wasm.zst"
+      },
+      {
+        "installed_sha256": "03ab329192177443c91eaf0904b011089cc6b779df1792468afd379c0a6a2512",
+        "installed_size": 44859,
+        "language": "svelte",
+        "sha256": "766c9e6078257f47097f55f875dfabab7700ba684bcae1d6bb0f3fb8e1b2f73b",
+        "size": 11563,
+        "target": "svelte-03ab329192177443.wasm",
+        "url": "https://github.com/stencil-hq/wasm-grammars/releases/download/v1/svelte-03ab329192177443.wasm.zst"
+      },
+      {
+        "installed_sha256": "92a6aa39712255e7332d1b06db52bc6d49e9f563215846978c0ca63b6cc38359",
+        "installed_size": 3726992,
+        "language": "swift",
+        "sha256": "0bdec6edc32a373e7c73a79d1c66539a7fa1259805aa7e0802f0bc4eebc0563e",
+        "size": 219558,
+        "target": "swift-92a6aa39712255e7.wasm",
+        "url": "https://github.com/stencil-hq/wasm-grammars/releases/download/v1/swift-92a6aa39712255e7.wasm.zst"
+      },
+      {
+        "installed_sha256": "2bb6711906017f861d3c143553c5077fc167f29d023a606a5dcfc159efb9e5bc",
+        "installed_size": 4878580,
+        "language": "tlaplus",
+        "sha256": "4eacc366def36f0e9618ee968a100378b95ea1a15fd3c1b552034f1b2d064d98",
+        "size": 123099,
+        "target": "tlaplus-2bb6711906017f86.wasm",
+        "url": "https://github.com/stencil-hq/wasm-grammars/releases/download/v1/tlaplus-2bb6711906017f86.wasm.zst"
+      },
+      {
+        "installed_sha256": "46f723039630ef85b8a2dd324cba2673207163f760eb435c800bc0f56d78bb0e",
+        "installed_size": 18135336,
+        "language": "verilog",
+        "sha256": "2b33f7fc4e60c1edd515e7dc457d4d3ae290e3fcd3ece063a79efe4e7d738617",
+        "size": 406814,
+        "target": "verilog-46f723039630ef85.wasm",
+        "url": "https://github.com/stencil-hq/wasm-grammars/releases/download/v1/verilog-46f723039630ef85.wasm.zst"
+      },
+      {
+        "installed_sha256": "a9b2b4573afa0f31a878753a30e2cda2030baa26544159448da6ba8c69bfa76d",
+        "installed_size": 28095,
+        "language": "vue",
+        "sha256": "5f14f85487031b2fb9ed37d1e895979e34cdbbd4049b3a21fd44e958130cc8ed",
+        "size": 8238,
+        "target": "vue-a9b2b4573afa0f31.wasm",
+        "url": "https://github.com/stencil-hq/wasm-grammars/releases/download/v1/vue-a9b2b4573afa0f31.wasm.zst"
+      },
+      {
+        "installed_sha256": "fafa7327c7a09ba74612e23543ff4e93ee08b785f0a8c2f8292c03f0b65c4917",
+        "installed_size": 46968,
+        "language": "xml",
+        "sha256": "10f0348d6759460fc8c9096d3f5b5ecc22d7af258aee9fa1bf476cfe4fcd168e",
+        "size": 13550,
+        "target": "xml-fafa7327c7a09ba7.wasm",
+        "url": "https://github.com/stencil-hq/wasm-grammars/releases/download/v1/xml-fafa7327c7a09ba7.wasm.zst"
+      },
+      {
+        "installed_sha256": "4dd568b541381b9ddcd0b53eda9956d26fea148b26f0af2ec52b1e8b4de3ed2e",
+        "installed_size": 691729,
+        "language": "zig",
+        "sha256": "50aa0329bfe61941abe48cefa476aa6f5e81fb33d4777bc62ed2e0e8512c1613",
+        "size": 40778,
+        "target": "zig-4dd568b541381b9d.wasm",
+        "url": "https://github.com/stencil-hq/wasm-grammars/releases/download/v1/zig-4dd568b541381b9d.wasm.zst"
+      }
+    ],
+    "release": "v1",
+    "version": "18.13.1"
+  }
+}

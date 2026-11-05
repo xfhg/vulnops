@@ -1,0 +1,75 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "run_id",
+    "execution_kind",
+    "assignments"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "2.0"
+    },
+    "run_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 512
+    },
+    "execution_kind": {
+      "const": "advantage"
+    },
+    "assignments": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "finding_id",
+          "candidate_sha256",
+          "actor",
+          "selector",
+          "fresh_context",
+          "result_ref"
+        ],
+        "properties": {
+          "finding_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 512
+          },
+          "candidate_sha256": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$"
+          },
+          "actor": {
+            "const": "vulnops-advantage-verify-one"
+          },
+          "selector": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 512
+          },
+          "fresh_context": {
+            "const": true
+          },
+          "baseline_catalog_sha256": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$"
+          },
+          "result_ref": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 512
+          }
+        }
+      },
+      "maxItems": 512,
+      "minItems": 0
+    },
+    "assessment_context": {
+      "$ref": "evidence-accounting.schema.json#/$defs/assessmentContext"
+    }
+  }
+}

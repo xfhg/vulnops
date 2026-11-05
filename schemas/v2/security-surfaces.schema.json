@@ -1,0 +1,99 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "VulnOps V5 Security Surface Map",
+  "type": "object",
+  "additionalProperties": false,
+  "$defs": {"contributors": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "object", "additionalProperties": false, "required": ["actor", "selector", "artifact_ref"], "properties": {"actor": {"type": "string", "minLength": 1}, "selector": {"type": "string", "minLength": 1}, "artifact_ref": {"type": "string", "minLength": 1}}}}},
+  "required": ["schema_version", "repository", "attack_paths", "entry_points", "trust_boundaries", "security_relevant_files", "ignore_patterns", "generated_ignorable", "sensitive_data_types", "domain_tags", "warnings", "errors"],
+  "properties": {
+    "attack_paths": {
+      "type": "array", "minItems": 1,
+      "items": {
+        "type": "object", "additionalProperties": {"$ref": "exploration-context.schema.json#/$defs/value"},
+        "maxProperties": 64, "propertyNames": {"type": "string", "maxLength": 128},
+        "required": ["id", "starting_actor", "entry_surface_ids", "controlled_material", "authority_decisions", "identity_propagation", "sensitive_effect", "handoff_evidence", "unknowns", "source_refs"],
+        "properties": {
+          "id": {"type": "string", "minLength": 1},
+          "starting_actor": {"type": "string", "minLength": 1},
+          "entry_surface_ids": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}},
+          "controlled_material": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}},
+          "authority_decisions": {"type": "array", "items": {"type": "string", "minLength": 1}},
+          "identity_propagation": {"type": "array", "items": {"type": "string", "minLength": 1}},
+          "sensitive_effect": {"type": "string", "minLength": 1},
+          "handoff_evidence": {"type": "array", "items": {"type": "object", "additionalProperties": false,
+            "required": ["producer", "consumer", "material", "source_refs"],
+            "properties": {
+              "producer": {"type": "string", "minLength": 1},
+              "consumer": {"type": "string", "minLength": 1},
+              "material": {"type": "string", "minLength": 1},
+              "source_refs": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}}
+            }}},
+          "unknowns": {"type": "array", "items": {"type": "string", "minLength": 1}},
+          "source_refs": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}}
+        }
+      }
+    },
+    "schema_version": {"const": "2.0"},
+    "repository": {"type": "string", "minLength": 1},
+    "entry_points": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": {"$ref": "exploration-context.schema.json#/$defs/value"},
+        "maxProperties": 64,
+        "propertyNames": {"type": "string", "maxLength": 128},
+        "required": ["id", "project_id", "path", "kind", "trust_boundary_ids", "evidence_refs", "contributors"],
+        "properties": {
+          "contributors": {"$ref": "#/$defs/contributors"},
+          "id": {"type": "string", "pattern": "^(?!.*\\.\\.)[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$"},
+          "project_id": {"type": "string", "minLength": 1},
+          "path": {"type": "string", "minLength": 1},
+          "kind": {"enum": ["http", "cli", "worker", "library", "ipc", "file", "queue", "webhook", "browser", "mobile", "other"]},
+          "trust_boundary_ids": {"type": "array", "items": {"type": "string"}},
+          "evidence_refs": {"type": "array", "items": {"type": "string", "minLength": 1}, "minItems": 1}
+        }
+      }
+    },
+    "trust_boundaries": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": {"$ref": "exploration-context.schema.json#/$defs/value"},
+        "maxProperties": 64,
+        "propertyNames": {"type": "string", "maxLength": 128},
+        "required": ["id", "project_id", "source_trust", "target_trust", "description", "evidence_refs", "contributors"],
+        "properties": {
+          "contributors": {"$ref": "#/$defs/contributors"},
+          "id": {"type": "string", "pattern": "^(?!.*\\.\\.)[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$"},
+          "project_id": {"type": ["string", "null"]},
+          "source_trust": {"type": "string", "minLength": 1},
+          "target_trust": {"type": "string", "minLength": 1},
+          "description": {"type": "string", "minLength": 1},
+          "evidence_refs": {"type": "array", "items": {"type": "string", "minLength": 1}, "minItems": 1}
+        }
+      }
+    },
+    "security_relevant_files": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": {"$ref": "exploration-context.schema.json#/$defs/value"},
+        "maxProperties": 64,
+        "propertyNames": {"type": "string", "maxLength": 128},
+        "required": ["path", "categories", "evidence_refs"],
+        "properties": {
+          "path": {"type": "string", "minLength": 1},
+          "categories": {"type": "array", "items": {"enum": ["entry_point", "auth", "authorization", "privileged_sink", "external_call", "config_secret", "security_context", "parser", "storage", "crypto", "mobile_boundary"]}, "minItems": 1},
+          "evidence_refs": {"type": "array", "items": {"type": "string", "minLength": 1}, "minItems": 1}
+        }
+      }
+    },
+    "ignore_patterns": {"type": "array", "items": {"type": "string"}},
+    "generated_ignorable": {"type": "array", "items": {"type": "string"}},
+    "sensitive_data_types": {"type": "array", "items": {"type": "string"}},
+    "domain_tags": {"type": "array", "items": {"enum": ["ai_llm", "http_auth", "client", "native", "mobile", "iac", "etl"]}},
+    "warnings": {"type": "array", "items": {"type": "string"}},
+    "errors": {"type": "array", "items": {"type": "string"}}
+  }
+}

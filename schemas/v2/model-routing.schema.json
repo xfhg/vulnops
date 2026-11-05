@@ -1,0 +1,257 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$defs": {
+    "audit": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "groups",
+        "agents",
+        "controllers"
+      ],
+      "properties": {
+        "groups": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "audit_lead",
+            "recon",
+            "sast",
+            "campaign_planning",
+            "intrusion",
+            "synthesis",
+            "final_verification",
+            "reproduction"
+          ],
+          "properties": {
+            "audit_lead": {
+              "type": "string",
+              "pattern": "^[^/\\s]+/[^\\s]+:(off|minimal|low|medium|high|xhigh|max|auto)$"
+            },
+            "recon": {
+              "type": "string",
+              "pattern": "^[^/\\s]+/[^\\s]+:(off|minimal|low|medium|high|xhigh|max|auto)$"
+            },
+            "sast": {
+              "type": "string",
+              "pattern": "^[^/\\s]+/[^\\s]+:(off|minimal|low|medium|high|xhigh|max|auto)$"
+            },
+            "campaign_planning": {
+              "type": "string",
+              "pattern": "^[^/\\s]+/[^\\s]+:(off|minimal|low|medium|high|xhigh|max|auto)$"
+            },
+            "intrusion": {
+              "type": "string",
+              "pattern": "^[^/\\s]+/[^\\s]+:(off|minimal|low|medium|high|xhigh|max|auto)$"
+            },
+            "synthesis": {
+              "type": "string",
+              "pattern": "^[^/\\s]+/[^\\s]+:(off|minimal|low|medium|high|xhigh|max|auto)$"
+            },
+            "final_verification": {
+              "type": "string",
+              "pattern": "^[^/\\s]+/[^\\s]+:(off|minimal|low|medium|high|xhigh|max|auto)$"
+            },
+            "reproduction": {
+              "type": "string",
+              "pattern": "^[^/\\s]+/[^\\s]+:(off|minimal|low|medium|high|xhigh|max|auto)$"
+            }
+          }
+        },
+        "agents": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "vulnops-recon",
+            "vulnops-recon-overview",
+            "vulnops-recon-trust",
+            "vulnops-recon-inputs",
+            "vulnops-threat-hunter",
+            "vulnops-threatmodel",
+            "vulnops-deepdive-chunk",
+            "vulnops-verify-one",
+            "vulnops-campaign-planning",
+            "vulnops-intrusion",
+            "vulnops-intrusion-campaign",
+            "vulnops-synthesis",
+            "vulnops-final-verification",
+            "vulnops-independent-verify-one",
+            "vulnops-reproduce-one"
+          ],
+          "properties": {
+            "vulnops-recon": {
+              "type": "string",
+              "pattern": "^[^/\\s]+/[^\\s]+:(off|minimal|low|medium|high|xhigh|max|auto)$"
+            },
+            "vulnops-recon-overview": {
+              "type": "string",
+              "pattern": "^[^/\\s]+/[^\\s]+:(off|minimal|low|medium|high|xhigh|max|auto)$"
+            },
+            "vulnops-recon-trust": {
+              "type": "string",
+              "pattern": "^[^/\\s]+/[^\\s]+:(off|minimal|low|medium|high|xhigh|max|auto)$"
+            },
+            "vulnops-recon-inputs": {
+              "type": "string",
+              "pattern": "^[^/\\s]+/[^\\s]+:(off|minimal|low|medium|high|xhigh|max|auto)$"
+            },
+            "vulnops-threat-hunter": {
+              "type": "string",
+              "pattern": "^[^/\\s]+/[^\\s]+:(off|minimal|low|medium|high|xhigh|max|auto)$"
+            },
+            "vulnops-threatmodel": {
+              "type": "string",
+              "pattern": "^[^/\\s]+/[^\\s]+:(off|minimal|low|medium|high|xhigh|max|auto)$"
+            },
+            "vulnops-deepdive-chunk": {
+              "type": "string",
+              "pattern": "^[^/\\s]+/[^\\s]+:(off|minimal|low|medium|high|xhigh|max|auto)$"
+            },
+            "vulnops-verify-one": {
+              "type": "string",
+              "pattern": "^[^/\\s]+/[^\\s]+:(off|minimal|low|medium|high|xhigh|max|auto)$"
+            },
+            "vulnops-campaign-planning": {
+              "type": "string",
+              "pattern": "^[^/\\s]+/[^\\s]+:(off|minimal|low|medium|high|xhigh|max|auto)$"
+            },
+            "vulnops-intrusion": {
+              "type": "string",
+              "pattern": "^[^/\\s]+/[^\\s]+:(off|minimal|low|medium|high|xhigh|max|auto)$"
+            },
+            "vulnops-intrusion-campaign": {
+              "type": "string",
+              "pattern": "^[^/\\s]+/[^\\s]+:(off|minimal|low|medium|high|xhigh|max|auto)$"
+            },
+            "vulnops-gap-exploration": {"$ref": "#/$defs/advantageSelector"},
+            "vulnops-gap-investigator": {"$ref": "#/$defs/advantageSelector"},
+            "vulnops-synthesis": {
+              "type": "string",
+              "pattern": "^[^/\\s]+/[^\\s]+:(off|minimal|low|medium|high|xhigh|max|auto)$"
+            },
+            "vulnops-final-verification": {
+              "type": "string",
+              "pattern": "^[^/\\s]+/[^\\s]+:(off|minimal|low|medium|high|xhigh|max|auto)$"
+            },
+            "vulnops-independent-verify-one": {
+              "type": "string",
+              "pattern": "^[^/\\s]+/[^\\s]+:(off|minimal|low|medium|high|xhigh|max|auto)$"
+            },
+            "vulnops-reproduce-one": {
+              "type": "string",
+              "pattern": "^[^/\\s]+/[^\\s]+:(off|minimal|low|medium|high|xhigh|max|auto)$"
+            }
+          }
+        },
+        "controllers": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "audit"
+          ],
+          "properties": {
+            "audit": {
+              "type": "string",
+              "pattern": "^[^/\\s]+/[^\\s]+:(off|minimal|low|medium|high|xhigh|max|auto)$"
+            }
+          }
+        }
+      }
+    },
+    "advantageSelector": {
+      "type": "string",
+      "pattern": "^[^/\\s]+/[^\\s]+:(off|minimal|low|medium|high|xhigh|max|auto)$"
+    },
+    "advantage": {
+      "type": "object", "additionalProperties": false,
+      "required": ["groups", "agents", "controllers"],
+      "properties": {
+        "groups": {
+          "type": "object", "additionalProperties": false,
+          "required": ["advantage_lead", "advantage", "advantage_verification", "reproduction"],
+          "properties": {
+            "advantage_lead": {"$ref": "#/$defs/advantageSelector"},
+            "advantage": {"$ref": "#/$defs/advantageSelector"},
+            "advantage_verification": {"$ref": "#/$defs/advantageSelector"},
+            "reproduction": {"$ref": "#/$defs/advantageSelector"}
+          }
+        },
+        "agents": {
+          "type": "object", "additionalProperties": false,
+          "required": ["vulnops-advantage-synthesis", "vulnops-advantage-planning", "vulnops-advantage-investigation", "vulnops-advantage-investigator", "vulnops-advantage-final-verification", "vulnops-advantage-verify-one", "vulnops-reproduce-one"],
+          "properties": {
+            "vulnops-advantage-synthesis": {"$ref": "#/$defs/advantageSelector"},
+            "vulnops-advantage-planning": {"$ref": "#/$defs/advantageSelector"},
+            "vulnops-advantage-investigation": {"$ref": "#/$defs/advantageSelector"},
+            "vulnops-advantage-investigator": {"$ref": "#/$defs/advantageSelector"},
+            "vulnops-advantage-gap-exploration": {"$ref": "#/$defs/advantageSelector"},
+            "vulnops-advantage-gap-investigator": {"$ref": "#/$defs/advantageSelector"},
+            "vulnops-advantage-final-verification": {"$ref": "#/$defs/advantageSelector"},
+            "vulnops-advantage-verify-one": {"$ref": "#/$defs/advantageSelector"},
+            "vulnops-reproduce-one": {"$ref": "#/$defs/advantageSelector"}
+          }
+        },
+        "controllers": {
+          "type": "object", "additionalProperties": false,
+          "required": ["advantage"],
+          "properties": {"advantage": {"$ref": "#/$defs/advantageSelector"}}
+        }
+      }
+    },
+    "remediation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "groups",
+        "agents",
+        "controllers"
+      ],
+      "properties": {
+        "groups": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "remediation"
+          ],
+          "properties": {
+            "remediation": {
+              "type": "string",
+              "pattern": "^[^/\\s]+/[^\\s]+:(off|minimal|low|medium|high|xhigh|max|auto)$"
+            }
+          }
+        },
+        "agents": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "vulnops-remediation",
+            "vulnops-remediate-one"
+          ],
+          "properties": {
+            "vulnops-remediation": {
+              "type": "string",
+              "pattern": "^[^/\\s]+/[^\\s]+:(off|minimal|low|medium|high|xhigh|max|auto)$"
+            },
+            "vulnops-remediate-one": {
+              "type": "string",
+              "pattern": "^[^/\\s]+/[^\\s]+:(off|minimal|low|medium|high|xhigh|max|auto)$"
+            }
+          }
+        },
+        "controllers": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "remediation"
+          ],
+          "properties": {
+            "remediation": {
+              "type": "string",
+              "pattern": "^[^/\\s]+/[^\\s]+:(off|minimal|low|medium|high|xhigh|max|auto)$"
+            }
+          }
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,37 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Completed report evidence identity",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["execution_kind", "repository", "repositories", "model_routing", "producer_routes"],
+  "properties": {
+    "execution_kind": {"enum": ["audit", "advantage"]},
+    "repository": {"type": "string", "minLength": 1},
+    "repositories": {"type": "array", "items": {"type": "object"}},
+    "model_routing": {"type": "object"},
+    "producer_routes": {"type": "object", "additionalProperties": {"type": "object"}},
+    "target_fingerprint": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "markdown_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "published_at": {"type": "string", "minLength": 1},
+    "publication_method": {"enum": ["retained_evidence"]},
+    "retained_evidence": {"type": "object", "additionalProperties": false,
+      "required": ["ref", "sha256"], "properties": {
+        "ref": {"const": "report/publication-receipt.json"},
+        "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+      }},
+    "mode": {"enum": ["standard", "deep", "diff", "actions"]},
+    "options": {"type": "object"},
+    "baseline": {"type": "object"},
+    "action_source": {"type": ["object", "null"]},
+    "patch_binding": {"type": ["object", "null"]},
+    "source": {"type": "object", "additionalProperties": false, "properties": {
+      "source_run_id": {"type": "string"}, "source_scan": {"type": "string"},
+      "source_repository": {"type": "string"}, "finding_source": {"type": ["object", "null"]}
+    }},
+    "gap_exploration": {"type": "object", "additionalProperties": false,
+      "required": ["ref", "sha256"], "properties": {
+        "ref": {"const": "gap-exploration/results.json"},
+        "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+      }}
+  }
+}

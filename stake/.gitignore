@@ -1,0 +1,14 @@
+node_modules/
+dist/
+dist-server/
+dist-browser/
+coverage/
+test-results/
+test-results-browser/
+playwright-report/
+__pycache__/
+*.pyc
+.DS_Store
+
+# Local deployment binding; excluded from the public product repository.
+/.openai/

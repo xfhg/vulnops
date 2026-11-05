@@ -1,0 +1,643 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "run_id",
+    "execution_kind",
+    "status",
+    "reason",
+    "provenance",
+    "objectives",
+    "questions",
+    "passes",
+    "assignments"
+  ],
+  "properties": {
+    "evidence_quality": {"$ref": "evidence-accounting.schema.json#/$defs/quality"},
+    "schema_version": {
+      "const": "2.0"
+    },
+    "run_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 512
+    },
+    "execution_kind": {
+      "const": "advantage"
+    },
+    "status": {
+      "enum": [
+        "planned",
+        "empty",
+        "skipped"
+      ]
+    },
+    "reason": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 8000
+    },
+    "provenance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "execution_id",
+        "actor",
+        "selector",
+        "artifact_ref"
+      ],
+      "properties": {
+        "execution_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        },
+        "actor": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        },
+        "selector": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        },
+        "artifact_ref": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        }
+      }
+    },
+    "baseline_catalog_sha256": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "objectives": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "owner",
+          "local_key",
+          "parent",
+          "starting_actor",
+          "controlled_material",
+          "resource_scope",
+          "desired_effect",
+          "success_condition",
+          "evidence_refs"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$"
+          },
+          "owner": {
+            "const": "planning/plan.json"
+          },
+          "local_key": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 512
+          },
+          "parent": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "execution_id",
+                  "artifact_ref"
+                ],
+                "properties": {
+                  "execution_id": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 512
+                  },
+                  "artifact_ref": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 512
+                  },
+                  "sha256": {
+                    "type": "string",
+                    "pattern": "^[a-f0-9]{64}$"
+                  }
+                }
+              }
+            ]
+          },
+          "starting_actor": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 8000
+          },
+          "controlled_material": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 8000
+          },
+          "resource_scope": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 8000
+          },
+          "desired_effect": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 8000
+          },
+          "success_condition": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 8000
+          },
+          "evidence_refs": {
+            "type": "array",
+            "items": {
+              "oneOf": [
+                {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 512
+                },
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "execution_id",
+                    "artifact_ref"
+                  ],
+                  "properties": {
+                    "execution_id": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 512
+                    },
+                    "artifact_ref": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 512
+                    },
+                    "sha256": {
+                      "type": "string",
+                      "pattern": "^[a-f0-9]{64}$"
+                    }
+                  }
+                }
+              ]
+            },
+            "maxItems": 128,
+            "minItems": 0
+          }
+        }
+      },
+      "maxItems": 2048,
+      "minItems": 0
+    },
+    "questions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "owner",
+          "local_key",
+          "objective_id",
+          "security_question",
+          "route",
+          "proof_obligation",
+          "novelty_reason",
+          "evidence_refs",
+          "baseline_records",
+          "counterevidence",
+          "prior_disposition",
+          "changed_hypothesis",
+          "evidence_delta",
+          "disposition",
+          "reason",
+          "stop_conditions"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$"
+          },
+          "owner": {
+            "const": "planning/plan.json"
+          },
+          "local_key": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 512
+          },
+          "objective_id": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$"
+          },
+          "security_question": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 8000
+          },
+          "route": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 8000
+          },
+          "proof_obligation": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 8000
+          },
+          "novelty_reason": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 8000
+          },
+          "evidence_refs": {
+            "type": "array",
+            "items": {
+              "oneOf": [
+                {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 512
+                },
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "execution_id",
+                    "artifact_ref"
+                  ],
+                  "properties": {
+                    "execution_id": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 512
+                    },
+                    "artifact_ref": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 512
+                    },
+                    "sha256": {
+                      "type": "string",
+                      "pattern": "^[a-f0-9]{64}$"
+                    }
+                  }
+                }
+              ]
+            },
+            "maxItems": 128,
+            "minItems": 0
+          },
+          "baseline_records": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "execution_id",
+                "artifact_ref"
+              ],
+              "properties": {
+                "execution_id": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 512
+                },
+                "artifact_ref": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 512
+                },
+                "sha256": {
+                  "type": "string",
+                  "pattern": "^[a-f0-9]{64}$"
+                }
+              }
+            },
+            "maxItems": 128,
+            "minItems": 0
+          },
+          "counterevidence": {
+            "type": "array",
+            "items": {
+              "oneOf": [
+                {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 512
+                },
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "execution_id",
+                    "artifact_ref"
+                  ],
+                  "properties": {
+                    "execution_id": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 512
+                    },
+                    "artifact_ref": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 512
+                    },
+                    "sha256": {
+                      "type": "string",
+                      "pattern": "^[a-f0-9]{64}$"
+                    }
+                  }
+                }
+              ]
+            },
+            "maxItems": 128,
+            "minItems": 0
+          },
+          "prior_disposition": {
+            "enum": [
+              "none",
+              "accepted",
+              "rejected",
+              "deferred"
+            ]
+          },
+          "changed_hypothesis": {
+            "type": "string",
+            "maxLength": 8000
+          },
+          "evidence_delta": {
+            "type": "array",
+            "items": {
+              "oneOf": [
+                {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 512
+                },
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "execution_id",
+                    "artifact_ref"
+                  ],
+                  "properties": {
+                    "execution_id": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 512
+                    },
+                    "artifact_ref": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 512
+                    },
+                    "sha256": {
+                      "type": "string",
+                      "pattern": "^[a-f0-9]{64}$"
+                    }
+                  }
+                }
+              ]
+            },
+            "maxItems": 128,
+            "minItems": 0
+          },
+          "disposition": {
+            "enum": [
+              "admitted",
+              "redundant",
+              "budget_deferred",
+              "externally_blocked",
+              "not_selected"
+            ]
+          },
+          "reason": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 8000
+          },
+          "stop_conditions": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 8000
+            },
+            "maxItems": 32,
+            "minItems": 1
+          }
+        }
+      },
+      "maxItems": 2048,
+      "minItems": 0
+    },
+    "passes": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "fresh_context"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$"
+          },
+          "fresh_context": {
+            "const": true
+          }
+        }
+      },
+      "maxItems": 16,
+      "minItems": 0
+    },
+    "assignments": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "task_id",
+          "pass_id",
+          "question_ids",
+          "priority",
+          "allocation_reason",
+          "initial_access",
+          "known_information",
+          "available_capabilities",
+          "absent_privileges",
+          "source_view"
+        ],
+        "properties": {
+          "graph_questions": {
+            "type": "array",
+            "maxItems": 32,
+            "items": {
+              "$ref": "campaign-plan.schema.json#/$defs/campaign/properties/graph_questions/items"
+            }
+          },
+          "task_id": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$"
+          },
+          "pass_id": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$"
+          },
+          "question_ids": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$"
+            },
+            "maxItems": 64,
+            "minItems": 1
+          },
+          "priority": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 100
+          },
+          "allocation_reason": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 8000
+          },
+          "initial_access": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 8000
+          },
+          "known_information": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 8000
+            },
+            "maxItems": 64,
+            "minItems": 0
+          },
+          "available_capabilities": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "capability",
+                "status",
+                "conditions",
+                "evidence_refs"
+              ],
+              "properties": {
+                "capability": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 8000
+                },
+                "status": {
+                  "enum": [
+                    "source_established",
+                    "conditional",
+                    "observed_contained"
+                  ]
+                },
+                "conditions": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 8000
+                  },
+                  "maxItems": 32,
+                  "minItems": 0
+                },
+                "evidence_refs": {
+                  "type": "array",
+                  "items": {
+                    "oneOf": [
+                      {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 512
+                      },
+                      {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                          "execution_id",
+                          "artifact_ref"
+                        ],
+                        "properties": {
+                          "execution_id": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 512
+                          },
+                          "artifact_ref": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 512
+                          },
+                          "sha256": {
+                            "type": "string",
+                            "pattern": "^[a-f0-9]{64}$"
+                          }
+                        }
+                      }
+                    ]
+                  },
+                  "maxItems": 128,
+                  "minItems": 1
+                }
+              }
+            },
+            "maxItems": 64,
+            "minItems": 0
+          },
+          "absent_privileges": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 8000
+            },
+            "maxItems": 64,
+            "minItems": 0
+          },
+          "source_view": {
+            "enum": [
+              "base",
+              "derived"
+            ]
+          }
+        }
+      },
+      "maxItems": 512,
+      "minItems": 0
+    },
+    "assessment_context": {
+      "$ref": "evidence-accounting.schema.json#/$defs/assessmentContext"
+    }
+  }
+}

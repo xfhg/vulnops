@@ -1,0 +1,125 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "VulnOps V5 Sanitized Report",
+  "type": "object", "additionalProperties": false,
+  "required": ["schema_version", "run_id", "repository", "commit", "repositories", "date", "model_routing", "verifier_model", "model_diversity", "diversity_counts", "summary", "execution_environment", "findings", "rejections", "non_promoted", "hardening_notes", "positive_patterns", "coverage", "limitations", "scans", "integrity", "assessment", "outcome_assessment", "investigation_accounting", "evidence_quality", "prior_run_reconciliation", "objective_assessments"],
+  "properties": {
+    "publication": {"$ref": "publication-metadata.schema.json"},
+    "schema_version": {"const": "2.0"}, "run_id": {"type": "string", "minLength": 1}, "repository": {"type": "string", "minLength": 1}, "commit": {"type": "string", "minLength": 1}, "date": {"type": "string", "minLength": 1},
+    "rejections": {"type": "array", "items": {"type": "object"}},
+    "non_promoted": {"type": "array", "items": {"type": "object"}},
+    "unreviewed": {"type": "array", "items": {"$ref": "evidence-accounting.schema.json#/$defs/unreviewed"}},
+    "gap_exploration": {"$ref": "evidence-accounting.schema.json#/$defs/gapExploration"},
+    "objective_assessments": {"$ref":"synthesis-findings.schema.json#/properties/objective_assessments"},
+    "model_routing": {"anyOf": [{"$ref": "model-routing.schema.json#/$defs/audit"}, {"type": "null"}]},
+    "verifier_model": {"$ref": "synthesis-findings.schema.json#/$defs/modelSelector"},
+    "model_diversity": {"type": "boolean"},
+    "diversity_counts": {"$ref": "final-findings.schema.json#/$defs/diversityCounts"},
+    "repositories": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["name", "path", "remote_url", "commit"],
+        "properties": {
+          "name": {"type": "string", "minLength": 1},
+          "path": {"type": "string", "minLength": 1},
+          "remote_url": {"type": "string", "minLength": 1},
+          "commit": {"type": "string", "minLength": 1}
+        }
+      }
+    },
+    "summary": {"type": "object", "required": ["evidence_limited", "historical_planning_deferrals", "unresolved_paths"], "properties": {
+      "evidence_limited": {"type": "integer", "minimum": 0, "description": "Final local evidence-limited claims only; may overlap unresolved paths."},
+      "historical_planning_deferrals": {"type": ["integer", "null"], "minimum": 0, "description": "Historical planning records not separately scheduled during planning; null when planning explanation is unavailable."},
+      "unresolved_paths": {"type": ["integer", "null"], "minimum": 0}
+    }},
+    "evidence_quality": {
+      "type": "object", "additionalProperties": false,
+      "required": ["diagnostics", "total", "truncated", "affected_item_count", "canonical_refs", "phase_totals"],
+      "properties": {
+        "diagnostics": {"type": "array", "maxItems": 200, "items": {"$ref": "evidence-accounting.schema.json#/$defs/diagnostic"}},
+        "total": {"type": ["integer", "null"], "minimum": 0}, "truncated": {"type": ["integer", "null"], "minimum": 0},
+        "affected_item_count": {"type": ["integer", "null"], "minimum": 0},
+        "canonical_refs": {"type": "array", "items": {"type": "string"}},
+        "phase_totals": {"type": "object", "additionalProperties": {"type": "object", "additionalProperties": false,
+          "required": ["total", "truncated", "affected_item_count"], "properties": {
+            "total": {"type": "integer", "minimum": 0}, "truncated": {"type": "integer", "minimum": 0},
+            "affected_item_count": {"type": "integer", "minimum": 0}}}}
+      }
+    },
+    "integrity": {"type": "object", "additionalProperties": false, "required": ["status", "headline"], "properties": {"status": {"enum": ["phase_artifacts_complete", "incomplete"]}, "headline": {"type": "string", "minLength": 1}}},
+    "assessment": {"$ref": "evidence-accounting.schema.json#/$defs/reportAssessment"},
+    "outcome_assessment": {"type": "object", "additionalProperties": false, "required": ["status", "headline"], "properties": {"status": {"enum": ["substantially_unresolved", "resolved_within_recorded_scope"]}, "headline": {"type": "string", "minLength": 1}}},
+    "investigation_accounting": {"type": "object", "additionalProperties": false, "required": ["evidence_limited", "historical_planning_deferrals", "established_capabilities", "resolved_investigations", "unresolved_paths", "unscheduled_work", "denominators", "actor_to_asset_paths", "experiments", "graph_navigation", "counts", "truncated", "canonical_refs"], "properties": {
+      "evidence_limited": {"type": "array", "maxItems": 200, "description": "Final local limitations, excluding planning history. Categories can overlap and must not be summed as unique vulnerabilities.", "items": {"type": "object"}},
+      "historical_planning_deferrals": {"type": "array", "maxItems": 200, "description": "Historical work not separately scheduled during planning. Retained without inferring current failure or later resolution.", "items": {"type": "object", "required": ["evidence_id", "status", "evidence_ref", "source_ref"], "properties": {
+        "evidence_id": {"type": "string"}, "status": {"const": "evidence_limited"},
+        "evidence_ref": {"const": "campaign-planning/campaign-plan.json"}, "source_ref": {"type": "string"}
+      }}},
+      "established_capabilities": {"type": "array", "maxItems": 200, "items": {"type": "object"}}, "resolved_investigations": {"type": "array", "maxItems": 200, "items": {"type": "object"}}, "unresolved_paths": {"type": "array", "maxItems": 200, "items": {"type": "object"}}, "unscheduled_work": {"type": "array", "maxItems": 200, "items": {"type": "object"}}, "denominators": {"type": "object"}, "actor_to_asset_paths": {"type": "array", "maxItems": 200, "items": {"type": "object"}}, "experiments": {"type": "array", "maxItems": 200, "items": {"type": "object"}}, "graph_navigation": {"type": "array", "maxItems": 200, "items": {"type": "object"}},
+      "counts": {"type": "object", "required": ["evidence_limited", "historical_planning_deferrals", "unresolved_paths"], "properties": {
+        "historical_planning_deferrals": {"type": ["integer", "null"], "minimum": 0},
+        "established_capabilities": {"type": ["integer", "null"], "minimum": 0},
+        "resolved_investigations": {"type": ["integer", "null"], "minimum": 0},
+        "unresolved_paths": {"type": ["integer", "null"], "minimum": 0},
+        "unscheduled_work": {"type": ["integer", "null"], "minimum": 0},
+        "actor_to_asset_paths": {"type": ["integer", "null"], "minimum": 0},
+        "experiments": {"type": ["integer", "null"], "minimum": 0},
+        "graph_navigation": {"type": ["integer", "null"], "minimum": 0},
+        "coverage_cells": {"type": ["integer", "null"], "minimum": 0},
+        "coverage_tasks": {"type": ["integer", "null"], "minimum": 0}
+      }, "additionalProperties": {"type": "integer", "minimum": 0}},
+      "truncated": {"type": "object", "required": ["evidence_limited", "historical_planning_deferrals", "unresolved_paths"], "properties": {
+        "historical_planning_deferrals": {"type": ["integer", "null"], "minimum": 0},
+        "established_capabilities": {"type": ["integer", "null"], "minimum": 0},
+        "resolved_investigations": {"type": ["integer", "null"], "minimum": 0},
+        "unresolved_paths": {"type": ["integer", "null"], "minimum": 0},
+        "unscheduled_work": {"type": ["integer", "null"], "minimum": 0},
+        "actor_to_asset_paths": {"type": ["integer", "null"], "minimum": 0},
+        "experiments": {"type": ["integer", "null"], "minimum": 0},
+        "graph_navigation": {"type": ["integer", "null"], "minimum": 0},
+        "coverage_cells": {"type": ["integer", "null"], "minimum": 0},
+        "coverage_tasks": {"type": ["integer", "null"], "minimum": 0}
+      }, "additionalProperties": {"type": "integer", "minimum": 0}},
+      "canonical_refs": {"type": "array", "items": {"type": "string"}}
+    }},
+    "prior_run_reconciliation": {"type": "array", "items": {"$ref": "synthesis-findings.schema.json#/$defs/reconciliation"}},
+    "execution_environment": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["network", "offline_package"],
+      "properties": {
+        "network": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["agent_egress", "backend", "enforced", "limitation"],
+          "properties": {
+            "agent_egress": {"enum": ["enforced", "policy_only"]},
+            "backend": {"enum": ["bubblewrap-unshare-net", "none"]},
+            "enforced": {"type": "boolean"},
+            "limitation": {"type": ["string", "null"]}
+          }
+        },
+        "offline_package": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["manifest_sha256", "platform", "release", "osv_snapshot", "osv_lock_sha256"],
+          "properties": {
+            "manifest_sha256": {"type": ["string", "null"], "pattern": "^[a-f0-9]{64}$"},
+            "platform": {"enum": ["linux_amd64", "darwin_arm64"]},
+            "release": {"type": "boolean"},
+            "osv_snapshot": {"type": "string", "minLength": 1},
+            "osv_lock_sha256": {"type": ["string", "null"], "pattern": "^[a-f0-9]{64}$"}
+          }
+        }
+      }
+    },
+    "findings": {
+      "type": "array",
+      "items": {"$ref":"final-findings.schema.json#/$defs/finding"}
+    },
+    "hardening_notes": {"type": "array"}, "positive_patterns": {"type": "array"}, "coverage": {"type": "object"}, "limitations": {"type": "array", "items": {"type": "string"}}, "scans": {"type": "object"}
+  }
+}

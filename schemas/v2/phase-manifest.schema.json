@@ -1,0 +1,13 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "VulnOps V5 Phase Manifest",
+  "type": "object", "additionalProperties": false,
+  "required": ["phase", "status", "started_at", "completed_at", "inputs", "outputs", "coverage", "tool_versions", "warnings", "errors"],
+  "properties": {
+    "attempt_id": {"type": "string", "minLength": 1},
+    "phase": {"enum": ["recon", "tool-collection", "sast", "campaign-planning", "intrusion", "gap-exploration", "synthesis", "final-verification", "report"]},
+    "status": {"enum": ["ok", "degraded", "skipped", "failed"]}, "started_at": {"type": "string", "minLength": 1}, "completed_at": {"type": "string", "minLength": 1},
+    "inputs": {"type": "array", "items": {"type": "string"}}, "outputs": {"type": "array", "items": {"type": "string"}}, "coverage": {"type": "object"},
+    "tool_versions": {"type": "object", "additionalProperties": {"type": "string"}}, "warnings": {"type": "array", "items": {"type": "string"}}, "errors": {"type": "array", "items": {"type": "string"}}
+  }
+}

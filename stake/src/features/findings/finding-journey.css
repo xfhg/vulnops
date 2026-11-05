@@ -1,0 +1,15 @@
+.finding-header-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:18px}
+.finding-journey{scroll-margin-top:12px;min-width:0}
+.finding-journey-tabs{position:sticky;top:0;z-index:12;background:var(--bg);gap:20px;padding:6px 0 0;box-shadow:0 7px 10px -10px var(--text)}
+.finding-journey-tabs>.tabs-trigger{white-space:nowrap;gap:7px;min-height:46px}
+.finding-journey-tabs>.tabs-trigger[data-state=active]{color:var(--primary-text);border-bottom-color:var(--primary)}
+.finding-journey-tabs .journey-stage{font-size:9px;color:var(--muted-foreground);font-variant-numeric:tabular-nums;padding:0;background:none}
+.finding-journey-tabs>.journey-map-tab{margin-left:auto}
+.finding-journey [data-detail-record],.finding-journey [data-repair-id]{scroll-margin-top:78px;outline-offset:5px}
+.finding-journey [data-detail-record]:focus-visible,.finding-journey [data-repair-id]:focus-visible{outline:2px solid var(--ring);border-radius:8px}
+.finding-journey .tabs-content[hidden]{display:none}
+.finding-next-step{display:flex;align-items:center;justify-content:space-between;gap:18px;margin-top:22px;padding:20px 22px;background:var(--panel);border:1px solid var(--border);border-left:3px solid var(--primary);border-radius:8px;font-size:12px}
+.finding-next-step>div{display:flex;align-items:center;gap:12px}.finding-next-step>div>svg{color:var(--primary);flex:none}.finding-next-step strong{display:block;font-size:14px}.finding-next-step small{display:block;color:var(--muted-foreground);margin-top:4px}
+.finding-check-context{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:16px;color:var(--muted-foreground);font-size:12px}
+.finding-graph-heading>div>p{margin-top:5px}
+@media(max-width:760px){.finding-journey-tabs{gap:16px}.finding-journey-tabs .journey-stage{display:none}.finding-next-step{align-items:flex-start;flex-direction:column}.finding-check-context{align-items:flex-start;flex-direction:column}.finding-journey-tabs>.journey-map-tab{margin-left:0}}

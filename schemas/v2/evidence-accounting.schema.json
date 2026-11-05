@@ -1,0 +1,159 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "VulnOps local evidence accounting",
+  "$defs": {
+    "assessmentContext": {
+      "type": "object", "additionalProperties": false, "required": ["attempt_id"],
+      "properties": {
+        "attempt_id": {"type": "string", "minLength": 1, "maxLength": 128},
+        "assessment_id": {"type": "string", "minLength": 1, "maxLength": 256}
+      }
+    },
+    "assessmentScope": {
+      "type": "object", "additionalProperties": false,
+      "required": ["assessment_id", "run_id", "attempt_id", "repositories", "source_root", "started_at", "source_view", "patch_ref", "limitations"],
+      "properties": {
+        "assessment_id": {"type": "string", "minLength": 1, "maxLength": 256},
+        "run_id": {"type": ["string", "null"]},
+        "attempt_id": {"type": ["string", "null"]},
+        "repositories": {"type": "array", "items": {"type": "object"}},
+        "source_root": {"type": ["string", "null"]},
+        "started_at": {"type": ["string", "null"]},
+        "source_view": {"enum": ["base", "derived", "base/derived", null]},
+        "patch_ref": {"type": ["string", "null"]},
+        "limitations": {"type": "array", "items": {"type": "string"}}
+      }
+    },
+    "assessmentScopes": {
+      "type": "object", "additionalProperties": {"$ref": "#/$defs/assessmentScope"}
+    },
+    "reportAssessment": {
+      "type": "object", "additionalProperties": false,
+      "required": ["scopes", "record_scopes", "publication_attempt_id", "retained", "limitations"],
+      "properties": {
+        "scopes": {"type": "array", "items": {"$ref": "#/$defs/assessmentScope"}},
+        "record_scopes": {"type": "object", "additionalProperties": {"type": "string", "minLength": 1}},
+        "publication_attempt_id": {"type": ["string", "null"]},
+        "retained": {"type": "boolean"},
+        "limitations": {"type": "array", "items": {"type": "string"}}
+      }
+    },
+    "text": {"type": "string", "minLength": 1, "maxLength": 4000},
+    "refs": {"type": "array", "uniqueItems": true, "items": {"type": "string", "minLength": 1, "maxLength": 4096}},
+    "diagnostic": {
+      "type": "object", "additionalProperties": false,
+      "required": ["code", "owner", "field", "disposition", "affected_item_ids", "count", "explanation"],
+      "properties": {
+        "code": {"enum": ["missing_file", "missing_record", "ambiguous_record", "ambiguous_namespace", "unsupported_selector", "invalid_range", "unreadable_content"]},
+        "owner": {"type": "string", "minLength": 1, "maxLength": 240},
+        "field": {"type": "string", "minLength": 1, "maxLength": 240},
+        "disposition": {"enum": ["evidence_limited", "optional"]},
+        "affected_item_ids": {"$ref": "#/$defs/refs"},
+        "count": {"type": "integer", "minimum": 1},
+        "explanation": {"type": "string", "minLength": 1, "maxLength": 1000}
+      }
+    },
+    "quality": {
+      "type": "object", "additionalProperties": false,
+      "required": ["diagnostics", "total", "truncated", "affected_item_count"],
+      "properties": {
+        "diagnostics": {"type": "array", "maxItems": 200, "items": {"$ref": "#/$defs/diagnostic"}},
+        "total": {"type": "integer", "minimum": 0},
+        "truncated": {"type": "integer", "minimum": 0},
+        "affected_item_count": {"type": "integer", "minimum": 0}
+      }
+    },
+    "inputClaim": {
+      "type": "object", "additionalProperties": false,
+      "required": ["input_ref", "disposition", "finding_ids", "reason"],
+      "properties": {
+        "input_ref": {"$ref": "#/$defs/text"},
+        "disposition": {"enum": ["eligible", "rejected", "evidence_limited", "unreviewed"]},
+        "finding_ids": {"$ref": "#/$defs/refs"}, "reason": {"$ref": "#/$defs/text"}
+      }
+    },
+    "unreviewed": {
+      "type": "object", "additionalProperties": false,
+      "required": ["id", "input_refs", "status", "reason", "missing_fact", "next_action", "task_ref"],
+      "properties": {
+        "id": {"$ref": "#/$defs/text"},
+        "input_refs": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"$ref": "#/$defs/text"}},
+        "status": {"enum": ["execution_failed", "budget_deferred", "locally_unresolved"]},
+        "reason": {"$ref": "#/$defs/text"},
+        "missing_fact": {"$ref": "#/$defs/text"},
+        "next_action": {"$ref": "#/$defs/text"},
+        "task_ref": {"$ref": "#/$defs/text"},
+        "assessment_context": {"$ref": "#/$defs/assessmentContext"}
+      }
+    },
+    "gapExploration": {
+      "type": "object", "additionalProperties": false,
+      "required": ["examined_questions", "graph_queries", "useful_navigation", "investigated_leads", "worker_attempts", "candidates", "independently_accepted", "uninvestigated_leads", "status", "limitations", "non_promoted", "independently_accepted_finding_ids"],
+      "properties": {
+        "examined_questions": {"type": "integer", "minimum": 0},
+        "graph_queries": {"type": "integer", "minimum": 0},
+        "useful_navigation": {"type": "integer", "minimum": 0},
+        "investigated_leads": {"type": "integer", "minimum": 0},
+        "worker_attempts": {"type": "integer", "minimum": 0},
+        "candidates": {"type": "integer", "minimum": 0},
+        "independently_accepted": {"type": "integer", "minimum": 0, "description": "Accepted independent findings using supplementary evidence; overlaps canonical finding totals."},
+        "independently_accepted_finding_ids": {"$ref": "#/$defs/refs"},
+        "uninvestigated_leads": {"type": "integer", "minimum": 0},
+        "status": {"enum": ["ok", "degraded", "skipped"]},
+        "limitations": {"type": "array", "items": {"$ref": "#/$defs/text"}},
+        "non_promoted": {
+          "type": "array",
+          "items": {
+            "type": "object", "additionalProperties": false,
+            "required": ["id", "objective_id", "question_id", "outcome", "reason", "missing_fact", "next_action"],
+            "properties": {
+              "id": {"$ref": "#/$defs/text"},
+              "objective_id": {"$ref": "#/$defs/text"},
+              "question_id": {"$ref": "#/$defs/text"},
+              "outcome": {"enum": ["contradicted", "locally_unresolved", "externally_blocked", "budget_deferred", "execution_failed", "not_investigated", "redundant"]},
+              "reason": {"$ref": "#/$defs/text"},
+              "missing_fact": {"type": "string", "maxLength": 8000},
+              "next_action": {"type": "string", "maxLength": 8000}
+            }
+          }
+        }
+      }
+    },
+    "nonPromoted": {
+      "type": "object", "additionalProperties": false,
+      "required": ["id", "input_refs", "disposition", "reason", "risk_context", "missing_fact", "next_action", "review", "deferral"],
+      "properties": {
+        "assessment_context": {"$ref": "#/$defs/assessmentContext"},
+        "correction_repair": {"type": "object", "additionalProperties": false,
+          "required": ["attempted", "diagnostics"], "properties": {
+            "attempted": {"type": "string", "minLength": 1, "maxLength": 4000},
+            "diagnostics": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}}}},
+        "id": {"$ref": "#/$defs/text"}, "input_refs": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"$ref": "#/$defs/text"}},
+        "disposition": {"enum": ["rejected", "evidence_limited"]},
+        "reason": {"$ref": "#/$defs/text"}, "risk_context": {"$ref": "#/$defs/text"},
+        "missing_fact": {"type": "string", "maxLength": 4000}, "next_action": {"type": "string", "maxLength": 4000},
+        "diagnostics": {"type": "array", "items": {"$ref": "#/$defs/diagnostic"}},
+        "review": {"oneOf": [{"type": "null"}, {"type": "object", "additionalProperties": false,
+          "required": ["actor", "selector", "action", "result", "evidence_refs"],
+          "properties": {"actor": {"$ref": "#/$defs/text"}, "selector": {"$ref": "synthesis-findings.schema.json#/$defs/modelSelector"},
+            "action": {"$ref": "#/$defs/text"}, "result": {"$ref": "#/$defs/text"}, "evidence_refs": {"$ref": "#/$defs/refs"}}}]},
+        "deferral": {"oneOf": [{"type": "null"}, {"type": "object", "additionalProperties": false,
+          "required": ["kind", "reason"], "properties": {"kind": {"enum": ["budget", "priority", "external"]},
+            "reason": {"type": "string", "minLength": 20, "maxLength": 4000}}}]}
+      }
+    },
+    "optionalSupport": {
+      "type": "object", "additionalProperties": false,
+      "required": ["reference", "obligation", "independent_support", "rationale"],
+      "properties": {"reference": {"$ref": "#/$defs/text"}, "obligation": {"$ref": "#/$defs/text"},
+        "independent_support": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"$ref": "#/$defs/text"}},
+        "rationale": {"$ref": "#/$defs/text"}}
+    },
+    "optionalReview": {
+      "type": "object", "additionalProperties": false,
+      "required": ["reference", "obligation", "sufficient", "evidence_refs", "reason"],
+      "properties": {"reference": {"$ref": "#/$defs/text"}, "obligation": {"$ref": "#/$defs/text"},
+        "sufficient": {"type": "boolean"}, "evidence_refs": {"$ref": "#/$defs/refs"}, "reason": {"$ref": "#/$defs/text"}}
+    }
+  }
+}

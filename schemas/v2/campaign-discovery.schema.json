@@ -1,0 +1,81 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Bounded campaign relationship discovery",
+  "type": "object", "additionalProperties": false,
+  "required": ["schema_version", "run_id", "depth", "status", "budget", "attack_objectives", "investigation_questions", "question_inputs", "scanner_triage", "questions", "relationships", "graph_answers", "graph_evidence_refs", "graph_limitations", "counters"],
+  "properties": {
+    "assessment_context": {"$ref": "evidence-accounting.schema.json#/$defs/assessmentContext"},
+    "attack_objectives": {"type": "array", "items": {"$ref": "objective.schema.json#/$defs/objective"}},
+    "investigation_questions": {"type": "array", "items": {"$ref": "objective.schema.json#/$defs/question"}},
+    "question_inputs": {"type": "array", "items": {"type": "object", "additionalProperties": false,
+      "required": ["objective_id", "question_id", "evidence_ids", "primitive_ids", "relationship_ids", "lane", "priority_band", "reason"],
+      "properties": {
+        "objective_id": {"type": "string", "pattern": "^OBJ-[A-F0-9]{12}$"},
+        "question_id": {"type": "string", "pattern": "^Q-[A-F0-9]{12}$"},
+        "evidence_ids": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "string", "pattern": "^E-[A-F0-9]{12}$"}},
+        "primitive_ids": {"type": "array", "uniqueItems": true, "items": {"type": "string", "pattern": "^P-[A-F0-9]{12}$"}},
+        "relationship_ids": {"type": "array", "uniqueItems": true, "items": {"type": "string", "pattern": "^REL-[A-F0-9]{12}$"}},
+        "lane": {"enum": ["primitive_led", "gap_driven", "direct_validation"]},
+        "priority_band": {"enum": ["proof_obligation", "continuation", "source_hypothesis", "scanner_triage", "exploratory"]},
+        "reason": {"$ref": "#/$defs/text"}
+      }
+    }},
+    "evidence_quality": {"$ref": "evidence-accounting.schema.json#/$defs/quality"},
+    "schema_version": {"const": "2.0"}, "run_id": {"type": "string", "minLength": 1},
+    "depth": {"enum": ["quick", "balanced", "full"]}, "status": {"enum": ["prepared", "sealed"]},
+    "evidence_sha256": {},
+    "budget": {"type": "object", "additionalProperties": false, "required": ["questions", "query_seconds", "pairs"], "properties": {"questions": {"type": "integer", "minimum": 0, "maximum": 12}, "query_seconds": {"type": "integer", "minimum": 0, "maximum": 360}, "pairs": {"type": "integer", "minimum": 0, "maximum": 128}}},
+    "scanner_triage": {"type": "array", "items": {"type": "object", "additionalProperties": {"$ref": "exploration-context.schema.json#/$defs/value"}, "maxProperties": 64, "propertyNames": {"type": "string", "maxLength": 128}, "required": ["evidence_id", "status", "reason", "evidence_refs", "missing_fact"], "properties": {
+      "evidence_id": {"type": "string", "pattern": "^E-[A-F0-9]{12}$"}, "status": {"enum": ["uninvestigated", "applicable", "contradicted", "deferred"]},
+      "reason": {"$ref": "#/$defs/text"}, "missing_fact": {"$ref": "#/$defs/text"}, "evidence_refs": {"$ref": "#/$defs/ids"}
+    }}},
+    "counters": {"type": "object", "additionalProperties": false, "required": ["questions_used", "questions_deferred", "pairs_considered", "pairs_deferred", "query_seconds_used", "questions_exhausted", "pairs_exhausted", "time_exhausted"], "properties": {
+      "questions_used": {"type": "integer", "minimum": 0, "maximum": 12}, "questions_deferred": {"type": "integer", "minimum": 0},
+      "pairs_considered": {"type": "integer", "minimum": 0, "maximum": 128}, "pairs_deferred": {"type": "integer", "minimum": 0},
+      "query_seconds_used": {"type": "number", "minimum": 0, "maximum": 360},
+      "questions_exhausted": {"type": "integer", "minimum": 0, "maximum": 1}, "pairs_exhausted": {"type": "integer", "minimum": 0, "maximum": 1}, "time_exhausted": {"type": "integer", "minimum": 0, "maximum": 1}
+    }},
+    "questions": {"type": "array", "maxItems": 12, "items": {"$ref": "#/$defs/question"}},
+    "relationships": {"type": "array", "maxItems": 128, "items": {"$ref": "#/$defs/relationship"}},
+    "graph_answers": {"type": "array", "maxItems": 12, "items": {"$ref": "#/$defs/answer"}},
+    "graph_evidence_refs": {"type": "array", "maxItems": 12, "uniqueItems": true, "items": {"$ref": "#/$defs/text"}},
+    "graph_limitations": {"type": "array", "maxItems": 16, "items": {"$ref": "#/$defs/text"}}
+  },
+  "$defs": {
+    "text": {"type": "string", "minLength": 1, "maxLength": 1000},
+    "ids": {"type": "array", "uniqueItems": true, "maxItems": 128, "items": {"type": "string", "minLength": 1, "maxLength": 128}},
+    "location": {"type": "object", "additionalProperties": false, "required": ["file", "start_line", "end_line"], "properties": {"file": {"type": "string", "minLength": 1, "maxLength": 512}, "start_line": {"type": "integer", "minimum": 1}, "end_line": {"type": "integer", "minimum": 1}}},
+    "question": {"type": "object", "additionalProperties": false, "required": ["id", "type", "subject", "reason", "evidence_ids", "disposition", "reason_closed"], "properties": {
+      "evidence_quality": {"enum": ["resolved", "evidence_limited"]},
+      "id": {"type": "string", "pattern": "^DQ-[A-F0-9]{12}$"}, "type": {"enum": ["query", "callers", "callees", "impact", "affected"]},
+      "subject": {"type": "string", "minLength": 1, "maxLength": 512}, "file": {"type": "string", "minLength": 1, "maxLength": 512}, "reason": {"$ref": "#/$defs/text"},
+      "evidence_ids": {"type": "array", "minItems": 1, "maxItems": 1, "items": {"type": "string", "pattern": "^E-[A-F0-9]{12}$"}},
+      "disposition": {"enum": ["pending", "source-supported", "graph-lead-only", "contradicted", "inconclusive", "depth-limited", "skipped", "unavailable"]},
+      "reason_closed": {"type": "string", "maxLength": 1000}
+    }},
+    "contract": {"type": "object", "additionalProperties": false, "properties": {"route": {"$ref": "#/$defs/text"}, "method": {"$ref": "#/$defs/text"}, "endpoint": {"$ref": "#/$defs/text"}, "topic": {"$ref": "#/$defs/text"}, "broker": {"$ref": "#/$defs/text"}, "namespace": {"$ref": "#/$defs/text"}, "key": {"$ref": "#/$defs/text"}, "path": {"$ref": "#/$defs/text"}, "format": {"$ref": "#/$defs/text"}}},
+    "handoff": {"type": ["object", "null"], "additionalProperties": false, "required": ["type", "producer_contract", "consumer_contract", "producer_deployment", "consumer_deployment", "producer_location", "consumer_location"], "properties": {
+      "type": {"enum": ["http", "queue", "storage", "artifact"]}, "producer_contract": {"$ref": "#/$defs/contract"}, "consumer_contract": {"$ref": "#/$defs/contract"},
+      "mapping_evidence": {"type": "object", "additionalProperties": false, "required": ["binding", "actor_control", "resource_scope", "authority", "transformations", "guards", "compatible_conditions", "source_locations"], "properties": {
+        "binding": {"$ref": "#/$defs/text"}, "actor_control": {"$ref": "#/$defs/text"}, "resource_scope": {"$ref": "#/$defs/text"},
+        "authority": {"$ref": "#/$defs/text"}, "transformations": {"$ref": "#/$defs/text"}, "guards": {"$ref": "#/$defs/text"}, "compatible_conditions": {"$ref": "#/$defs/text"},
+        "source_locations": {"type": "array", "minItems": 1, "maxItems": 32, "items": {"$ref": "#/$defs/location"}}
+      }},
+      "producer_deployment": {"$ref": "#/$defs/text"}, "consumer_deployment": {"$ref": "#/$defs/text"}, "producer_location": {"$ref": "#/$defs/location"}, "consumer_location": {"$ref": "#/$defs/location"}
+    }},
+    "relationship": {"type": "object", "additionalProperties": {"$ref": "exploration-context.schema.json#/$defs/value"}, "maxProperties": 64, "propertyNames": {"type": "string", "maxLength": 128}, "required": ["id", "primitive_ids", "evidence_ids", "kind", "producer_id", "consumer_id", "disposition", "source_locations", "question_ids", "handoff", "reason"], "properties": {
+      "evidence_quality": {"enum": ["resolved", "evidence_limited"]},
+      "id": {"type": "string", "pattern": "^REL-[A-F0-9]{12}$"}, "primitive_ids": {"type": "array", "minItems": 2, "maxItems": 2, "uniqueItems": true, "items": {"type": "string", "pattern": "^P-[A-F0-9]{12}$"}},
+      "evidence_ids": {"$ref": "#/$defs/ids"}, "kind": {"enum": ["producer_consumer", "shared_sink", "alternate_path", "handoff"]},
+      "producer_id": {"type": ["string", "null"]}, "consumer_id": {"type": ["string", "null"]},
+      "disposition": {"enum": ["source-supported", "graph-lead-only", "contradicted", "inconclusive", "depth-limited"]},
+      "source_locations": {"type": "array", "maxItems": 32, "items": {"$ref": "#/$defs/location"}}, "question_ids": {"$ref": "#/$defs/ids"}, "handoff": {"$ref": "#/$defs/handoff"}, "reason": {"$ref": "#/$defs/text"}
+    }},
+    "answer": {"type": "object", "additionalProperties": {"$ref": "exploration-context.schema.json#/$defs/value"}, "maxProperties": 64, "propertyNames": {"type": "string", "maxLength": 128}, "required": ["question_id", "receipt_ref", "observation", "disposition", "source_locations", "limitations", "conclusion_effect"], "properties": {
+      "question_id": {"type": "string", "minLength": 1, "maxLength": 128}, "receipt_ref": {"type": "string", "minLength": 1, "maxLength": 512},
+      "observation": {"type": "string", "minLength": 1, "maxLength": 2000}, "disposition": {"enum": ["supported", "contradicted", "inconclusive"]},
+      "source_locations": {"type": "array", "maxItems": 32, "items": {"$ref": "#/$defs/location"}}, "limitations": {"type": "array", "maxItems": 16, "items": {"$ref": "#/$defs/text"}},
+      "conclusion_effect": {"type": "string", "minLength": 1, "maxLength": 2000}
+    }}
+  }
+}

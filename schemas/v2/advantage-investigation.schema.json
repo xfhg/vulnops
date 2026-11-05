@@ -1,0 +1,232 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "run_id",
+    "execution_kind",
+    "status",
+    "results",
+    "question_outcomes",
+    "reason"
+  ],
+  "properties": {
+    "evidence_quality": {"$ref": "evidence-accounting.schema.json#/$defs/quality"},
+    "non_promoted": {"type": "array", "maxItems": 2048, "items": {"$ref": "evidence-accounting.schema.json#/$defs/nonPromoted"}},
+    "schema_version": {
+      "const": "2.0"
+    },
+    "run_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 512
+    },
+    "execution_kind": {
+      "const": "advantage"
+    },
+    "status": {
+      "enum": [
+        "completed",
+        "empty",
+        "skipped"
+      ]
+    },
+    "results": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "task_id",
+          "artifact_ref",
+          "sha256"
+        ],
+        "properties": {
+          "task_id": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$"
+          },
+          "artifact_ref": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 512
+          },
+          "sha256": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$"
+          }
+        }
+      },
+      "maxItems": 2048,
+      "minItems": 0
+    },
+    "question_outcomes": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "task_id",
+          "pass_id",
+          "question_id",
+          "objective_id",
+          "resolution"
+        ],
+        "properties": {
+          "task_id": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$"
+          },
+          "pass_id": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$"
+          },
+          "question_id": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$"
+          },
+          "objective_id": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$"
+          },
+          "resolution": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "outcome",
+              "reason",
+              "established_facts",
+              "counterevidence",
+              "evidence_refs",
+              "missing_fact",
+              "next_action"
+            ],
+            "properties": {
+              "outcome": {
+                "enum": [
+                  "established",
+                  "contradicted",
+                  "locally_unresolved",
+                  "externally_blocked",
+                  "budget_deferred",
+                  "execution_failed",
+                  "redundant"
+                ]
+              },
+              "reason": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 8000
+              },
+              "established_facts": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 8000
+                },
+                "maxItems": 64,
+                "minItems": 0
+              },
+              "counterevidence": {
+                "type": "array",
+                "items": {
+                  "oneOf": [
+                    {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 512
+                    },
+                    {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": [
+                        "execution_id",
+                        "artifact_ref"
+                      ],
+                      "properties": {
+                        "execution_id": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 512
+                        },
+                        "artifact_ref": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 512
+                        },
+                        "sha256": {
+                          "type": "string",
+                          "pattern": "^[a-f0-9]{64}$"
+                        }
+                      }
+                    }
+                  ]
+                },
+                "maxItems": 128,
+                "minItems": 0
+              },
+              "evidence_refs": {
+                "type": "array",
+                "items": {
+                  "oneOf": [
+                    {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 512
+                    },
+                    {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": [
+                        "execution_id",
+                        "artifact_ref"
+                      ],
+                      "properties": {
+                        "execution_id": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 512
+                        },
+                        "artifact_ref": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 512
+                        },
+                        "sha256": {
+                          "type": "string",
+                          "pattern": "^[a-f0-9]{64}$"
+                        }
+                      }
+                    }
+                  ]
+                },
+                "maxItems": 128,
+                "minItems": 0
+              },
+              "missing_fact": {
+                "type": "string",
+                "maxLength": 8000
+              },
+              "next_action": {
+                "type": "string",
+                "maxLength": 8000
+              }
+            }
+          }
+        }
+      },
+      "maxItems": 2048,
+      "minItems": 0
+    },
+    "reason": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 8000
+    },
+    "assessment_context": {
+      "$ref": "evidence-accounting.schema.json#/$defs/assessmentContext"
+    }
+  }
+}

@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "VulnOps V5 Independent Verification Result",
+  "type": "object", "additionalProperties": false,
+  "required": ["schema_version","finding_id","status","closure_reason","evidence_refs","primitive_results","transition_results","joint_conditions","corrections","corrected_finding","actor","model","model_diversity","dossier_review","objective_results"],
+  "properties": {
+    "assessment_context": {"$ref": "evidence-accounting.schema.json#/$defs/assessmentContext"},
+    "schema_version": {"const": "2.0"}, "finding_id": {"type": "string", "pattern": "^F-[0-9]{3}$"},
+    "dossier_review": {"$ref":"synthesis-findings.schema.json#/$defs/dossierReview"},
+    "objective_results": {"type":"array","maxItems":64,"items":{"$ref":"synthesis-findings.schema.json#/$defs/objectiveResult"}},
+    "status": {"enum": ["verified", "corrected", "rejected", "needs_environment", "evidence_limited"]}, "closure_reason": {"type": "string", "minLength": 1},
+    "evidence_refs": {"type": "array", "items": {"type": "string", "minLength": 1}, "minItems": 1},
+    "primitive_results": {"type": "array", "items": {"type": "object", "additionalProperties": false, "required": ["primitive_id", "status", "evidence_refs", "reason"], "properties": {"primitive_id": {"type": "string", "minLength": 1}, "status": {"enum": ["verified", "rejected", "needs_environment"]}, "evidence_refs": {"type": "array", "items": {"type": "string", "minLength": 1}, "minItems": 1}, "reason": {"type": "string", "minLength": 1}}}},
+    "transition_results": {"type": "array", "items": {"$ref": "intrusion-results.schema.json#/$defs/transition"}},
+    "joint_conditions": {"type": "object", "additionalProperties": false, "required": ["outcome", "reason", "evidence_refs", "missing_fact", "next_action"], "properties": {"outcome": {"enum": ["established", "contradicted", "locally_unresolved", "externally_blocked", "budget_deferred", "execution_failed"]}, "reason": {"type": "string", "minLength": 1}, "evidence_refs": {"type": "array", "items": {"type": "string"}}, "missing_fact": {"type": "string"}, "next_action": {"type": "string"}}},
+    "corrections": {"type": "array", "items": {"type": "object", "additionalProperties": false, "required": ["field", "before", "after", "reason"], "properties": {"field": {"type": "string", "minLength": 1}, "before": {"type": "string"}, "after": {"type": "string"}, "reason": {"type": "string", "minLength": 1}}}},
+    "non_promoted": {"$ref": "evidence-accounting.schema.json#/$defs/nonPromoted"},
+    "optional_support_reviews": {"type": "array", "items": {"$ref": "evidence-accounting.schema.json#/$defs/optionalReview"}},
+    "corrected_finding": {"oneOf": [{"type": "null"}, {"$ref": "synthesis-findings.schema.json#/$defs/finding"}]}, "actor": {"const": "vulnops-independent-verify-one"}, "model": {"$ref": "synthesis-findings.schema.json#/$defs/modelSelector"}, "model_diversity": {"type": "boolean"}
+  }
+}

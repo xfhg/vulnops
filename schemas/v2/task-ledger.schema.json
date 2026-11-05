@@ -1,0 +1,54 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "VulnOps V5 Current-run Task Ledger",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "run_id", "tasks"],
+  "properties": {
+    "schema_version": {"const": "2.0"},
+    "run_id": {"type": "string", "minLength": 1},
+    "tasks": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "phase", "status", "attempts", "artifact", "updated_at", "error"],
+        "properties": {
+          "attempt_id": {"type": "string", "minLength": 1},
+          "invocation_attempts": {"type": "integer", "minimum": 0},
+          "failure_kind": {"enum": ["execution_failed", "deadline_exceeded", null]},
+          "failure_history": {
+            "type": "array",
+            "items": {
+              "type": "object", "additionalProperties": false,
+              "required": ["attempt", "attempt_id", "kind", "error"],
+              "properties": {
+                "attempt": {"type": "integer", "minimum": 1},
+                "attempt_id": {"type": ["string", "null"]},
+                "kind": {"enum": ["execution_failed", "deadline_exceeded", null]},
+                "error": {"type": "string", "minLength": 1, "maxLength": 1000}
+              }
+            }
+          },
+          "optional_closure": {
+            "type": "object", "additionalProperties": false,
+            "required": ["phase", "status", "artifact", "failure_reason"],
+            "properties": {
+              "phase": {"const": "gap-exploration"},
+              "status": {"const": "degraded"},
+              "artifact": {"const": "gap-exploration/results.json"},
+              "failure_reason": {"type": "string", "minLength": 1, "maxLength": 1000}
+            }
+          },
+          "id": {"type": "string", "pattern": "^(?!.*\\.\\.)[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$"},
+          "phase": {"type": "string", "minLength": 1},
+          "status": {"enum": ["pending", "running", "ok", "degraded", "failed", "shallow"]},
+          "attempts": {"type": "integer", "minimum": 0},
+          "artifact": {"type": ["string", "null"]},
+          "updated_at": {"type": "string", "minLength": 1},
+          "error": {"type": ["string", "null"]}
+        }
+      }
+    }
+  }
+}

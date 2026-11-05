@@ -1,0 +1,262 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "graph_observations": {
+      "type": "array",
+      "items": {
+        "type": "object", "additionalProperties": false,
+        "required": ["owner_id", "question_id", "source_view", "receipt_ref", "receipt_sha256", "context_ref", "context_sha256", "receipt_health", "meaningful"],
+        "properties": {
+          "owner_id": {"type": "string", "minLength": 1},
+          "question_id": {"type": "string", "minLength": 1},
+          "source_view": {"enum": ["base", "derived"]},
+          "receipt_ref": {"type": "string", "minLength": 1},
+          "receipt_sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+          "context_ref": {"type": "string", "minLength": 1},
+          "context_sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+          "receipt_health": {"enum": ["ok", "failed"]},
+          "meaningful": {"type": "boolean"},
+          "limitation": {"type": "string"}
+        }
+      }
+    },
+    "schema_version": {
+      "const": "2.0"
+    },
+    "run_id": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$"
+    },
+    "attempt_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 8000
+    },
+    "execution_kind": {
+      "const": "advantage"
+    },
+    "assessment_context": {
+      "$ref": "evidence-accounting.schema.json#/$defs/assessmentContext"
+    },
+    "status": {
+      "enum": [
+        "ok",
+        "degraded",
+        "skipped"
+      ]
+    },
+    "objectives": {
+      "type": "array",
+      "items": {
+        "oneOf": [
+          {"$ref": "objective.schema.json#/$defs/objective"},
+          {"$ref": "advantage-plan.schema.json#/properties/objectives/items"}
+        ]
+      },
+      "minItems": 0,
+      "maxItems": 128
+    },
+    "questions": {
+      "type": "array",
+      "items": {
+        "oneOf": [
+          {"$ref": "objective.schema.json#/$defs/question"},
+          {"$ref": "advantage-plan.schema.json#/properties/questions/items"}
+        ]
+      },
+      "minItems": 0,
+      "maxItems": 128
+    },
+    "results": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "task_id": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$"
+          },
+          "ref": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 8000
+          },
+          "sha256": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$"
+          },
+          "source_view": {
+            "enum": [
+              "base",
+              "derived"
+            ]
+          },
+          "provenance": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "actor": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 8000
+              },
+              "selector": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 8000
+              },
+              "artifact_ref": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 8000
+              },
+              "execution_id": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 8000
+              }
+            },
+            "required": [
+              "actor",
+              "selector",
+              "artifact_ref"
+            ]
+          },
+          "assessment_context": {
+            "$ref": "evidence-accounting.schema.json#/$defs/assessmentContext"
+          }
+        },
+        "required": [
+          "task_id",
+          "ref",
+          "sha256",
+          "source_view",
+          "provenance"
+        ]
+      },
+      "minItems": 0,
+      "maxItems": 128
+    },
+    "candidates": {
+      "type": "array",
+      "items": {
+        "$ref": "gap-common.schema.json#/$defs/candidate"
+      },
+      "minItems": 0,
+      "maxItems": 128
+    },
+    "non_promoted": {
+      "type": "array",
+      "items": {
+        "$ref": "gap-common.schema.json#/$defs/nonPromoted"
+      },
+      "minItems": 0,
+      "maxItems": 1024
+    },
+    "limitations": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 8000
+      },
+      "minItems": 0,
+      "maxItems": 128
+    },
+    "summary": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "examined_questions": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "graph_queries": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "useful_navigation": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "investigated_leads": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "worker_attempts": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "candidates": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "independently_accepted": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "uninvestigated_leads": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "examined_questions",
+        "graph_queries",
+        "useful_navigation",
+        "investigated_leads",
+        "worker_attempts",
+        "candidates",
+        "independently_accepted",
+        "uninvestigated_leads"
+      ]
+    },
+    "graph_consumption": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "preparations": {
+          "type": "array",
+          "items": {
+            "type": "object"
+          },
+          "minItems": 0,
+          "maxItems": 1024
+        },
+        "queries": {
+          "type": "array",
+          "items": {
+            "type": "object"
+          },
+          "minItems": 0,
+          "maxItems": 1024
+        }
+      },
+      "required": [
+        "preparations",
+        "queries"
+      ]
+    }
+  },
+  "required": [
+    "schema_version",
+    "run_id",
+    "attempt_id",
+    "status",
+    "objectives",
+    "questions",
+    "results",
+    "candidates",
+    "non_promoted",
+    "limitations",
+    "summary"
+  ],
+  "allOf": [{
+    "if": {"required": ["execution_kind"]},
+    "then": {"required": ["graph_observations"], "not": {"required": ["graph_consumption"]}},
+    "else": {"required": ["graph_consumption"]}
+  }]
+}

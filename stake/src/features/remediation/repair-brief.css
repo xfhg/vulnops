@@ -1,0 +1,55 @@
+.repair-brief{min-width:0;color:var(--text)}
+.repair-brief h3{font-size:13px;line-height:1.5;font-weight:600;letter-spacing:-.01em;margin:0}
+.rb-rationale{padding:1px 1px 20px}
+.rb-rationale h3{margin-bottom:8px;color:var(--text)}
+.rb-rationale-text,.rb-rationale-preview{font-size:12px;line-height:1.8;white-space:pre-wrap;overflow-wrap:anywhere;color:var(--muted-foreground);margin:0}
+.rb-rationale-toggle{display:inline-flex;align-items:center;gap:6px;padding:0;margin-top:8px;border:0;background:none;color:var(--primary-text);font:inherit;font-size:11px;line-height:1.6;cursor:pointer}
+.rb-rationale-toggle svg{transition:transform .15s ease}
+.rb-rationale-toggle[data-state=open] svg{transform:rotate(180deg)}
+.rb-muted{font-size:12px;line-height:1.7;color:var(--muted-foreground);margin:0}
+.repair-brief .rb-locate{padding:18px 20px;border:1px solid var(--primary-border);border-radius:10px;background:var(--panel);box-shadow:inset 3px 0 var(--primary)}
+.rb-route-heading{display:flex;align-items:flex-start;gap:11px;margin-bottom:12px}
+.rb-route-heading>div{min-width:0;flex:1}
+.rb-route-heading>svg{color:var(--primary-text);flex-shrink:0;margin-top:2px}
+.rb-route-heading p,.rb-route-counts{font-size:11px;line-height:1.6;color:var(--muted-foreground);margin:4px 0 0;font-variant-numeric:tabular-nums}
+.rb-route-number{font-family:ui-monospace,monospace;font-size:10px;line-height:1.7;font-weight:550;letter-spacing:.03em;color:var(--muted-foreground);flex-shrink:0;min-width:17px;margin-top:2px}
+.rb-locate .rb-route-number{color:var(--primary-text)}
+.rb-locations{list-style:none;padding:0;margin:0;border:1px solid var(--border);border-radius:7px;overflow:hidden;background:var(--panel-soft)}
+.rb-locations li+li{border-top:1px solid var(--border)}
+.rb-location-preview{display:flex;align-items:center;gap:8px;width:100%;box-sizing:border-box;padding:9px 11px;background:transparent;border:0;color:var(--text);text-align:left;font:inherit;cursor:pointer;min-width:0}
+.rb-location-preview>svg{color:var(--muted-foreground);flex-shrink:0}
+.rb-location-preview>svg:last-child{color:var(--primary-text)}
+.rb-location-preview code{min-width:0;flex:1;font-size:11px;line-height:1.5;overflow-wrap:anywhere}
+.rb-location-preview>span{font-family:ui-monospace,monospace;font-size:10px;line-height:1.5;color:var(--muted-foreground);flex-shrink:0}
+.rb-location-preview:hover{background:var(--primary-soft)}
+.rb-location-unavailable{border-left:2px dashed var(--graph-unresolved);padding-left:9px}
+.rb-empty-context{font-size:11px;line-height:1.7;color:var(--muted-foreground);margin:8px 0;overflow-wrap:anywhere}
+.rb-locate-notes{display:flex;align-items:center;gap:6px 16px;flex-wrap:wrap;margin-top:7px}
+.rb-text-link,.rb-missing-references{display:inline-flex;align-items:center;gap:5px;padding:0;border:0;background:none;font:inherit;font-size:10px;line-height:1.6;text-align:left;cursor:pointer;overflow-wrap:anywhere;color:var(--primary-text)}
+.rb-missing-references{color:var(--warning);text-decoration:underline;text-decoration-style:dotted;text-underline-offset:3px}
+.rb-text-link svg,.rb-missing-references svg{flex-shrink:0}
+.rb-locate>footer{display:flex;align-items:center;justify-content:space-between;gap:13px;margin-top:16px;padding-top:13px;border-top:1px solid var(--border)}
+.rb-locate>footer>span{font-size:10px;line-height:1.6;color:var(--muted-foreground);max-width:280px;overflow-wrap:anywhere}
+.rb-locate>footer .button{flex-shrink:0;font-size:11px;min-height:35px;padding:8px 12px}
+.rb-secondary-routes{margin-top:15px;border:1px solid var(--border);border-radius:10px;overflow:hidden;background:var(--panel)}
+.rb-secondary-route{display:flex;align-items:flex-start;gap:11px;padding:16px 20px;min-width:0}
+.rb-secondary-route+.rb-secondary-route{border-top:1px solid var(--border)}
+.rb-route-body{min-width:0;flex:1}
+.rb-route-body h3{display:flex;align-items:center;gap:7px}
+.rb-route-body h3 svg{color:var(--muted-foreground);flex-shrink:0}
+.rb-secondary-route>.button{align-self:center;flex-shrink:0;font-size:10px;padding:6px 8px;gap:5px}
+.rb-record-preview{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;overflow-wrap:anywhere;font-size:11px;line-height:1.65;color:var(--text);margin:8px 0 5px}
+.rb-record-preview>span{display:block;font-size:9px;color:var(--muted-foreground);line-height:1.5;margin-bottom:3px}
+.rb-context-note{font-size:10px;line-height:1.6;color:var(--muted-foreground);margin:7px 0 0;overflow-wrap:anywhere}
+.rb-check-statuses{display:flex;align-items:center;gap:5px;flex-wrap:wrap;margin-top:8px;min-width:0}
+.rb-check-statuses>span{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--border);border-radius:4px;background:var(--panel-soft);padding:3px 6px;color:var(--muted-foreground);font-size:9px;line-height:1.5;min-width:0}
+.rb-check-statuses code{font-size:9px;overflow-wrap:anywhere;min-width:0}
+.rb-check-statuses strong{font-weight:600;font-size:9px;color:var(--text);font-variant-numeric:tabular-nums}
+.rb-dossier-link{display:flex;align-items:center;justify-content:space-between;gap:14px;padding:15px 1px 2px}
+.rb-dossier-link>span{font-size:10px;line-height:1.6;color:var(--muted-foreground);overflow-wrap:anywhere}
+.rb-dossier-link .button{font-size:10px;flex-shrink:0}
+.repair-brief :focus-visible{outline:2px solid var(--ring);outline-offset:3px}
+.rb-location-preview:focus-visible{outline-offset:-3px}
+@media(max-width:1000px){.rb-locate>footer>span{max-width:220px}.rb-secondary-route>.button{max-width:145px;white-space:normal;text-align:left;line-height:1.5}}
+@media(max-width:650px){.repair-brief .rb-locate{padding:15px}.rb-route-heading{gap:9px}.rb-locate>footer{align-items:stretch;flex-direction:column;gap:9px}.rb-locate>footer>span{max-width:none}.rb-locate>footer .button{align-self:flex-start}.rb-secondary-route{padding:15px;flex-wrap:wrap;gap:8px}.rb-secondary-route>.button{max-width:none;margin-left:25px;align-self:flex-start}.rb-route-body{flex-basis:calc(100% - 28px)}.rb-dossier-link{flex-direction:column;align-items:flex-start;gap:9px}.rb-location-preview{padding:9px;gap:6px}.rb-location-preview>span{max-width:105px;white-space:normal;overflow-wrap:anywhere}.rb-location-preview code{font-size:10px}}
+@media(prefers-reduced-motion:reduce){.repair-brief *{animation:none!important;transition:none!important;scroll-behavior:auto!important}}

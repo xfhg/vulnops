@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Bounded untrusted exploration context",
+  "$defs": {
+    "value": {
+      "description": "Descriptive context only: never evidence, provenance, scheduling input or a final-finding field. Publication hygiene and total-size limits also apply.",
+      "type": ["string", "number", "boolean", "null", "array", "object"],
+      "maxLength": 16384,
+      "maxItems": 128,
+      "maxProperties": 64,
+      "propertyNames": {"type": "string", "maxLength": 128, "pattern": "^[^\\u0000-\\u001f\\u007f]*$"},
+      "items": {"$ref": "#/$defs/value"},
+      "additionalProperties": {"$ref": "#/$defs/value"}
+    }
+  }
+}

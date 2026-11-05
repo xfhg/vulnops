@@ -1,0 +1,38 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Owner-bound attacker objective and proof question",
+  "$defs": {
+    "objective": {
+      "type": "object", "additionalProperties": false,
+      "required": ["id", "owner", "local_key", "starting_actor", "controlled_material", "resource_scope", "desired_effect", "success_condition", "evidence_refs"],
+      "properties": {
+        "id": {"type": "string", "pattern": "^OBJ-[A-F0-9]{12}$"},
+        "owner": {"type": "string", "minLength": 1, "maxLength": 512},
+        "local_key": {"type": "string", "minLength": 1, "maxLength": 128},
+        "starting_actor": {"type": "string", "minLength": 1, "maxLength": 2000},
+        "controlled_material": {"type": "string", "minLength": 1, "maxLength": 2000},
+        "resource_scope": {"type": "string", "minLength": 1, "maxLength": 2000},
+        "desired_effect": {"type": "string", "minLength": 1, "maxLength": 2000},
+        "success_condition": {"type": "string", "minLength": 1, "maxLength": 4000},
+        "evidence_refs": {"type": "array", "minItems": 1, "maxItems": 128, "uniqueItems": true, "items": {"type": "string", "minLength": 1, "maxLength": 4096}},
+        "parent_objective_id": {"type": "string", "pattern": "^OBJ-[A-F0-9]{12}$"}
+      }
+    },
+    "question": {
+      "type": "object", "additionalProperties": false,
+      "required": ["id", "owner", "local_key", "objective_id", "security_question", "route", "proof_obligation", "novelty_reason", "evidence_refs"],
+      "properties": {
+        "id": {"type": "string", "pattern": "^Q-[A-F0-9]{12}$"},
+        "owner": {"type": "string", "minLength": 1, "maxLength": 512},
+        "local_key": {"type": "string", "minLength": 1, "maxLength": 128},
+        "objective_id": {"type": "string", "pattern": "^OBJ-[A-F0-9]{12}$"},
+        "security_question": {"type": "string", "minLength": 12, "maxLength": 4000},
+        "route": {"type": "string", "minLength": 1, "maxLength": 2000},
+        "proof_obligation": {"type": "string", "minLength": 1, "maxLength": 4000},
+        "novelty_reason": {"type": "string", "minLength": 1, "maxLength": 2000},
+        "evidence_refs": {"type": "array", "minItems": 1, "maxItems": 128, "uniqueItems": true, "items": {"type": "string", "minLength": 1, "maxLength": 4096}},
+        "equivalent_to": {"type": "string", "pattern": "^Q-[A-F0-9]{12}$"}
+      }
+    }
+  }
+}

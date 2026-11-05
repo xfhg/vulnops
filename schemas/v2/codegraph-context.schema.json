@@ -1,0 +1,78 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "VulnOps V5 Codegraph Context",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "tool", "operation", "subject", "nodes", "edges", "meaningful", "binding", "completeness"],
+  "properties": {
+    "schema_version": {"const": "2.0"},
+    "tool": {"const": "codegraph"},
+    "operation": {"enum": ["query", "callers", "callees", "impact", "affected"]},
+    "subject": {"$ref": "#/$defs/text"},
+    "binding": {"$ref": "#/$defs/binding"},
+    "completeness": {"$ref": "#/$defs/completeness"},
+    "meaningful": {"type": "boolean"},
+    "nodes": {
+      "type": "array", "maxItems": 500,
+      "items": {
+        "type": "object", "additionalProperties": false,
+        "required": ["id", "role", "synthetic"],
+        "properties": {
+          "id": {"$ref": "#/$defs/text"},
+          "role": {"enum": ["source", "result"]},
+          "synthetic": {"type": "boolean"},
+          "name": {"$ref": "#/$defs/text"},
+          "qualified_name": {"$ref": "#/$defs/text"},
+          "file": {"$ref": "#/$defs/text"},
+          "kind": {"$ref": "#/$defs/text"},
+          "line": {"type": "integer", "minimum": 1}
+        }
+      }
+    },
+    "edges": {
+      "type": "array", "maxItems": 1000,
+      "items": {
+        "type": "object", "additionalProperties": false,
+        "required": ["source", "target", "kind"],
+        "properties": {
+          "source": {"$ref": "#/$defs/text"}, "target": {"$ref": "#/$defs/text"},
+          "kind": {"enum": ["callers", "callees", "impact", "changedFiles", "affectedTests", "affectedFiles", "search_match"]}
+        }
+      }
+    }
+  },
+  "$defs": {
+    "text": {"type": "string", "minLength": 1, "maxLength": 512},
+    "sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+    "binding": {
+      "type": "object", "additionalProperties": false,
+      "required": ["run_id", "phase", "owner_id", "question_id", "operation", "subject", "file"],
+      "properties": {
+        "run_id": {"$ref": "#/$defs/text"},
+        "attempt_id": {"$ref": "#/$defs/text"},
+        "target_fingerprint": {},
+        "repository_set_sha256": {},
+        "snapshot_sha256": {},
+        "phase": {"enum": ["intrusion", "campaign-planning", "probe", "gap-exploration"]},
+        "source_view": {"enum": ["base", "derived"]},
+        "owner_id": {"$ref": "#/$defs/text"},
+        "question_id": {"$ref": "#/$defs/text"},
+        "operation": {"enum": ["query", "callers", "callees", "impact", "affected"]},
+        "subject": {"$ref": "#/$defs/text"},
+        "file": {"type": ["string", "null"], "minLength": 1, "maxLength": 512}
+      }
+    },
+    "completeness": {
+      "type": "object", "additionalProperties": false,
+      "required": ["local_truncated", "dropped_nodes", "dropped_edges", "upstream_truncated", "upstream_complete", "heuristic"],
+      "properties": {
+        "local_truncated": {"type": "boolean"},
+        "dropped_nodes": {"type": "integer", "minimum": 0},
+        "dropped_edges": {"type": "integer", "minimum": 0},
+        "upstream_truncated": {"type": "boolean"},
+        "upstream_complete": {"type": ["boolean", "null"]},
+        "heuristic": {"type": "boolean"}
+      }
+    }
+  }
+}

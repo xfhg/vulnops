@@ -1,0 +1,170 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "execution_kind",
+    "run_id",
+    "source_run_id",
+    "repositories",
+    "files",
+    "records",
+    "counts",
+    "file_count",
+    "record_count"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "2.0"
+    },
+    "execution_kind": {
+      "const": "advantage"
+    },
+    "run_id": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$"
+    },
+    "source_run_id": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$"
+    },
+    "source_manifest_sha256": {},
+    "source_report_sha256": {},
+    "source_final_findings_sha256": {},
+    "target_fingerprint": {},
+    "repositories": {
+      "type": "array",
+      "items": {
+        "type": "object"
+      }
+    },
+    "repository_set_sha256": {},
+    "source_phase_seals": {},
+    "files": {
+      "type": "array",
+      "maxItems": 100000,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "artifact_ref"
+        ],
+        "properties": {
+          "artifact_ref": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 4096
+          },
+          "sha256": {},
+          "size": {}
+        }
+      }
+    },
+    "files_sha256": {},
+    "records": {
+      "type": "array",
+      "maxItems": 100000,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "record_type",
+          "status",
+          "reference",
+          "pointer"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 4096
+          },
+          "record_type": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 4096
+          },
+          "status": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 4096
+          },
+          "reference": {
+            "$ref": "advantage-reference.schema.json"
+          },
+          "pointer": {
+            "type": "string",
+            "pattern": "^(?:/|$)"
+          }
+        }
+      }
+    },
+    "counts": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "integer",
+        "minimum": 0
+      },
+      "maxProperties": 100
+    },
+    "counts_complete": {
+      "type": "boolean"
+    },
+    "unavailable_cohorts": {
+      "type": "array",
+      "uniqueItems": true,
+      "maxItems": 100000,
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 4096
+      }
+    },
+    "evidence_quality": {
+      "$ref": "evidence-accounting.schema.json#/$defs/quality"
+    },
+    "file_count": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "record_count": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "limitations": {
+      "type": "array",
+      "maxItems": 200,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "artifact_ref",
+          "reason"
+        ],
+        "properties": {
+          "artifact_ref": {
+            "type": "string",
+            "maxLength": 4096
+          },
+          "reason": {
+            "type": "string",
+            "maxLength": 1000
+          },
+          "code": {
+            "enum": ["missing_file", "missing_record", "ambiguous_record", "ambiguous_namespace", "unsupported_selector", "invalid_range", "unreadable_content"]
+          },
+          "field": {
+            "type": "string",
+            "maxLength": 240
+          },
+          "count": {
+            "type": "integer",
+            "minimum": 1
+          }
+        }
+      }
+    }
+  }
+}

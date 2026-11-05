@@ -1,0 +1,21 @@
+import { useMemo, useState } from 'react';
+import { useReactTable, getCoreRowModel, getPaginationRowModel, getSortedRowModel, flexRender, type ColumnDef, type SortingState } from '@tanstack/react-table';
+import { ArrowUpDown, ArrowUpRight, ChevronLeft, ChevronRight } from 'lucide-react';
+import type { FindingSummary } from '../../domain/types';
+import { Badge, Button, Empty } from '../../components/ui';
+import { human } from '../../app/state';
+
+export default function FindingsTable({ findings, onFinding, onReset }: { findings: FindingSummary[]; onFinding: (finding: FindingSummary) => void; onReset: () => void }) {
+  const [sorting, setSorting] = useState<SortingState>([]);
+  const columns = useMemo<ColumnDef<FindingSummary>[]>(() => [
+    { accessorKey: 'severity', header: 'Severity', cell: ({ row }) => <Badge tone={row.original.severity}>{row.original.severity}</Badge>, sortingFn: (a,b) => ['critical','high','medium','low','info','unknown'].indexOf(a.original.severity) - ['critical','high','medium','low','info','unknown'].indexOf(b.original.severity) },
+    { accessorKey: 'title', header: 'Finding', cell: ({ row }) => <button className="finding-title-button" onClick={() => onFinding(row.original)}><span className="row-id">{row.original.id} <span>· {row.original.kind || 'Finding'}</span></span><strong>{row.original.title}</strong>{row.original.conflicted && <span className="error-text">Conflicting historical identity</span>}</button> },
+    { accessorKey: 'repositories', header: 'Repository', cell: ({ row }) => <div className="repository-cell">{row.original.repositories.length ? row.original.repositories.map(p => <span key={p} className="mono">{p}</span>) : <span className="muted">Unknown</span>}</div> },
+    { accessorKey: 'cohort', header: 'Evidence', cell: ({ row }) => <><span className="status-text"><span className={'status-dot ' + row.original.cohort} />{human(row.original.cohort)}</span><span className="table-secondary">{human(row.original.verificationLevel || row.original.origin)}</span></> },
+    { accessorKey: 'classification', header: 'Context', cell: ({ row }) => <span className="small">{row.original.classification ? human(row.original.classification) : row.original.origin === 'historical' ? 'Historical finding' : 'Assessed finding'}</span> },
+    { id: 'open', header: '', cell: ({ row }) => <Button variant="ghost" size="icon" onClick={() => onFinding(row.original)} aria-label={'Open ' + row.original.id}><ArrowUpRight size={17} /></Button> },
+  ], [onFinding]);
+  const table = useReactTable({ data: findings, columns, state: { sorting }, onSortingChange: setSorting, getCoreRowModel: getCoreRowModel(), getSortedRowModel: getSortedRowModel(), getPaginationRowModel: getPaginationRowModel(), initialState: { pagination: { pageSize: 12 } } });
+  if (!findings.length) return <Empty title="No matching findings" description="Try a broader filter or clear your search." action={<Button variant="outline" onClick={onReset}>Reset filters</Button>} />;
+  return <div className="table-card"><div className="table-scroll"><table className="findings-table"><thead>{table.getHeaderGroups().map(group => <tr key={group.id}>{group.headers.map(header => <th key={header.id}>{header.isPlaceholder ? null : header.column.getCanSort() ? <button onClick={header.column.getToggleSortingHandler()}>{flexRender(header.column.columnDef.header, header.getContext())}<ArrowUpDown size={12} /></button> : flexRender(header.column.columnDef.header, header.getContext())}</th>)}</tr>)}</thead><tbody>{table.getRowModel().rows.map(row => <tr key={row.original.key}>{row.getVisibleCells().map(cell => <td key={cell.id}>{flexRender(cell.column.columnDef.cell, cell.getContext())}</td>)}</tr>)}</tbody></table></div><div className="pagination"><span>{findings.length} matching {findings.length === 1 ? 'finding' : 'findings'}</span><div><span>Page {table.getState().pagination.pageIndex + 1} of {table.getPageCount()}</span><Button variant="outline" size="icon" disabled={!table.getCanPreviousPage()} onClick={() => table.previousPage()} aria-label="Previous page"><ChevronLeft size={16} /></Button><Button variant="outline" size="icon" disabled={!table.getCanNextPage()} onClick={() => table.nextPage()} aria-label="Next page"><ChevronRight size={16} /></Button></div></div></div>;
+}

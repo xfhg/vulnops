@@ -1,0 +1,303 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "VulnOps V5 Tool Health Receipt",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "tool",
+    "operation",
+    "status",
+    "version",
+    "started_at",
+    "completed_at",
+    "parse_status",
+    "result_count",
+    "normalized_sha256",
+    "warnings"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "2.0"
+    },
+    "tool": {
+      "enum": [
+        "wraith",
+        "poltergeist",
+        "codegraph",
+        "omp",
+        "bubblewrap"
+      ]
+    },
+    "operation": {
+      "type": "string",
+      "minLength": 1
+    },
+    "status": {
+      "enum": [
+        "ok",
+        "failed",
+        "unsupported"
+      ]
+    },
+    "version": {
+      "type": "string",
+      "minLength": 1
+    },
+    "started_at": {
+      "type": "string",
+      "minLength": 1
+    },
+    "completed_at": {
+      "type": "string",
+      "minLength": 1
+    },
+    "parse_status": {
+      "enum": [
+        "ok",
+        "failed",
+        "not_applicable"
+      ]
+    },
+    "result_count": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "normalized_sha256": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "meaningful": {
+      "type": "boolean"
+    },
+    "binding": {
+      "$ref": "#/$defs/binding"
+    },
+    "completeness": {
+      "$ref": "#/$defs/completeness"
+    },
+    "elapsed_seconds": {
+      "type": "number",
+      "minimum": 0
+    },
+    "packages_scanned": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "databases": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "ecosystem",
+          "snapshot",
+          "sha256"
+        ],
+        "properties": {
+          "ecosystem": {
+            "type": "string",
+            "minLength": 1
+          },
+          "snapshot": {
+            "type": "string",
+            "minLength": 1
+          },
+          "sha256": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$"
+          }
+        }
+      }
+    },
+    "warnings": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    }
+  },
+  "allOf": [
+    {
+      "anyOf": [
+        {
+          "properties": {
+            "tool": {
+              "enum": [
+                "poltergeist",
+                "codegraph",
+                "omp",
+                "bubblewrap"
+              ]
+            }
+          }
+        },
+        {
+          "required": [
+            "packages_scanned",
+            "databases"
+          ]
+        }
+      ]
+    },
+    {
+      "anyOf": [
+        {
+          "properties": {
+            "tool": {
+              "enum": [
+                "wraith",
+                "poltergeist",
+                "omp",
+                "bubblewrap"
+              ]
+            }
+          }
+        },
+        {
+          "properties": {
+            "operation": {
+              "enum": [
+                "init",
+                "index"
+              ]
+            }
+          }
+        },
+        {
+          "required": [
+            "binding",
+            "completeness",
+            "elapsed_seconds",
+            "meaningful"
+          ],
+          "properties": {
+            "operation": {
+              "enum": [
+                "query",
+                "callers",
+                "callees",
+                "impact",
+                "affected"
+              ]
+            }
+          }
+        }
+      ]
+    }
+  ],
+  "$defs": {
+    "text": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 512
+    },
+    "sha256": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "binding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "run_id",
+        "phase",
+        "owner_id",
+        "question_id",
+        "operation",
+        "subject",
+        "file",
+        "execution_kind",
+        "baseline_execution_id"
+      ],
+      "properties": {
+        "run_id": {
+          "$ref": "#/$defs/text"
+        },
+        "attempt_id": {"$ref": "#/$defs/text"},
+        "target_fingerprint": {},
+        "repository_set_sha256": {},
+        "snapshot_sha256": {},
+        "phase": {
+          "enum": ["investigation", "gap-exploration"]
+        },
+        "source_view": {"enum": ["base", "derived"]},
+        "owner_id": {
+          "$ref": "#/$defs/text"
+        },
+        "question_id": {
+          "$ref": "#/$defs/text"
+        },
+        "operation": {
+          "enum": [
+            "query",
+            "callers",
+            "callees",
+            "impact",
+            "affected"
+          ]
+        },
+        "subject": {
+          "$ref": "#/$defs/text"
+        },
+        "file": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "minLength": 1,
+          "maxLength": 512
+        },
+        "execution_kind": {
+          "const": "advantage"
+        },
+        "baseline_execution_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        }
+      }
+    },
+    "completeness": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "local_truncated",
+        "dropped_nodes",
+        "dropped_edges",
+        "upstream_truncated",
+        "upstream_complete",
+        "heuristic"
+      ],
+      "properties": {
+        "local_truncated": {
+          "type": "boolean"
+        },
+        "dropped_nodes": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "dropped_edges": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "upstream_truncated": {
+          "type": "boolean"
+        },
+        "upstream_complete": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "heuristic": {
+          "type": "boolean"
+        }
+      }
+    }
+  }
+}

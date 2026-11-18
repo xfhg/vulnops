@@ -22,6 +22,7 @@ AGENT_DIR="${VULNOPS_BOOTSTRAP_AGENT_DIR:-${PI_CODING_AGENT_DIR}}"
 "$PYTHON" - "$HARNESS_ROOT" "$CONFIG_PATH" "$PROJECT_CONFIG_PATH" "$AGENT_DIR" <<'PY'
 from __future__ import annotations
 
+import os
 import sys
 from pathlib import Path
 
@@ -219,7 +220,9 @@ else:
     ]
 
 write_if_changed(agent_dir / "config.yml", "\n".join(config_lines))
-write_if_changed(agent_dir / "models.yml", "\n".join(models_lines))
+registry = os.environ.get("VULNOPS_OMP_MODELS_CONFIG")
+models_content = Path(registry).read_text(encoding="utf-8") if registry else "\n".join(models_lines)
+write_if_changed(agent_dir / "models.yml", models_content)
 # Mirror the secret-free project config to the harness root .omp/ so the project-level
 # config (.omp/config.yml) stays in lockstep with the agent-home copy. models.yml is
 # intentionally NOT mirrored to root: it carries the live apiKey and the tracked .omp/

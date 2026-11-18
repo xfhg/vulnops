@@ -1,6 +1,7 @@
 """Canonical model ownership for audit and explicitly scoped linked executions."""
 from __future__ import annotations
 
+import os
 import re
 import tomllib
 from pathlib import Path
@@ -80,7 +81,7 @@ def advantage_routing(routing: dict) -> dict:
 
 
 def load_routing(root: Path) -> dict:
-    with (root / "config.toml").open("rb") as handle:
+    with Path(os.environ.get("VULNOPS_CONFIG_PATH", root / "config.toml")).open("rb") as handle:
         return resolve_routing(tomllib.load(handle).get("llm", {}))
 
 

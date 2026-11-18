@@ -102,6 +102,36 @@ class ModelRoutingTests(unittest.TestCase):
             with self.subTest(selector=selector), self.assertRaises(ValueError):
                 module.check_catalog(catalog, selector)
 
+    def test_probe_classifies_failures_without_disclosing_provider_text(self):
+        from unittest.mock import patch
+        spec = importlib.util.spec_from_file_location('routing_probe', ROOT/'scripts/probe-verifier-model.py')
+        module = importlib.util.module_from_spec(spec); spec.loader.exec_module(module)
+        cases = (
+            ("UNABLE_TO_GET_ISSUER_CERT_LOCALLY", "TLS certificate verification failed"),
+            ("access_program_not_enabled", "enable the approved Daybreak tier"),
+            ("The model requires a sandbox with reviewed escalations. (code=invalid_request_error)",
+             "use a supported client with enforced sandboxing and approval review"),
+            ("invalid_access_program", "model-specific Daybreak request program"),
+            ("unsupported_access_program", "does not support that Daybreak request program"),
+            ("unknown provider failure", "provider failure was not classified"),
+        )
+        for code, expected in cases:
+            for channel in ("stderr", "assistant"):
+                with self.subTest(code=code, channel=channel), tempfile.TemporaryDirectory() as temporary:
+                    private = f"Bearer private-fixture-credential: {code}"
+                    event = {"type": "message_end", "message": {
+                        "role": "assistant", "provider": "p", "model": "red",
+                        "stopReason": "error", "errorMessage": private}}
+                    # Some clients exit zero but report the failed request in an event.
+                    result = (subprocess.CompletedProcess([], 1, "", private) if channel == "stderr"
+                              else subprocess.CompletedProcess([], 0, json.dumps(event), ""))
+                    with patch.object(module.subprocess, "run", return_value=result):
+                        with self.assertRaises(ValueError) as failure:
+                            module.live_probe(ROOT/'bins/omp', 'p/red:high', Path(temporary))
+                    self.assertIn(expected, str(failure.exception))
+                    self.assertNotIn("private-fixture-credential", str(failure.exception))
+                    self.assertEqual(list(Path(temporary).iterdir()), [])
+
     def test_probe_oracle_sanitizes_denial_and_rejects_substituted_metadata(self):
         from unittest.mock import patch
         spec = importlib.util.spec_from_file_location('routing_probe', ROOT/'scripts/probe-verifier-model.py')

@@ -215,6 +215,14 @@ def load_questions(scan: Path) -> dict[str, dict]:
     return load_registry(scan, include_supplementary=True)[1]
 
 
+def _published_ref_cap() -> int:
+    """Synthesis publication caps projected question_outcome evidence_refs; owner_ref keeps the full record."""
+    root = Path(__file__).resolve().parent.parent
+    schema = json.loads((root / "schemas/v2" / "synthesis-findings.schema.json").read_text())
+    item = schema["$defs"]["objectiveAssessment"]["properties"]["question_outcomes"]["items"]
+    return int(item["properties"]["evidence_refs"]["maxItems"])
+
+
 def load_question_outcomes(scan: Path) -> list[dict]:
     """Project source-owned obligations, retaining mixed routes rather than declaring goal closure."""
     objectives, questions = load_registry(scan, include_supplementary=True)
@@ -260,4 +268,7 @@ def load_question_outcomes(scan: Path) -> list[dict]:
                      "reason": disposition.get("reason", "No source-owned question resolution was published."),
                      "evidence_refs": question["evidence_refs"], "missing_fact": question["proof_obligation"],
                      "next_action": question["security_question"], "owner_ref": f"{question['owner']}:{question['id']}"})
+    cap = _published_ref_cap()
+    for row in rows:
+        row["evidence_refs"] = list(dict.fromkeys(row["evidence_refs"]))[:cap]
     return rows

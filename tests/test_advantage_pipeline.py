@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import copy
 import json
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -27,6 +28,59 @@ from test_dossiers import sample_finding, add_dossier, review_dossier
 def put(path, value):
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(value, indent=2) + "\n", encoding="utf-8")
+
+
+def project_original_with_native_author(context, draft_path):
+    """Project a stopped author's real draft through the native publication seam."""
+    program = r'''
+import assert from 'node:assert/strict';
+import {readFileSync} from 'node:fs';
+import {spawnSync} from 'node:child_process';
+import path from 'node:path';
+const fixture=JSON.parse(readFileSync(0,'utf8'));
+const {NativeInvocation}=await import(fixture.guard);
+const context=fixture.context, actor='vulnops-advantage-synthesis';
+const selector=context.model_routing.agents[actor];
+const live=new NativeInvocation(context,'Main');
+const caller={id:'Main',kind:'main',selector:context.model_routing.controllers.advantage};
+live.start({id:'AdvantageSynthesisOriginal',phase:'synthesis',cohort:'original',
+  input:context.input_path,actor},'Original',actor,selector);
+live.yield('Original',{artifact:'synthesis/draft.json'},true);
+live.settle('Original','completed');
+const script='finalize-advantage-synthesis.py';
+const argv=[fixture.python,path.join(fixture.scripts,script),
+  '--context',context.input_path,'--draft',fixture.draft,'--stage','original'];
+const binding=live.publicationBinding(script,argv,fixture.scripts);
+const python=`
+import json, sys
+from unittest.mock import patch
+import advantage_contract as core
+import advantage_pipeline as pipeline
+fixture = json.load(sys.stdin)
+with patch.object(core, "live_call", return_value=fixture["native_call"]), patch.object(pipeline, "owned"):
+    receipt = pipeline.finalize_synthesis(fixture["context"], core.load(fixture["draft"]), stage="original")
+print(json.dumps(receipt))
+`;
+const child=spawnSync(fixture.python,['-B','-c',python],{
+  input:JSON.stringify({context,draft:fixture.draft,native_call:live.call(caller,'synthesis')}),
+  encoding:'utf8',timeout:30000,
+  env:{...process.env,PYTHONDONTWRITEBYTECODE:'1',PYTHONPATH:fixture.scripts}});
+if (child.error) throw child.error;
+assert.equal(child.status,0,child.stderr);
+const receipt=JSON.parse(child.stdout);
+assert.equal(receipt.status,'original_complete');
+live.observePublication(binding,{code:child.status,exited:true,stdout:child.stdout});
+console.log(JSON.stringify({receipt,native_call:live.call(caller,'synthesis')}));
+'''
+    result = subprocess.run(
+        ["node", "--input-type=module", "-e", program],
+        input=json.dumps({"context": context, "draft": str(draft_path.resolve()),
+                          "python": sys.executable, "scripts": str(ROOT / "scripts"),
+                          "guard": (ROOT / ".omp/guards/advantage-native.mjs").as_uri()}),
+        text=True, capture_output=True, timeout=30)
+    if result.returncode:
+        raise RuntimeError(result.stderr)
+    return json.loads(result.stdout)
 
 
 def author(context, actor, relative):
@@ -1155,12 +1209,37 @@ class AdvantagePipelineTests(unittest.TestCase):
         rejected = self.workers[-1]
         self.assertEqual(rejected["status"], "completed")
         self.assertTrue(rejected["yield_valid"])
+        rejected["input_sha256"] = core.digest({"run_id": self.context["run_id"]})
+        stopped = self.native_start("final-verification", assignments[0]["finding_id"])
+        self.native_failure("final-verification", assignments[0]["finding_id"], "Stopped unusable review.")
+        history = copy.deepcopy([rejected, stopped])
         retry = authored_review(self.context, synthesis["findings"][0], assignments[0])
-        retry["attempt"] = 2
-        self.publish("final-verification", retry)
+        retry["attempt"] = 3
+        accepted = self.publish("final-verification", retry)
         final = pipeline.verification_projection(self.context)
         self.assertEqual([finding["id"] for finding in final["findings"]], ["F-001"])
         self.assertEqual((self.base / healthy["result_ref"]).read_bytes(), healthy_bytes)
+        self.assertEqual([rejected, stopped], history)
+        self.assertEqual(pipeline.read_local(self.context, accepted["result_ref"])["attempt"], 3)
+        for field, value in (("input_sha256", "0" * 64), ("selector", "fixture/wrong:high")):
+            with self.subTest(latest_binding=field), patch.dict(self.workers[-1], {field: value}):
+                invalid_latest = pipeline.verification_projection(self.context)
+                self.assertEqual(invalid_latest["findings"], [])
+                self.assertEqual((self.base / healthy["result_ref"]).read_bytes(), healthy_bytes)
+
+    def test_investigator_attempt_three_survives_unusable_native_history(self):
+        first = self.native_start("investigation", self.result["task_id"])
+        first["input_sha256"] = core.digest({"run_id": self.context["run_id"]})
+        self.native_failure("investigation", self.result["task_id"], "Wrong global input.")
+        second = self.native_start("investigation", self.result["task_id"])
+        self.native_failure("investigation", self.result["task_id"], "Stopped unusable draft.")
+        history = copy.deepcopy(self.workers)
+        self.result["attempt"] = 3
+        receipt = self.publish("investigation", self.result)
+        projection = pipeline.investigation_projection(self.context)
+        self.assertEqual(self.workers[:2], history)
+        self.assertEqual(projection["results"][0]["artifact_ref"], receipt["result_ref"])
+        self.assertEqual(pipeline.read_local(self.context, receipt["result_ref"])["attempt"], 3)
 
     def test_report_discloses_unavailable_cohorts_without_changing_current_outcome(self):
         expected = self.report_fixture(current=True)
@@ -1291,6 +1370,48 @@ class AdvantagePipelineTests(unittest.TestCase):
         self.enterContext(patch.object(gap_exploration_contract, "accepted_support_refs",
                                       return_value={relative, "gap-exploration/results.json"}))
         return aggregate, relative
+
+    @unittest.skipUnless(shutil.which("node"), "Node is required for native guard fixtures")
+    def test_post_terminal_original_projection_survives_supplementary_fallback(self):
+        import gap_dossier
+        draft = self.synthesis_fixture()
+        self.accepted_gap_fixture()
+        draft_path = self.base / "synthesis/draft.json"
+        put(draft_path, draft)
+        self.context["model_routing"]["controllers"] = {
+            "advantage": self.context["model_routing"]["agents"]["vulnops-advantage-synthesis"]}
+        self.context["input_path"] = str((self.base.parent / "native-original-context.json").resolve())
+        # Prior fixture admission collected process-local source caches, not input fields.
+        self.context.pop("_source_receipts", None)
+        self.context.pop("_source_examples", None)
+        put(Path(self.context["input_path"]), self.context)
+
+        projection = project_original_with_native_author(self.context, draft_path)
+        self.assertEqual(projection["receipt"], {
+            "status": "original_complete", "artifact_ref": "synthesis/original-findings.json"})
+        self.workers.extend(projection["native_call"]["workers"])
+        original = gap_dossier.load_original_draft(
+            self.base, self.context, "synthesis/original-findings.json")
+        self.assertIsNotNone(original, "projected original lacks native publication binding")
+        self.assertEqual([row["id"] for row in original["findings"]], ["F-001", "F-002"])
+        checksum = projection["native_call"]["workers"][0]["artifact_sha256"]["synthesis/original-findings.json"]
+        with patch.object(pipeline, "owned"), patch.object(core, "finalize_phase"):
+            pipeline.finalize_synthesis(self.context)
+        synthesis = pipeline.read_local(self.context, "synthesis/findings.json")
+        self.assertEqual(synthesis["findings"], original["findings"])
+        self.assertEqual(synthesis["candidate_dispositions"][:2], original["candidate_dispositions"])
+        self.assertEqual(synthesis["original_evidence"], {
+            "ref": "synthesis/original-findings.json", "sha256": checksum})
+        supplementary = synthesis["candidate_dispositions"][2:]
+        self.assertEqual(len(supplementary), 1)
+        self.assertEqual(supplementary[0]["disposition"], "unresolved")
+        self.assertEqual(supplementary[0]["finding_ids"], [])
+        with patch.object(pipeline, "owned"):
+            assignments = pipeline.prepare_verification(self.context)
+        self.assertEqual([row["finding_id"] for row in assignments["assignments"]], ["F-001", "F-002"])
+        put(self.base / "synthesis/original-findings.json", {**original, "reason": "Changed after observation."})
+        with self.assertRaisesRegex(ValueError, "exact native terminal evidence"):
+            gap_dossier.load_original_draft(self.base, self.context, "synthesis/original-findings.json")
 
     def test_empty_original_does_not_bypass_accepted_gap_candidate(self):
         self.admit_fixture_result()

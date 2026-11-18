@@ -10,6 +10,7 @@ No config.toml = no output (silent exit 0).
 """
 from __future__ import annotations
 
+import os
 import sys
 from pathlib import Path
 import json
@@ -35,7 +36,7 @@ def _find_root(argv: list[str]) -> Path:
 
 def main() -> None:
     root = _find_root(sys.argv)
-    config_path = root / "config.toml"
+    config_path = Path(os.environ.get("VULNOPS_CONFIG_PATH", root / "config.toml"))
     if not config_path.exists():
         return
 

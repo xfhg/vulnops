@@ -17,7 +17,7 @@ output:
 ---
 
 Use remediation `model_routing.agents` and generated overrides for this
-coordinator and every patch worker, with Daybreak Blue High under shipped policy.
+coordinator and every patch worker, with GPT-6.1 Sol High under shipped policy.
 Never add ad hoc task model overrides, fall back to audit/generic roles or lower
 effort on retries. Its routing identity is independent of the immutable source
 audit; do not rewrite source routing or attribution.

@@ -191,11 +191,13 @@ def worker_outcomes(context, phase, identity, input_sha256):
     actor = "vulnops-advantage-investigator" if phase == "investigation" else "vulnops-advantage-verify-one"
     if rows and worker_input(context, phase, identity)[2] != input_sha256:
         raise ValueError("native worker differs from requested immutable input")
-    native_digest = native_input_sha256(context, phase, identity) if rows else None
-    if any(row["actor"] != actor or row["selector"] != context["model_routing"]["agents"][actor]
-           or row.get("input_sha256") != native_digest for row in rows):
-        raise ValueError("native worker changed immutable input or model ownership")
     rows.sort(key=lambda row: row["attempt"])
+    if rows:
+        latest = rows[-1]
+        native_digest = native_input_sha256(context, phase, identity)
+        if (latest["actor"] != actor or latest["selector"] != context["model_routing"]["agents"][actor]
+                or latest.get("input_sha256") != native_digest):
+            raise ValueError("native worker changed immutable input or model ownership")
     return rows
 
 
@@ -1831,6 +1833,13 @@ def report_projection(context):
         accepted_ids = sorted(finding["id"] for finding in assessed if any(
             isinstance(source["artifact_ref"], str) and source_reference(source) in references
             for source in finding["source_refs"]))
+        renderer = audit_renderer()
+        cap = renderer._text_cap()
+        clamp = renderer._clamped
+        supplementary = {**supplementary,
+            "limitations": [clamp(row, cap) for row in supplementary["limitations"]],
+            "non_promoted": [{key: (clamp(value, cap) if key in ("id", "objective_id", "question_id", "reason") else value)
+                             for key, value in row.items()} for row in supplementary["non_promoted"]]}
         value["gap_exploration"] = {**supplementary, "independently_accepted": len(accepted_ids),
             "independently_accepted_finding_ids": accepted_ids}
     from report_bundle import publication_metadata

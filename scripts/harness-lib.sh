@@ -101,8 +101,8 @@ harness_setup_containment() {
     export CARGO_HOME="${hdir}/cache/cargo"
     export GOMODCACHE="${hdir}/cache/go/pkg/mod"
     export GOCACHE="${hdir}/cache/go-build"
-    export OMP_AGENT_HOME="${hdir}/home/.omp/agent"
-    export PI_CODING_AGENT_DIR="${hdir}/home/.omp/agent"
+    export OMP_AGENT_HOME="${VULNOPS_OMP_AGENT_DIR:-${hdir}/home/.omp/agent}"
+    export PI_CODING_AGENT_DIR="${OMP_AGENT_HOME}"
     export PI_CONFIG_DIR="${hdir}/home/.omp"
     export PI_NATIVES_DIR="${root}/bins"
     # codegraph runs offline-only; never phone home, never spawn a daemon
@@ -110,6 +110,7 @@ harness_setup_containment() {
     export CODEGRAPH_NO_DAEMON=1
 
     mkdir -p \
+        "${OMP_AGENT_HOME}" \
         "${XDG_CONFIG_HOME}" \
         "${XDG_DATA_HOME}" \
         "${PIP_CACHE_DIR}" \

@@ -22,6 +22,167 @@ class AdvantageSessionGuardTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         return result.stdout
 
+    def native_scenario(self, scenario):
+        """Exercise the installed wrapper against isolated deterministic commands."""
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary).resolve()
+            scripts = root / "scripts"
+            scripts.mkdir()
+            shell = scripts / "agent-shell.sh"
+            shell.write_text('#!/bin/bash\nexec /bin/bash "$@"\n')
+            shell.chmod(0o755)
+            (scripts / "init-advantage.py").write_text(
+                "from pathlib import Path\nprint(Path('.harness/tmp/input.json').read_text())\n")
+            (scripts / "validate-advantage.py").write_text(
+                "import json, os, sys\nfrom pathlib import Path\n"
+                "call=json.load(os.fdopen(3))\n"
+                "phase=sys.argv[sys.argv.index('--phase')+1] if '--phase' in sys.argv else None\n"
+                "with open('events','a') as stream: stream.write('validate:'+str(phase)+'\\n')\n"
+                "if phase=='report' and Path('reject-report').exists():\n"
+                "    print('fixture report rejection',file=sys.stderr); sys.exit(23)\n"
+                "if phase=='report' and Path('malformed-report').exists():\n"
+                "    print('not JSON'); sys.exit(0)\n"
+                "print(json.dumps({'run_id':call['run_id'],'phase':phase,'valid':True,'workers':call['workers']}))\n")
+            (scripts / "render-advantage-report.py").write_text(
+                "from pathlib import Path\n"
+                "with open('events','a') as stream: stream.write('render\\n')\n"
+                "Path('scan/report').mkdir(parents=True,exist_ok=True)\n"
+                "Path('scan/report/security-report.json').write_text('{\"saved\":true}')\n"
+                "print('fixture bounded renderer receipt')\n")
+            (scripts / "advantage-cleanup.py").write_text(
+                "import sys\nfrom pathlib import Path\n"
+                "with open('events','a') as stream: stream.write('cleanup\\n')\n"
+                "Path(sys.argv[sys.argv.index('--context')+1]).unlink()\n")
+            return self.node(r'''
+import assert from 'node:assert/strict';
+import {mkdirSync,writeFileSync,readFileSync,existsSync,symlinkSync} from 'node:fs';
+import path from 'node:path';
+import {installAdvantageNative} from HELPER;
+const root=FIXTURE_ROOT, input=path.join(root,'.harness/tmp/input.json'), base=path.join(root,'scan');
+process.env.VULNOPSV3_ROOT=root;
+process.env.VULNOPS_LAUNCHER_SESSION_ID='fixture-host';
+delete process.env.VULNOPS_ADVANTAGE_LAUNCHER_SESSION_ID;
+const selector='fixture/model:high', phases=['baseline','planning','investigation','gap-exploration','synthesis','final-verification','handoff'];
+const actorNames=['planning','investigation','investigator','gap-exploration','gap-investigator','synthesis','final-verification','verify-one'];
+const context={run_id:'fresh',input_path:input,scan_base:base,launcher_session_id:'fixture-host',
+  model_routing:{controllers:{advantage:selector},agents:Object.fromEntries(actorNames.map(n=>[`vulnops-advantage-${n}`,selector]))},
+  budget:{max_concurrency:4,max_tasks:12},gap_exploration_budget:{max_concurrency:4,max_tasks:12}};
+process.env.VULNOPS_MODEL_ROUTING=JSON.stringify(context.model_routing);
+mkdirSync(path.dirname(input),{recursive:true}); mkdirSync(base);
+writeFileSync(input,JSON.stringify(context));
+const notifications=[];
+function session(id,kind,actor) {
+  const hooks=new Map(), events=new Map(), tools=new Map();
+  const pi={on(n,f){hooks.set(n,f)},events:{on(n,f){events.set(n,f)}},getThinkingLevel(){return 'high'},
+    getAllTools(){return [{name:'bash'}]},registerTool(tool){tools.set(tool.name,tool)},
+    pi:{BashTool:class {},settings:{}}};
+  const ctx={cwd:root,agent:{id,kind,name:actor},model:{provider:'fixture',id:'model'},
+    ui:{notify(message){notifications.push(message)}},async abort(){},
+    invokeTool(){throw Error('unexpected unwrapped operation')}};
+  installAdvantageNative(pi);
+  return {hooks,events,tools,ctx};
+}
+const main=session('Main','main');
+await main.hooks.get('session_start')({},main.ctx);
+async function run(command, owner=main, signal) {
+  return await owner.tools.get('bash').execute(command,{command,timeout:5},signal,undefined,owner.ctx);
+}
+const quote=value=>"'"+value.replaceAll("'","'\\''")+"'";
+const validate=phase=>run(`python3 scripts/validate-advantage.py ${quote(base)} --phase ${phase} --context ${quote(input)}`);
+const binding=(id,phase,actor,packet=input)=>({name:id.replace(/[^A-Za-z0-9]/g,''),agent:actor,schemaMode:'strict',
+  task:'VULNOPS_ASSIGNMENT '+JSON.stringify({id,phase,cohort:'original',input:packet})+'\nFixture assignment'});
+const dispatch=(owner,id,tasks)=>owner.hooks.get('tool_call')({toolName:'task',toolCallId:id,input:{tasks}},owner.ctx);
+await run('python3 scripts/init-advantage.py --in-session fixture');
+SCENARIO
+'''.replace("HELPER", json.dumps(HELPER)).replace("FIXTURE_ROOT", json.dumps(str(root))).replace(
+                "SCENARIO", scenario))
+
+    def test_native_leaf_packets_block_before_queue_or_attempt(self):
+        self.native_scenario(r'''
+await validate('baseline');
+for (const [phase,rootId,coordinator,leaf] of [
+  ['planning','AdvantagePlanning','planning',null],
+  ['investigation','AdvantageInvestigation','investigation','investigator'],
+  ['gap-exploration','AdvantageGapExploration','gap-exploration','gap-investigator'],
+  ['synthesis','AdvantageSynthesisOriginal','synthesis',null],
+  ['final-verification','AdvantageReviewOriginal','final-verification','verify-one']]) {
+  const actor=`vulnops-advantage-${coordinator}`;
+  assert.equal(dispatch(main,phase,[binding(rootId,phase,actor)]),undefined);
+  main.events.get('task:subagent:lifecycle')({parentToolCallId:phase,index:0,status:'started',id:rootId,agent:actor});
+  const owner=session(rootId,'sub',actor); await owner.hooks.get('session_start')({},owner.ctx);
+  if (leaf) {
+    const leafActor=`vulnops-advantage-${leaf}`, id=`TASK-${phase}`, packet=path.join(base,phase,`packets/${id}.json`);
+    mkdirSync(path.dirname(packet),{recursive:true}); writeFileSync(packet,'{}');
+    const other=path.join(path.dirname(packet),'OTHER.json'); writeFileSync(other,'{}');
+    const escaped=path.join(path.dirname(packet),'ESCAPE.json'); symlinkSync(input,escaped);
+    const invalid=[
+      binding(id,phase,leafActor,input),binding(id,phase,leafActor,other),
+      binding(id,phase,leafActor,path.join(base,'missing.json')),
+      binding('ESCAPE',phase,leafActor,escaped),binding('../TASK-001',phase,leafActor,packet),
+      binding(id,'planning',leafActor,packet),
+      binding(id,phase,'vulnops-advantage-planning',packet)];
+    const absent=binding(id,phase,leafActor); absent.task='VULNOPS_ASSIGNMENT '+JSON.stringify({id,phase,cohort:'original'});
+    invalid.push(absent);
+    for (let i=0;i<invalid.length;i++) {
+      // The valid first item must not be queued when a later batch item fails.
+      assert.equal(dispatch(owner,`bad-${i}`,[binding(id,phase,leafActor,packet),invalid[i]])?.block,true);
+    }
+    assert.equal(dispatch(owner,'good',[binding(id,phase,leafActor,packet)]),undefined);
+    const workerId=`${phase}-leaf`;
+    owner.events.get('task:subagent:lifecycle')({parentToolCallId:'good',index:0,status:'started',id:workerId,agent:leafActor});
+    const worker=session(workerId,'sub',leafActor); await worker.hooks.get('session_start')({},worker.ctx);
+    owner.events.get('task:subagent:lifecycle')({parentToolCallId:'good',index:0,status:'completed',id:workerId});
+  }
+  main.events.get('task:subagent:lifecycle')({parentToolCallId:phase,index:0,status:'completed',id:rootId});
+  const result=await validate(phase); assert.equal(result.isError,false);
+  const rows=JSON.parse(result.content[0].text).workers.filter(row=>row.phase===phase);
+  assert.equal(rows.length,leaf?2:1);
+  assert.ok(rows.every(row=>row.attempt===1));
+}
+await main.hooks.get('session_stop')({},main.ctx);
+''')
+
+    def test_native_render_validates_accepts_and_closes_before_stop(self):
+        observed = self.native_scenario(r'''
+for (const phase of phases) assert.equal((await validate(phase)).isError,false);
+const result=await run(`python3 scripts/render-advantage-report.py --context ${quote(input)}`);
+assert.equal(result.isError,false);
+assert.equal(result.content[0].text.trim(),'fixture bounded renderer receipt');
+assert.equal(existsSync(input),false);
+assert.deepEqual(readFileSync(path.join(root,'events'),'utf8').trim().split('\n').slice(-3),
+  ['render','validate:report','cleanup']);
+const saved=readFileSync(path.join(base,'report/security-report.json'),'utf8');
+await main.hooks.get('session_stop')({},main.ctx);
+assert.deepEqual(notifications,[]);
+assert.equal(readFileSync(path.join(base,'report/security-report.json'),'utf8'),saved);
+console.log('render -> report validation -> cleanup; temporary input deleted; stop emitted no error');
+''')
+        print(observed.strip())
+
+    def test_native_render_preserves_failed_validation_and_saved_report(self):
+        for failure in ("reject-report", "malformed-report"):
+            with self.subTest(failure=failure):
+                self.native_scenario(r'''
+for (const phase of phases) assert.equal((await validate(phase)).isError,false);
+// A whole-publication read has no phase and must not attempt native acceptance.
+assert.equal((await run(`python3 scripts/validate-advantage.py ${quote(base)} --context ${quote(input)}`)).isError,false);
+writeFileSync(path.join(root,FAILURE),'');
+const render=()=>run(`python3 scripts/render-advantage-report.py --context ${quote(input)}`);
+if (FAILURE==='reject-report') {
+  const result=await render();
+  assert.equal(result.isError,true); assert.equal(result.details.exitCode,23);
+  assert.match(result.content[0].text,/fixture report rejection/);
+  assert.doesNotMatch(result.content[0].text,/renderer receipt/);
+} else await assert.rejects(render(),SyntaxError);
+assert.equal(existsSync(input),true);
+assert.equal(readFileSync(path.join(base,'report/security-report.json'),'utf8'),'{"saved":true}');
+assert.deepEqual(readFileSync(path.join(root,'events'),'utf8').trim().split('\n').slice(-2),
+  ['render','validate:report']);
+await main.hooks.get('session_stop')({},main.ctx);
+assert.deepEqual(notifications,['Advantage stopped before final report validation; check the saved report by explicit path.']);
+assert.equal(readFileSync(path.join(base,'report/security-report.json'),'utf8'),'{"saved":true}');
+'''.replace("FAILURE", json.dumps(failure)))
+
     def test_effective_route_and_main_identity_control_in_session_entry(self):
         self.node(r'''
 import assert from 'node:assert/strict';
@@ -231,6 +392,134 @@ try {
     assert.equal(published.length,2);
     assert.equal(Object.hasOwn(published[1],'publicationAdmitted'),false);
   }
+} finally {rmSync(dir,{recursive:true,force:true});}
+'''.replace("HELPER", json.dumps(HELPER)))
+
+    def test_original_synthesis_projection_requires_bound_stopped_author(self):
+        self.node(r'''
+import assert from 'node:assert/strict';
+import {mkdtempSync,mkdirSync,writeFileSync,readFileSync,rmSync,symlinkSync,renameSync,realpathSync} from 'node:fs';
+import {createHash} from 'node:crypto';
+import path from 'node:path'; import os from 'node:os';
+import {NativeInvocation} from HELPER;
+const dir=mkdtempSync(path.join(os.tmpdir(),'advantage-original-publication-'));
+const script='finalize-advantage-synthesis.py', ref='synthesis/original-findings.json';
+const actor='vulnops-advantage-synthesis', selector='fixture/astra:high';
+const success={code:0,exited:true,stdout:JSON.stringify({status:'original_complete',artifact_ref:ref})};
+const hash=file=>createHash('sha256').update(readFileSync(file)).digest('hex');
+let serial=0;
+function fixture({status='completed',cohort='original',id='AdvantageSynthesisOriginal',
+                  author=actor,route=selector,inputPacket=false,alias=false,valid=false}={}) {
+  const real=path.join(dir,String(++serial)); mkdirSync(path.join(real,'synthesis'),{recursive:true});
+  let base=real;
+  if (alias) {base=path.join(dir,`alias-${serial}`); symlinkSync(real,base);}
+  const input=path.join(base,'input.json'), draft=path.join(base,'synthesis/draft.json');
+  writeFileSync(input,'{}'); writeFileSync(draft,'{"authored":true}');
+  const context={input_path:input,scan_base:base,run_id:'fresh',
+    model_routing:{controllers:{advantage:selector},agents:{[actor]:selector,[author]:selector}}};
+  const live=new NativeInvocation(context,'Main');
+  let workerInput=input;
+  if (inputPacket) {workerInput=path.join(base,'packet.json'); writeFileSync(workerInput,'{}');}
+  live.start({id,phase:'synthesis',cohort,input:workerInput,actor:author},'Original',author,selector);
+  live.yield('Original',{artifact:'synthesis/draft.json'},true);
+  if (status!=='running') live.settle('Original',status,valid?{mode:'strict',status:'valid'}:undefined);
+  const row=live.workers.get('Original');
+  // Route mismatch cannot be started; simulate corruption of an observed row.
+  if (route!==selector) row.selector=route;
+  const argv=['python3',`scripts/${script}`,'--context',input,'--draft',draft,'--stage','original'];
+  return {live,row,argv,base,input,draft,output:path.join(base,ref),
+    binding:()=>live.publicationBinding(script,argv,base)};
+}
+function assertUnbound(f) {
+  assert.equal(f.binding(),undefined);
+  assert.equal(f.row.artifact_sha256[ref],undefined);
+}
+function assertNotObserved(f,result=success,change=()=>{}) {
+  const binding=f.binding(); assert.ok(binding);
+  writeFileSync(f.output,'{"canonical":true}'); change();
+  f.live.observePublication(binding,result);
+  assert.equal(f.row.artifact_sha256[ref],undefined);
+  assert.equal(f.row.publicationAdmitted,undefined);
+}
+try {
+  for (const status of ['completed','failed','cancelled']) {
+    for (const valid of [false,true]) {
+      const f=fixture({status,valid,alias:valid}), binding=f.binding(); assert.ok(binding);
+      const before={status:f.row.status,attempt:f.row.attempt,yield_valid:f.row.yield_valid};
+      const draftHash=hash(f.draft);
+      writeFileSync(f.output,'{"canonical":true}');
+      const outputHash=hash(f.output);
+      f.live.observePublication(binding,success);
+      assert.equal(f.row.artifact_sha256[ref],outputHash);
+      assert.equal(f.row.artifact_sha256['synthesis/draft.json'],draftHash);
+      assert.deepEqual(f.row.artifacts,['synthesis/draft.json',ref]);
+      assert.equal(f.row.publicationAdmitted,true);
+      assert.deepEqual({status:f.row.status,attempt:f.row.attempt,yield_valid:f.row.yield_valid},before);
+      writeFileSync(f.output,'{"changed":true}');
+      f.live.observePublication(binding,success);
+      f.live.observePublication(binding,{code:1,exited:true});
+      assert.equal(f.row.artifact_sha256[ref],outputHash);
+      assert.equal(f.binding(),undefined);
+    }
+  }
+  for (const options of [{status:'running'},{cohort:'supplementary'},
+      {id:'AdvantageSynthesisSupplementary',cohort:'supplementary'},
+      {id:'Foreign'},{author:'foreign'},{route:'fixture/foreign:high'},{inputPacket:true}])
+    assertUnbound(fixture(options));
+  for (const change of [
+      f=>rmSync(f.draft),
+      f=>writeFileSync(f.draft,'changed draft'),
+      f=>writeFileSync(f.input,'changed input'),
+      f=>{const other=path.join(f.base,'unbound.json'); writeFileSync(other,readFileSync(f.draft)); f.argv[5]=other;},
+      f=>{f.row.artifacts=[]; f.row.artifact_sha256={};},
+      f=>{const extra=path.join(f.base,'extra.json'); writeFileSync(extra,'{}');
+        f.row.artifacts.push('extra.json'); f.row.artifact_sha256['extra.json']=hash(extra); writeFileSync(extra,'changed');},
+      f=>{f.live.start({id:f.row.id,phase:'synthesis',cohort:'original',input:f.input,actor},
+        'Newer',actor,selector);},
+      f=>{f.live.workers.set('Ambiguous',{...f.row,runtime_id:'Ambiguous'});},
+      f=>f.live.accepted.add('synthesis')]) {
+    const f=fixture(); change(f); assertUnbound(f);
+  }
+  for (const argv of [
+      args=>[...args,'--context',args[3]], args=>[...args,'--draft',args[5]],
+      args=>[...args,'--stage','original'], args=>[...args,'--unknown','value'],
+      args=>args.slice(0,-2), args=>args.slice(0,-1), args=>[...args.slice(0,-1),'supplementary'],
+      args=>args.filter((_,i)=>i!==4&&i!==5), args=>args.filter((_,i)=>i!==2&&i!==3),
+      args=>[...args,'--result',args[5]]]) {
+    const f=fixture(); f.argv=argv(f.argv);
+    assert.equal(f.live.publicationBinding(script,f.argv,f.base),undefined);
+  }
+  for (const result of [{...success,code:1},{...success,exited:false},
+      {...success,stdout:'invalid JSON'},
+      {...success,stdout:JSON.stringify({status:'unreviewed',artifact_ref:ref})},
+      {...success,stdout:JSON.stringify({status:'completed',artifact_ref:ref})},
+      {...success,stdout:JSON.stringify({status:'original_complete',artifact_ref:'synthesis/other.json'})}])
+    assertNotObserved(fixture(),result);
+  for (const field of ['draft','input']) {
+    const f=fixture();
+    assertNotObserved(f,success,()=>writeFileSync(f[field],'changed after binding'));
+  }
+  for (const kind of ['missing','symlink','redirected-directory','directory']) {
+    const f=fixture();
+    assertNotObserved(f,success,()=>{
+      rmSync(f.output);
+      if (kind==='symlink') {
+        const other=path.join(f.base,'other.json'); writeFileSync(other,'{}'); symlinkSync(other,f.output);
+      } else if (kind==='redirected-directory') {
+        const actual=path.join(realpathSync(f.base),'redirected');
+        renameSync(path.dirname(f.output),actual); symlinkSync(actual,path.dirname(f.output));
+        writeFileSync(f.output,'{}');
+      } else if (kind==='directory') mkdirSync(f.output);
+    });
+  }
+  // Finalization while running still relies on the later terminal capture.
+  const f=fixture({status:'running'});
+  writeFileSync(f.output,'{"canonical":true}');
+  assert.equal(f.binding(),undefined);
+  f.live.yield('Original',{artifact:ref},true);
+  f.live.settle('Original','completed',{mode:'strict',status:'valid'});
+  assert.equal(f.row.artifact_sha256[ref],hash(f.output));
+  assert.equal(f.row.yield_valid,true);
 } finally {rmSync(dir,{recursive:true,force:true});}
 '''.replace("HELPER", json.dumps(HELPER)))
 

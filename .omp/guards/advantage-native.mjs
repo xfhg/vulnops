@@ -184,6 +184,7 @@ export class NativeInvocation {
   publicationBinding(script, argv, cwd) {
     const phase = { "finalize-advantage-investigation.py": "investigation",
       "finalize-advantage-verification.py": "final-verification",
+      "finalize-advantage-synthesis.py": "synthesis",
       "gap-exploration-worker.py": "gap-exploration" }[script];
     if (!phase || this.accepted.has(phase)) return;
     const options = new Map;
@@ -191,25 +192,32 @@ export class NativeInvocation {
     for (let index = 2; index < argv.length; index++) {
       const flag = argv[index];
       if (phase === "gap-exploration" && flag === "admit" && !admit) { admit = true; continue; }
-      if (!["--context", "--result", ...(phase === "gap-exploration" ? ["--task-id"] : [])].includes(flag)
+      if (!(phase === "synthesis" ? ["--context", "--draft", "--stage"]
+          : ["--context", "--result", ...(phase === "gap-exploration" ? ["--task-id"] : [])]).includes(flag)
           || options.has(flag) || !argv[index + 1]) return;
       options.set(flag, argv[++index]);
     }
-    if (!options.has("--result") || !options.has("--context")
+    if (!options.has("--context")
+        || (phase === "synthesis" ? !options.has("--draft") || options.get("--stage") !== "original"
+          : !options.has("--result"))
         || phase === "gap-exploration" && (!admit || !options.has("--task-id"))) return;
     try {
       this.checkInput(path.resolve(cwd, options.get("--context")));
-      const filename = realpathSync(path.resolve(cwd, options.get("--result")));
+      const filename = realpathSync(path.resolve(cwd, options.get(phase === "synthesis" ? "--draft" : "--result")));
       if (!under(realpathSync(this.context.scan_base), filename)) return;
       const actor = phase === "investigation" ? "vulnops-advantage-investigator"
-        : phase === "final-verification" ? "vulnops-advantage-verify-one" : "vulnops-advantage-gap-investigator";
+        : phase === "final-verification" ? "vulnops-advantage-verify-one"
+        : phase === "synthesis" ? "vulnops-advantage-synthesis" : "vulnops-advantage-gap-investigator";
       const rows = [...this.workers.values()].filter(row => row.phase === phase && row.actor === actor);
       const matching = rows.filter(row => {
         if (row.status === "running" || row.publicationAdmitted
+            || phase === "synthesis" && (row.id !== "AdvantageSynthesisOriginal" || row.cohort !== "original"
+              || row.selector !== this.context.model_routing.agents[actor])
             || phase === "gap-exploration" && options.get("--task-id") !== row.id
             || rows.some(other => other.id === row.id && other.attempt > row.attempt)) return false;
         try {
-          return realpathSync(row.input) === realpathSync(path.join(this.context.scan_base, phase, "packets", `${row.id}.json`))
+          return realpathSync(row.input) === realpathSync(phase === "synthesis" ? this.context.input_path
+              : path.join(this.context.scan_base, phase, "packets", `${row.id}.json`))
             && fileHash(row.input) === row.input_sha256
             && row.artifacts.some(ref => realpathSync(path.resolve(this.context.scan_base, ref)) === filename)
             && row.artifacts.every(ref => fileHash(path.resolve(this.context.scan_base, ref)) === row.artifact_sha256[ref]);
@@ -231,7 +239,18 @@ export class NativeInvocation {
     const row = this.workers.get(binding.runtimeId);
     if (result.code === 0) {
       try {
-        if (JSON.parse(result.stdout).status === "completed") row.publicationAdmitted = true;
+        const receipt = JSON.parse(result.stdout);
+        if (binding.script === "finalize-advantage-synthesis.py") {
+          const ref = "synthesis/original-findings.json";
+          if (receipt.status !== "original_complete" || receipt.artifact_ref !== ref) return;
+          const root = realpathSync(this.context.scan_base), filename = path.join(this.context.scan_base, ref);
+          const resolved = realpathSync(filename);
+          if (!lstatSync(filename).isFile() || resolved !== path.join(root, ref) || !under(root, resolved)) return;
+          const checksum = fileHash(filename);
+          if (!row.artifacts.includes(ref)) row.artifacts.push(ref);
+          row.artifact_sha256[ref] = checksum;
+          row.publicationAdmitted = true;
+        } else if (receipt.status === "completed") row.publicationAdmitted = true;
       } catch {}
     }
   }
@@ -530,6 +549,8 @@ export function installAdvantageNative(pi) {
             phase = argv[3];
           if (script === "render-advantage-report.py") {
             phase = "report";
+            if (identity.id !== live.rootId || identity.kind !== "main")
+              fail("reporting requires the root Advantage controller");
             if (phases.slice(0, -1).some((item) => !live.accepted.has(item)))
               fail("reporting requires all prior native phase acceptances");
           }
@@ -574,7 +595,24 @@ export function installAdvantageNative(pi) {
               result.output = JSON.stringify({ run_id: input.run_id, input_path: input.input_path,
                 scan_base: input.scan_base, mode: input.mode, source_scan: input.source_scan,
                 message: "Read the immutable input for the full source and routing bindings." });
-          } else if (script === "validate-advantage.py"
+          } else if (script === "render-advantage-report.py") {
+            if (!result.exited) fail("report rendering did not exit successfully");
+            const quote = value => `'${value.replaceAll("'", "'\\''")}'`;
+            const validation = await confinedCommand(
+              `python3 scripts/validate-advantage.py ${quote(live.context.scan_base)} --phase report --context ${quote(live.context.input_path)}`,
+              { ...params, cwd: root, nativeCall: JSON.stringify(live.call(identity, "report")) },
+              { VULNOPS_ADVANTAGE_CALL: "fd:3" }, signal);
+            if (!validation.exited) fail("final report validation did not exit successfully");
+            if (validation.code !== 0) {
+              result = validation;
+            } else {
+              if (!live.acceptFromCaller(identity, "report", JSON.parse(validation.stdout)))
+                fail("final report acceptance requires the root controller");
+              live.published = true;
+              await teardown(live, toolCtx, pi);
+              if (signal?.aborted) fail("report operation cancelled");
+            }
+          } else if (script === "validate-advantage.py" && argument(argv, "--phase") && result.exited
               && live.acceptFromCaller(identity, phase, JSON.parse(result.stdout))) {
             if (phase === "report") {
               live.published = true;
@@ -613,11 +651,22 @@ export function installAdvantageNative(pi) {
         if (!prefix.startsWith("VULNOPS_ASSIGNMENT "))
           fail("missing exact native assignment binding");
         const binding = JSON.parse(prefix.slice("VULNOPS_ASSIGNMENT ".length));
-        if (!binding.id || !phases.includes(binding.phase) || !["original", "supplementary"].includes(binding.cohort) || !path.isAbsolute(binding.input))
+        if (typeof binding.id !== "string" || !/^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$/.test(binding.id)
+            || !phases.includes(binding.phase) || !["original", "supplementary"].includes(binding.cohort)
+            || typeof binding.input !== "string" || !path.isAbsolute(binding.input))
           fail("invalid native assignment identity");
         const input = realpathSync(binding.input);
-        if (input !== live.context.input_path && !under(realpathSync(live.context.scan_base), input))
-          fail("native assignment input belongs to another invocation");
+        const leafPhase = {
+          "vulnops-advantage-investigator": "investigation",
+          "vulnops-advantage-gap-investigator": "gap-exploration",
+          "vulnops-advantage-verify-one": "final-verification",
+        }[assignment.agent];
+        if (leafPhase) {
+          const packet = path.join(realpathSync(live.context.scan_base), leafPhase, "packets", `${binding.id}.json`);
+          if (binding.phase !== leafPhase || input !== packet)
+            fail("native leaf requires its exact phase and owner packet");
+        } else if (input !== live.context.input_path)
+          fail("native coordinator requires this invocation's immutable input");
         if (ctx.agent.kind === "main" && input !== live.context.input_path)
           fail("root phase requires this invocation's immutable input");
         if (ctx.agent.kind === "sub" && live.workers.get(ctx.agent.id)?.phase !== binding.phase)
@@ -730,7 +779,8 @@ export function installAdvantageNative(pi) {
     const live = roots.get(ctx.agent.id);
     if (!live) return;
     await teardown(live, ctx, pi);
-    ctx.ui.notify("Advantage ended without a completed publication; the next explicit request starts fresh.", "error");
+    if (!live.published)
+      ctx.ui.notify("Advantage stopped before final report validation; check the saved report by explicit path.", "error");
   });
   pi.on("session_shutdown", async (_event, ctx) => {
     sessions.delete(ctx.agent.id);

@@ -6,6 +6,7 @@ HARNESS_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 # shellcheck source=scripts/harness-lib.sh
 source "${HARNESS_ROOT}/scripts/harness-lib.sh"
 harness_setup_containment "$HARNESS_ROOT"
+CONFIG_PATH="${VULNOPS_CONFIG_PATH:-${HARNESS_ROOT}/config.toml}"
 MODE="${1:---live}"
 case "$MODE" in
     --live|--offline) ;;
@@ -17,7 +18,7 @@ err(){ echo "[validate-config] ERROR: $*" >&2; errors=$((errors+1)); }
 check_file(){ [ -f "$1" ] && ok "$2" || err "$2 missing: $1"; }
 check_exec(){ [ -x "$1" ] && ok "$2" || err "$2 missing or not executable: $1"; }
 
-check_file "${HARNESS_ROOT}/config.toml" "config.toml"
+check_file "$CONFIG_PATH" "configuration"
 if python3 -c 'import sys; raise SystemExit(sys.version_info < (3, 11))'; then
     ok "system Python is 3.11 or newer"
 else
@@ -26,14 +27,14 @@ fi
 config_exports="$("${HARNESS_ROOT}/scripts/load-config.sh")" || exit 1
 eval "$config_exports"
 
-python3 "${HARNESS_ROOT}/scripts/validate-configuration.py" "${HARNESS_ROOT}/config.toml" \
+python3 "${HARNESS_ROOT}/scripts/validate-configuration.py" "$CONFIG_PATH" \
     || err "canonical configuration is invalid"
 
 offline_package=false
 if [ -f "${HARNESS_ROOT}/offline-pack-manifest.json" ]; then
     offline_package=true
     if python3 "${HARNESS_ROOT}/scripts/offline_package.py" validate-package-config \
-        "${HARNESS_ROOT}/config.toml"; then
+        "$CONFIG_PATH"; then
         ok "offline package configuration parses"
     else
         err "offline package configuration is invalid"

@@ -13,7 +13,7 @@ HARNESS_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 CONFIG_PY="$(command -v python3 2>/dev/null || true)"
 PARSER="${HARNESS_ROOT}/scripts/parse-config.py"
 
-if [ ! -f "${HARNESS_ROOT}/config.toml" ]; then
+if [ ! -f "${VULNOPS_CONFIG_PATH:-${HARNESS_ROOT}/config.toml}" ]; then
     exit 0
 fi
 

@@ -15,8 +15,8 @@ This skill is not an Advantage phase or handoff action. It may be selected only
 after an operator separately requests remediation from a completed, validated
 Advantage bundle using `bash remediate.sh <completed-advantage-base>`.
 The existing `vulnops-remediation` coordinator and `vulnops-remediate-one`
-worker use the bound Blue remediation route. Advantage's Red investigators and
-Astra controller must not implement or publish fixes.
+worker use the bound Blue remediation route. Advantage's investigators and
+controller must not implement or publish fixes.
 
 Require an eligible remediation packet, selected independently accepted finding,
 complete verified dossier, bound original audit plus linked evidence closure,

@@ -11,16 +11,12 @@ single Git repository or a set of Git repositories whose directory prefixes
 form one source namespace. The main OMP process is the audit lead. Never spawn
 another lead and never delegate ownership of the overall workflow.
 
-The lead is responsible for:
-
-- initializing or resuming ordinary incomplete work, or starting fresh Advantage;
-- launching canonical OMP phase tasks in order;
-- executing deterministic phases directly;
-- validating every yielded phase;
-- preserving ordinary unfinished state or Advantage's process-only native coordination;
-- stopping unsafe execution and rejecting invalid evidence without stopping healthy Advantage work;
-- requiring accepted analytical work and validated report publication for completion; and
-- returning only final report paths, counts, and material limitations.
+The lead selects or resumes the requested workflow, launches canonical phases in
+order, executes deterministic phases directly and validates their outputs. Preserve
+ordinary checkpoints and Advantage's process-only coordination. Stop unsafe work;
+reject invalid evidence without stopping healthy Advantage peers. Completion
+requires accepted analytical work and validated publication; return report paths,
+counts and material limitations.
 
 Optional remediation is a separate post-audit development execution. It never
 reopens a completed audit, changes report authority, or makes the audit lead
@@ -68,21 +64,17 @@ and populate the local OSV database. Then run:
 bash scripts/validate-config.sh
 ```
 
-For a transferable offline deployment, build only on the matching supported
-platform from clean source files (prior generated archive and chunk outputs are
-not source inputs):
+For transferable installation, follow [offline.md](offline.md). Build on the
+matching supported platform from clean source, excluding prior generated outputs:
 
 ```bash
 bash scripts/offline-pack.sh --platform linux_amd64
 ```
 
-Online preparation ends when this command succeeds. It must consume only
-strictly locked assets, copy the already verified local OSV snapshot, verify the
-OMP native runtime and every OSV ecosystem, pass relocation and setup smoke
-tests, then publish the final archive and platform-namespaced JSON chunk
-manifest. `--allow-dirty` is development-only;
-`--include-config` may disclose endpoint credentials. SHA-256 proves integrity,
-not publisher authenticity.
+Packaging consumes locked assets and the verified OSV snapshot, checks native
+runtime/ecosystem completeness and relocation, then publishes the archive and
+chunk manifest. `--allow-dirty` is development-only; `--include-config` may expose
+credentials. Hashes establish integrity, not publisher authenticity.
 
 Ordinary `scripts/fetch-osv-db.sh` synchronization never updates the OSV lock.
 When an operator intentionally prepares a new reviewed database snapshot, use
@@ -90,17 +82,12 @@ When an operator intentionally prepares a new reviewed database snapshot, use
 stage and validate every ecosystem before publishing databases and replacing the
 lock last.
 
-After transfer, reconstruct with `./offline-build.sh --platform <platform>`,
-extract into an empty directory, run `bash setup.sh verify`, edit `config.toml`,
-authenticate an OAuth-backed provider with `bash setup.sh login <provider>` when
-needed, and run `bash setup.sh configure`. Verify and configure never download
-anything; login may contact only the selected provider's authentication service
-and must not install dependencies.
-The package is an offline installer, not a restricted runtime: it must not rewrite
-or narrow configured OMP, network, or reproduction capabilities. OMP must retain
-normal access to the configured LLM provider. The default configuration avoids a
-Bubblewrap dependency, while explicitly configured enforced egress or safe
-reproduction still requires a functional host Bubblewrap installation.
+Use the offline guide for transfer, reconstruction, verification and configuration.
+`setup.sh verify` and `configure` never download; `login` may contact only the
+selected authentication service and cannot install dependencies. Packaging must
+preserve configured OMP, network and reproduction capabilities. Default operation
+needs no Bubblewrap; enforced egress and safe reproduction require a working host
+installation.
 
 Start OMP through the contained launcher:
 
@@ -130,14 +117,8 @@ subject to the separate remediation exact-source policy:
 ./remediate.sh <completed-scan-base>
 ```
 
-This command creates a separate versioned bundle beneath
-`remediations/<repo-id>/<audit-run-id>/`. It never writes beneath the completed
-scan. Automated remediation still requires its supported exact-source authority;
-historical-only or mixed-source inputs without it receive a precise manual
-prerequisite rather than broadened authorization. It requires a single-repository
-source because publication authority is one Git patch. Multi-repository audits
-remain reportable but require explicit per-repository patch ownership outside
-the automated remediation workflow.
+This creates a separate versioned bundle beneath `remediations/`. Section 8.1
+defines its single-repository, exact-source admission and patch-publication rules.
 
 If the host launcher terminates, it closes owned audit and Advantage work without
 hiding the original nonzero exit/cancellation status or changing completed evidence.
@@ -242,10 +223,9 @@ manifest projections must never overwrite them. Retained closures are checked
 against their producing task and scope, not recomputed with today's clock,
 budget or assessment identity.
 
-Stop old active sessions before deploying runtime and prompts together. Completed
-bundles require no migration. Rollback restores the earlier harness/configuration
-and operator-retained incomplete-state backup; never alter completed evidence to
-satisfy an old reader.
+Runtime/prompt upgrades require stopped sessions. Completed bundles need no
+migration; rollback restores runtime/configuration and any retained incomplete-state
+backup without altering completed evidence.
 
 ## 5. Run-state protocol
 
@@ -1032,7 +1012,7 @@ Do not reproduce raw findings, secrets, payloads, or proof output in chat.
 ### 8.1 Optional linked remediation
 
 Linked remediation begins only from recorded complete input and its independently
-required exact-source authority. It is not a ninth audit phase and must not write
+required exact-source authority. It is outside the audit sequence and must not write
 anything under `scans/`. New historical-only or mixed-source input lacking exact
 authority requires the precise manual prerequisite; do not synthesize it from lifecycle data.
 
@@ -1136,14 +1116,19 @@ orchestration mechanism.
 The required `[llm.routing]` keys are `audit_lead`, `recon`, `sast`,
 `campaign_planning`, `intrusion`, `synthesis`, `final_verification`, `reproduction`,
 `remediation`, `advantage_lead`, `advantage` and `advantage_verification`.
-Astra High owns audit lead, Recon and the linked Advantage controller;
-Daybreak Red High owns attack investigation, ordinary and Advantage Synthesis,
-independent review and optional reproduction; Daybreak Blue High owns the separate
-remediation execution. Exact
-shipped selectors are `openai-codex/gpt-6-astra:high`,
-`openai-codex/gpt-daybreak-red-latest:high` and
-`openai-codex/gpt-daybreak-blue-latest:high`. Preserve each execution's declared
-spawn graph and exact coordinator/worker routes.
+GPT-6.1 Sol High owns audit lead, Recon, the linked Advantage controller and
+the separate remediation execution. Astra High owns attack investigation,
+ordinary and Advantage Synthesis, independent review and optional reproduction.
+Exact shipped selectors are `openai-codex/gpt-6.1-sol:high` and
+`openai-codex/gpt-6-astra:high`, retaining OMP sign-in.
+Daybreak Red/Blue denote access tiers, not model IDs.
+Cyber requires Red approval; GPT-6 Cyber requires separate model approval and is
+not the shipped default. Blue provides reduced refusals on supported mainline
+models for authorized defensive work, not access to Cyber; Astra retains standard
+safeguards under Blue. Red also provides reduced refusals on supported mainline
+models, including Astra and Astra Minor. Access is account-controlled, never
+granted by a route. Preserve each execution's declared spawn graph and exact
+coordinator/worker routes.
 
 Read the resolved `model_routing` from execution context. Launchers explicitly
 select `controllers.audit`, `controllers.advantage` or `controllers.remediation`; complete generated
@@ -1289,12 +1274,8 @@ Integrity violations and malformed required control fields still fail the gate.
 
 ## 14. Failure and retry rules
 
-For ordinary audits, retry only when the failure is recoverable and within the
-configured attempt budget. Reuse the stable task ID, increment the attempt, and
-record the previous error. Do not broaden scope or relax a schema to rescue
-malformed output. Exhausting the in-generation attempt budget leaves the run
-incomplete with the failure recorded; a later explicit invocation resumes from
-its first unfinished checkpoint.
+For ordinary audits, follow Section 5's stable-ID, bounded retry and recovery
+protocol. Do not broaden scope or relax schemas to rescue malformed output.
 
 For linked Advantage, discard unusable claim/child evidence and continue healthy
 work through reporting without mandatory retry, exhaustion proof or bookkeeping
@@ -1315,10 +1296,8 @@ Stop the workflow when:
 - a downstream phase would require mutating upstream evidence; or
 - required completion state or report outputs are unreadable.
 
-Stopping closes owned active work safely and leaves the run incomplete. The next
-explicit initialization uses current source/configuration in the same selected run,
-preserving accepted checkpoints and safe partial accounting. Source/model/budget
-changes alone never select a replacement or replay completed phases.
+Ordinary stops leave the run incomplete for explicit recovery under Section 5.
+Advantage stops close that invocation under Section 18.
 
 Safe sandbox unavailability is not a reason to execute unsafely. Continue static
 analysis and record the environment limitation.
@@ -1366,8 +1345,8 @@ Supporting methodology belongs in `references/` beneath its existing native skil
 owner. Use explicit relative Markdown links and read each reference only for its
 stated task; reuse shared owners rather than duplicate doctrine. Reference files
 are not additional skills. The source/package validators check native dependency
-availability; this adds no audit phase or evidence ledger. Provenance belongs in
-README, not repeated operational introductions or a separate reviewer skill tree.
+availability. Keep methodology in those shared owners rather than repeating it
+in operational introductions or a separate reviewer skill tree.
 
 Canonical phase agents:
 
@@ -1538,7 +1517,7 @@ Before a model phase, arm `python3 scripts/set-omp-deadline.py <context> <phase>
 Dispatch only the assigned canonical actor with strict native terminal yield,
 using the exact assignment binding described in the shared Advantage reference.
 Finalizers prepare analytical output, never acceptance of their own task.
-After owned work stops, run:
+After owned work stops, run the phase gate for phases before Report:
 
 ```bash
 python3 scripts/validate-advantage.py <base> --context <context> --phase <phase>
@@ -1600,8 +1579,8 @@ attribution across publication; imported baseline evidence still needs independe
 review before granting new capability. Existing paths alone are not proof. Graph
 and experiment results follow current-attempt/containment rules above.
 
-All fourteen native skills are inventoried in README and share the non-skill
-context reference beneath `vulnops-advantage-security-scan/references/`.
+Native Advantage skills live in [.omp/skills/](.omp/skills/) and share the context
+reference beneath `vulnops-advantage-security-scan/references/`.
 `vulnops-advantage-define-security-policy` is excluded. Load only skills declared
 by each actor; do not duplicate attack doctrine in phase prompts.
 
@@ -1627,10 +1606,17 @@ historical. Both completed inputs stay unchanged. Separately requested
 non-derived exact-source authority; missing historical/mixed authority is a manual
 prerequisite, never expanded patch authorization.
 
-Validate final reporting while the native invocation is alive. Publish companions
-before canonical JSON, whose publication metadata carries execution identity,
-source/scope, actual routes and action relationships. Completed report plus full
-canonical evidence is the product, not a control ledger.
+After all predecessor acceptances, the root runs
+`python3 scripts/render-advantage-report.py --context <input_path>` as one native
+operation. It renders, runs the existing report-phase validator, accepts the report,
+and awaits owned teardown before returning the bounded renderer receipt. Do not
+issue a separate controller report-phase gate. Publish companions before canonical
+JSON, whose publication metadata carries execution identity, source/scope, actual
+routes and action relationships. Completed report plus full canonical evidence is
+the product, not a control ledger. Native render success removes the temporary
+input; afterward use saved-base portable validation/status, never that input.
+Direct Python CLI fixtures and retained publication bypass the wrapper and keep
+their existing explicit validation/cleanup.
 `bash scripts/advantage-status.sh <base>` reads publication by explicit path;
 `validate-advantage.py <base> --portable` reads saved evidence without restoring
 runtime state. No completed report means no completed or zero-findings assessment.

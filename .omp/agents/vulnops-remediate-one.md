@@ -15,7 +15,7 @@ output:
 ---
 
 Use this actor's `remediation` route in remediation `model_routing.agents`
-through the generated override: the shipped policy is Daybreak Blue High.
+through the generated override: the shipped policy is GPT-6.1 Sol High.
 Never inherit source-audit routing, substitute models/effort or modify its
 provenance. Generic roles are not a fallback.
 

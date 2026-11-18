@@ -39,7 +39,7 @@ inherit counters or require old failed work to be repaired/deleted. If admission
 fails, report its actual bounded error and stop; do not retry with altered inputs,
 fall back to stale context or issue commands against a guessed execution.
 
-Standalone startup selects `model_routing.controllers.advantage` (shipped Astra
+Standalone startup selects `model_routing.controllers.advantage` (shipped GPT-6.1 Sol
 High). In-session entry requires the existing effective controller to match that
 configured route; launch-selected metadata alone does not prove the model after
 a manual switch. Missing readiness or a mismatch stops dispatch, without model
@@ -112,7 +112,7 @@ validation. A missing/bad coordinator envelope cannot block usable evidence or
 healthy progression. Native outcomes describe actual execution, never invented
 success or failure. Stop/await all live owned work before phase acceptance.
 
-Once the phase has no live or queued work, run:
+For phases before Report, once the phase has no live or queued work, run:
 
 `python3 scripts/validate-advantage.py <base> --phase <phase> --context <context>`
 
@@ -280,8 +280,10 @@ existing publisher; tracking prepares offline records and never publishes ticket
 After all predecessor gates, start deterministic report and run:
 
 `python3 scripts/render-advantage-report.py --context <context>`
-The command returns a bounded publication receipt, not dossier bodies.
-Read the canonical artifacts for the complete unbounded report.
+The native Bash operation renders, runs the existing report-phase validator,
+accepts the report, and awaits owned teardown before returning the bounded
+renderer receipt. Do not issue a separate controller report-phase gate.
+Read the saved canonical artifacts for the complete unbounded report.
 
 The renderer uses final accepted dossiers, attributed baseline reconciliation,
 complete accounting references and typed action outcomes. Lead with independently
@@ -292,16 +294,17 @@ finding totals. Do not hand-write the report or infer success from worker prose.
 Zero accepted findings is valid with actual limitations; a completed report is
 not clean or exhaustive security assurance.
 
-Require successful renderer output and final report validation while the native
-invocation is alive. Publish companions first and canonical
-`report/security-report.json` last. The report's publication metadata plus full
-canonical evidence supplies identity, source/scope, routes and selected action
-relationships; no control metadata is a delivery prerequisite. Successful final
-report validation triggers native cleanup after descendants stop; the immutable
-input is unavailable afterward. Do not retain a last-completed selection or issue
-more `--context` commands. Read publication with `validate-advantage.py <base>
---portable`, then `bash scripts/advantage-status.sh <base>`. Keep OMP and its
-runtime overlay alive for later explicit requests.
+Publish companions first and canonical `report/security-report.json` last.
+The native render operation must succeed through final validation and cleanup;
+renderer output or report file presence alone is not native acceptance. The
+report's publication metadata plus full canonical evidence supplies identity,
+source/scope, routes and selected action relationships; no control metadata is a
+delivery prerequisite. The immutable input is removed before native render success.
+Do not retain a last-completed selection or issue more `--context` commands.
+Read publication with `validate-advantage.py <base> --portable`, then
+`bash scripts/advantage-status.sh <base>`. Direct Python CLI fixtures and retained
+publication bypass the native wrapper and keep their explicit validation/cleanup.
+Keep OMP and its runtime overlay alive for later explicit requests.
 Current `report.findings` and confirmed totals contain only independently
 verified current findings. Keep historical outcomes and unresolved applicability
 separate with original source refs and contributor routes. After publication

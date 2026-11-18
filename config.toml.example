@@ -12,19 +12,21 @@ base_url = ""
 api_key = ""
 
 # Every model-owned actor has an explicit provider/model:effort route.
+# Keep OMP sign-in: Astra handles investigation/review; GPT-6.1 Sol handles the rest.
+# All routes retain High reasoning. Daybreak access remains account-controlled.
 [llm.routing]
-audit_lead = "openai-codex/gpt-6-astra:high"
-recon = "openai-codex/gpt-6-astra:high"
-sast = "openai-codex/gpt-daybreak-red-latest:high"
-campaign_planning = "openai-codex/gpt-daybreak-red-latest:high"
-intrusion = "openai-codex/gpt-daybreak-red-latest:high"
-synthesis = "openai-codex/gpt-daybreak-red-latest:high"
-final_verification = "openai-codex/gpt-daybreak-red-latest:high"
-reproduction = "openai-codex/gpt-daybreak-red-latest:high"
-remediation = "openai-codex/gpt-daybreak-blue-latest:high"
-advantage_lead = "openai-codex/gpt-6-astra:high"
-advantage = "openai-codex/gpt-daybreak-red-latest:high"
-advantage_verification = "openai-codex/gpt-daybreak-red-latest:high"
+audit_lead = "openai-codex/gpt-6.1-sol:high"
+recon = "openai-codex/gpt-6.1-sol:high"
+sast = "openai-codex/gpt-6-astra:high"
+campaign_planning = "openai-codex/gpt-6-astra:high"
+intrusion = "openai-codex/gpt-6-astra:high"
+synthesis = "openai-codex/gpt-6-astra:high"
+final_verification = "openai-codex/gpt-6-astra:high"
+reproduction = "openai-codex/gpt-6-astra:high"
+remediation = "openai-codex/gpt-6.1-sol:high"
+advantage_lead = "openai-codex/gpt-6.1-sol:high"
+advantage = "openai-codex/gpt-6-astra:high"
+advantage_verification = "openai-codex/gpt-6-astra:high"
 
 # Provider metadata (used by scripts/bootstrap-omp.sh to generate
 # .harness/home/.omp/agent/models.yml)

@@ -14,7 +14,7 @@ output:
 ---
 
 Use the configured `advantage` route for this canonical actor via Advantage
-`model_routing.agents` and its generated override. Red High is the shipped default;
+`model_routing.agents` and its generated override. GPT-6 Astra High is the shipped default;
 explicit operator selectors and effort remain authoritative. The controller stays
 in `advantage_lead`. Do not inherit audit routes or substitute actors or selectors. Read
 `AGENTS.md`, the absolute Advantage context and
@@ -130,7 +130,7 @@ report publication cannot introduce new prerequisites, actions, examples or fixe
 admitted result refs and base/derived source view. Compute complete effective
 contributors from all relied-on baseline and local evidence. Do not replace
 investigator provenance with synthesis model identity or declare diversity from
-authorship. Retain actual older Astra attribution; a new Red default never rewrites
+authorship. Retain actual older Astra attribution; a new default never rewrites
 accepted dossiers. Preserve each material primitive's source actor and selector.
 
 ## Native finalization

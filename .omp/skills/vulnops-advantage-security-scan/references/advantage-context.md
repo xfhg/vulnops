@@ -66,8 +66,15 @@ Only one workflow may be active. Finish it or explicitly stop its owned work and
 close it before another request; do not queue or auto-start Advantage after an
 audit, failure or cancellation. Bind only the immutable `input_path` returned by
 the successful initializer for this host. All `--context <context>` commands use
-that path. Teardown removes the owned temporary input; OMP and its overlay remain
-available for later explicit requests.
+that path. After predecessor acceptance, the root's native
+`python3 scripts/render-advantage-report.py --context <context>` operation runs
+the existing report-phase validator, accepts the report, and awaits teardown
+before returning its bounded renderer receipt. Do not run a separate controller
+report-phase gate. Teardown removes the owned temporary input; afterward use only
+saved-base `validate-advantage.py <base> --portable` and
+`bash scripts/advantage-status.sh <base>`, never the removed input. Direct Python
+CLI fixtures and retained publication keep explicit validation/cleanup because
+they bypass this wrapper. OMP and its overlay remain available for later requests.
 
 ## Existing doctrine remains authoritative
 
@@ -124,8 +131,10 @@ Assessment fields belong in schema-defined artifacts, not terminal yield envelop
 
 Legacy completed publications remain readable without rewriting their bytes.
 Missing optional quality metadata means no new quality assessment was recorded.
-An interrupted invocation is never resumed, including at report publication;
-a later explicit request starts from the selected completed audit again.
+Interrupted investigation never resumes; a new investigation starts from the
+selected completed audit. An explicit retained-report request may publish existing
+conclusions only under `AGENTS.md` Section 18,
+without restarting phases or changing analytical evidence.
 
 No direct target imports, applications, tests, builds, package managers, debugger,
 PoC commands or dependency downloads. No credentials, live target testing, remote
@@ -413,8 +422,8 @@ baseline finding as reused/revalidated/contradicted/not_revisited without editin
 it. Links identify finding, classification, baseline IDs, result refs and source
 view. Rediscovery never counts as a new root. Effective contributor identity
 includes every relied-on baseline primitive and linked result.
-The existing Synthesis actor uses `advantage` (shipped Red High); `advantage_lead`
-still owns the Astra controller, and explicit operator selectors are authoritative.
+The existing Synthesis actor uses `advantage` (shipped GPT-6 Astra High); `advantage_lead`
+owns the GPT-6.1 Sol controller, and explicit operator selectors are authoritative.
 Author concrete starting access/prerequisites, controlled inputs, ordered causal
 actions, faithful examples and expected versus observed results before review.
 Each repair explains why its enforcement interrupts the named `breaks_steps`, with

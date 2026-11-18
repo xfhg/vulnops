@@ -6,7 +6,7 @@ OMP scheduling adapter. The target is read-only and runtime is offline except fo
 the configured LLM endpoint. Ordinary audit paths and deadlines come from the
 returned audit context; linked Advantage uses its initializer-returned immutable `input_path`.
 
-The launcher explicitly selects `model_routing.controllers.audit` (shipped Astra
+The launcher explicitly selects `model_routing.controllers.audit` (shipped GPT-6.1 Sol
 High). Complete generated per-agent overrides select every canonical child from
 `model_routing.agents`; generic roles are not policy or fallback. Read the bound
 map before dispatch and never add task `model` overrides, substitute models or

@@ -15,7 +15,7 @@ output:
 ---
 
 Use this actor's resolved `synthesis` route in audit `model_routing.agents`
-through the generated override. The shipped default is Red High; an explicit
+through the generated override. The shipped default is GPT-6 Astra High; an explicit
 operator selector, including its effort, is authoritative. Never substitute it.
 Each finding's sorted/deduplicated `contributors` must union all
 relied-upon investigation, candidate-review and model-assisted reproduction

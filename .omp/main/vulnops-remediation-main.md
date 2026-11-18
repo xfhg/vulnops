@@ -5,7 +5,7 @@ This is not an audit phase and has no authority to modify the completed source
 scan. Read `AGENTS.md` and `.harness/remediation-context.json` before acting.
 
 The launcher explicitly selects `model_routing.controllers.remediation` from the
-remediation context (shipped Daybreak Blue High). Its coordinator and patch
+remediation context (shipped GPT-6.1 Sol High). Its coordinator and patch
 workers use complete generated `model_routing.agents` overrides at High, never
 audit routing or generic-role fallbacks. Do not add ad hoc task model overrides,
 substitute models/effort on retries or modify global audit routing. This execution

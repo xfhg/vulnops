@@ -1,62 +1,62 @@
-# Security Audit Workflows
+# Security audit workflows
 
-## Original Audit: Discover What an Attacker Can Do
+Use this guide to choose the work. [README.md](README.md) provides launch commands;
+[AGENTS.md](AGENTS.md) defines execution procedures and budgets;
+[ARCHITECTURE.md](ARCHITECTURE.md) explains evidence and recovery boundaries.
 
-Start without assuming vulnerabilities exist. Map the application, identify attacker-controlled inputs, trace security decisions and prove concrete impact.
-
-| Step | Phase | Attacker-focused purpose |
+| Workflow | Starting point | Result |
 |---|---|---|
-| 1 | Reconnaissance | Identify exposed entry points, attacker identities, valuable assets and trust boundaries. Understand where untrusted input can acquire authority. |
-| 2 | Tool Collection | Collect dependency and exposed-secret leads. Treat scanner matches as questions to investigate, not proof of exploitation. |
-| 3 | Source Investigation | Trace attacker-controlled inputs through security controls to sensitive operations. Establish exploitable root causes and challenge each candidate with counterevidence. |
-| 4 | Campaign Planning | Prioritize meaningful attacker objectives. Connect established capabilities to potential consumers and identify the missing proof for promising attack paths. |
-| 5 | Intrusion | Pursue the selected paths, test whether capabilities actually compose and follow evidence-backed alternatives. Establish the conditions required to cross each boundary. |
-| 6 | Gap Exploration | Take an additional pass over consequential blind spots, alternate callers and overlooked capability consumers. Use Codegraph when useful, then challenge each promising route against the actual source and controls. |
-| 7 | Synthesis | Assemble complete exploitation narratives. Separate standalone vulnerabilities from chains and demonstrate any additional impact without double-counting the same root cause. |
-| 8 | Independent Verification | Assume each claim is false. Challenge attacker access, causal steps, intervening controls, required conditions and impact against the source. |
-| 9 | Security Report | Explain what an attacker can achieve, what remains unproven and which defensive changes break the demonstrated attack paths. |
+| Ordinary audit | Authorized application source under `target/`. | A reviewed assessment of attacker paths and unresolved obligations. Valid unfinished work can resume. |
+| Advantage | A completed ordinary audit plus authorized current source or patch views. | A separate assessment of new roots, chains, impact expansions and baseline corrections/revalidations. Each invocation starts fresh. |
+| Production remediation | Eligible accepted findings with supported exact-source patch authority. | A separate production patch bundle; no automatic apply, commit or push. |
+| VulnOps @stake | Completed ordinary/Advantage reports. | Read-only exploration of findings, evidence and repairs. See the [viewer guide](stake/README.md). |
 
-## Advantage: Find What an Informed Attacker Can Do Next
+Only one assessment workflow may be active in an OMP session. Completing one does
+not launch another. An incomplete audit is not an Advantage baseline.
 
-Start with a previous audit as intelligence—not as unquestioned proof. Look for additional attacker capabilities, alternate routes, overlooked boundaries and greater impact.
+## Ordinary audit
 
-Explicitly request Advantage in an existing prepared harness OMP session; its
-controller uses `python3 scripts/init-advantage.py --in-session [<completed-audit-path-or-run-id>] [options]`
-before ordinary audit initialization, without a launcher or second OMP. Name the
-completed audit path or exact unique run ID; never restore selection from an old
-Advantage invocation. Terminal startup remains `./advantage.sh <completed-audit-base> [options]`
-or `./run_local.sh --advantage <completed-audit-base> [options]`, outside OMP only.
+| Phase | Purpose |
+|---|---|
+| Recon | Map projects, entrypoints, identities, assets and trust boundaries. |
+| Tool Collection | Normalize dependency and redacted-secret observations as investigation leads. |
+| ThreatHunter (`sast`) | Trace controlled input through security decisions; challenge candidate root causes. |
+| Campaign Planning | Prioritize concrete objectives and the missing proof for capability transitions. |
+| Intrusion | Establish whether capabilities compose under compatible conditions; follow supported alternatives. |
+| Gap Exploration | Pursue consequential remaining source routes under a separate allocation. |
+| Synthesis | Deduplicate roots and write complete attack dossiers with repair guidance. |
+| Final Verification | Independently challenge access, steps, controls, conditions, impact and the effective dossier. |
+| Report | Publish accepted outcomes, evidence and material limits. |
 
-Advantage defaults to deep/full; explicit mode/depth overrides remain independent.
-Use `--mode standard` explicitly for standard work. Every explicit request starts
-fresh; previous success, failure or interruption never supplies checkpoints or
-consumes this invocation's limits. Ordinary audit depth and unfinished recovery
-are unchanged; deep passes retain one shared current-invocation allocation.
-Only one workflow may be active: finish or explicitly stop and close its owned
-work first. Native tasks and semantic validation own live progress; completed
-reports plus canonical evidence need no execution ledger. No callback starts
-another workflow. Deploy runtime/instructions together after stopping old
-sessions, without migrating, deleting or repairing saved Advantage runs.
-The shared entry guide and Advantage controller remain the authorities; all
-investigation, safe experiment, gap exploration and independent-review capabilities remain.
+## Advantage
 
-| Step | Phase | Attacker-focused purpose |
-|---|---|---|
-| 1 | Baseline Intelligence | Understand previously established weaknesses, rejected hypotheses and unresolved questions. Distinguish historical claims from capabilities that still require current proof. |
-| 2 | Attack Planning | Define concrete attacker objectives and the questions needed to prove them. Prioritize routes that could reveal new weaknesses or materially extend known impact. |
-| 3 | Investigation | Follow alternate entry points, sibling operations and capability chains. Use counterevidence to redirect effort; preserve useful independent discoveries when another path fails. |
-| 4 | Gap Exploration | Pursue consequential routes the main investigation left open. Look for alternate callers, missing transitions and source-backed opportunities beyond the baseline; graph navigation suggests where to look, never what is exploitable. |
-| 5 | Synthesis | Explain exactly what advances beyond the baseline: a new root cause, a viable chain or an impact expansion. Keep corrections and unchanged revalidations distinct from new attacker outcomes. |
-| 6 | Independent Verification | Challenge every claimed advancement, including each capability transition and its conditions. Confirm that the evidence proves the stated attacker objective. |
-| 7 | Defensive Handoff | When requested, assess whether proposed fixes interrupt the attack, identify targeted hardening and turn accepted findings into actionable defensive work. |
-| 8 | Advantage Report | Lead with additional attacker outcomes, complete causal narratives, consequential unknowns and the defensive priorities that follow. |
+Advantage uses the baseline as intelligence. Historical findings, rejected routes
+and unresolved questions guide selection; current applicability still needs proof.
+Default mode is `deep` and default depth is `full`, independently overridable.
 
-## Shared Attacker Mindset
+| Mode | Work |
+|---|---|
+| `standard` | One informed investigation pass. |
+| `deep` | Independent passes sharing one finite allocation and continuation reserve. |
+| `diff` | One pass over a supplied immutable patch and bound base/derived source views. |
+| `actions` | Selected fix/risk/hardening assessments or offline tracking from a completed non-actions Advantage source. No discovery or finding promotion. |
 
-- Prove access, control, boundary crossing and concrete impact—not merely suspicious code.
-- A chain must work end to end; a missing prerequisite leaves that chain unproven.
-- Negative results and counterevidence guide the next useful question.
-- One failed path does not invalidate an independently proven path.
-- Additional exploration supplements the main attack plan; it does not displace it. A promising lead becomes a finding only after complete proof and independent challenge.
-- Source-established exploitability is not an executed attack. State dynamic evidence and environmental uncertainty explicitly.
-- Recommend fixes that break the demonstrated attack while preserving legitimate behavior.
+Discovery proceeds through Baseline → Planning → Investigation → Gap Exploration →
+Synthesis → Final Verification → Handoff → Report. Handoff performs only selected
+actions; unselected work closes deterministically. Actions-only mode skips the
+five discovery/review phases between Baseline and Handoff.
+
+A new root, chain or impact expansion must establish what the baseline did not.
+Revalidation is a current assessed conclusion, not an additional attacker outcome.
+Corrections remain separate and never edit the original audit. A failed or
+interrupted invocation has no resumable investigation checkpoint; see
+[retained publication](ARCHITECTURE.md#entry-and-baseline-selection) for the
+separate, constrained report-only operation.
+
+## Shared evidence rules
+
+Prove attacker access, control, boundary crossing and concrete impact. Chains need
+every transition and compatible prerequisites. Preserve counterevidence and exact
+unknowns; zero confirmed findings does not establish clean coverage. Distinguish
+source-established behavior from contained observations, and proposed repair
+checks from executed tests.

@@ -14,6 +14,15 @@ from evidence_refs import _parts, artifact_value, EvidenceIssue, SCAN_NAMESPACES
 from run_lifecycle import report_assessment, require_active_phase
 SEVERITIES=("critical","high","medium","low","informational")
 ORIGINS=("standalone_known","known_impact_expansion","composite_chain","independent_discovery","cross_evidence_discovery")
+
+def _text_cap()->int:
+    """Publication `text` fields are capped; canonical gap records retain full strings."""
+    root=Path(__file__).resolve().parent.parent
+    schema=json.loads((root/"schemas/v2"/"evidence-accounting.schema.json").read_text())
+    return int(schema["$defs"]["text"]["maxLength"])
+
+def _clamped(value:str,cap:int)->str:
+    return value if len(value)<=cap else value[:cap-1]+"…"
 def checked(value:object,*,size_limit:int|None=DEFAULT_ARTIFACT_LIMIT)->object:
     error=publication_content_error(value,size_limit=size_limit)
     if error:raise ValueError(error)
@@ -225,8 +234,11 @@ def gap_projection(scan: Path, findings: list[dict], context: dict | None = None
     accepted_ids = sorted(finding["id"] for finding in findings
                           if any(source_reference(source) in references
                                  for source in finding.get("source_refs", [])))
+    cap=_text_cap()
+    non_promoted=[{key:(_clamped(value,cap) if key in ("id","objective_id","question_id","reason") else value)
+                   for key,value in row.items()} for row in supplement["non_promoted"]]
     return {**supplement["summary"], "status": supplement["status"],
-            "limitations": supplement["limitations"], "non_promoted": supplement["non_promoted"],
+            "limitations": [_clamped(row,cap) for row in supplement["limitations"]], "non_promoted": non_promoted,
             "independently_accepted_finding_ids": accepted_ids,
             "independently_accepted": len(accepted_ids)}
 

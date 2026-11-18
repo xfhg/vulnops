@@ -316,7 +316,8 @@ def main() -> int:
         if platform.system() != "Darwin" or platform.machine() != "arm64":
             raise ProbeFailure("unsupported_platform")
         (ROOT / ".harness").mkdir(exist_ok=True)
-        if not (ROOT / ".harness/home/.omp/agent/config.yml").is_file():
+        agent_dir = Path(os.environ.get("VULNOPS_OMP_AGENT_DIR", ROOT / ".harness/home/.omp/agent"))
+        if not (agent_dir / "config.yml").is_file():
             raise ProbeFailure("generated_configuration_missing")
         tools = subprocess.check_output(["bash", "-c", 'source "$1"; harness_omp_tools',
                                          "probe", str(ROOT / "scripts/harness-lib.sh")], text=True).strip()

@@ -33,6 +33,32 @@ def check_catalog(catalog: dict, selector: str) -> None:
         raise ValueError(f"unsupported reasoning effort: {selector}")
 
 
+def _failure_detail(messages: list[dict], stderr: str) -> str:
+    # Classify only known error markers; never echo provider-controlled text.
+    errors = [stderr, *(message.get("errorMessage", "") for message in messages)]
+    text = "\n".join(value for value in errors if isinstance(value, str)).lower()
+    tls_codes = (
+        "unable_to_get_issuer_cert_locally", "unable_to_verify_leaf_signature",
+        "self_signed_cert_in_chain", "depth_zero_self_signed_cert",
+        "cert_has_expired", "certificate_verify_failed",
+    )
+    if any(code in text for code in tls_codes):
+        return ("TLS certificate verification failed; set NODE_EXTRA_CA_CERTS to an "
+                "administrator-approved PEM CA bundle; do not disable TLS verification")
+    if "requires a sandbox with reviewed escalations" in text:
+        return ("the selected model requires a sandbox with reviewed escalations; "
+                "use a supported client with enforced sandboxing and approval review; "
+                "a model selector or Daybreak toggle alone cannot satisfy this requirement")
+    for code, advice in (
+        ("access_program_not_enabled", "enable the approved Daybreak tier for the authenticated workspace/project"),
+        ("invalid_access_program", "check the model-specific Daybreak request program"),
+        ("unsupported_access_program", "the selected model does not support that Daybreak request program"),
+    ):
+        if code in text:
+            return f"{code}; {advice}"
+    return "verify provider authentication/access; provider failure was not classified"
+
+
 def live_probe(omp: Path, selector: str, work: Path) -> None:
     provider, model, effort = split_selector(selector)
     with tempfile.TemporaryDirectory(prefix="model-readiness-", dir=work) as temporary:
@@ -53,10 +79,9 @@ def live_probe(omp: Path, selector: str, work: Path) -> None:
             message = event.get("message", {})
             if event.get("type") == "message_end" and message.get("role") == "assistant":
                 messages.append(message)
-        if result.returncode or not messages:
-            raise ValueError(f"live inference failed: {selector}; verify provider authentication/access")
-        if any(message.get("stopReason") == "error" or message.get("provider") != provider
-               or message.get("model") != model for message in messages):
+        if result.returncode or not messages or any(message.get("stopReason") == "error" for message in messages):
+            raise ValueError(f"live inference failed: {selector}; {_failure_detail(messages, result.stderr)}")
+        if any(message.get("provider") != provider or message.get("model") != model for message in messages):
             raise ValueError(f"live inference failed or substituted model: {selector}")
         selected_model = selected_effort = None
         for session in (directory / "sessions").rglob("*.jsonl"):
